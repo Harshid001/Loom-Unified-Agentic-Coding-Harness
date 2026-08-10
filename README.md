@@ -162,37 +162,37 @@ loom rollback <run_id>
 
 ---
 
-## ⚡ Docker Alternatives (Running Without Docker)
+## ⚡ Native Process Deployment (No Docker Required)
 
-If you don't use Docker or Docker Desktop, you can run Loom using these lightweight alternatives:
+Loom runs 100% natively on Python and Node.js without requiring Docker or container runtime engines.
 
-### 1. PM2 Process Manager (Recommended Non-Docker Production)
-Run both backend API and web frontend in background processes natively:
+### Method 1: PM2 Ecosystem (One-Command Startup)
+Launch both backend FastAPI server and Next.js Web Dashboard in background processes using the provided `ecosystem.config.js`:
 
 ```bash
-# Install PM2 globally
+# 1. Install PM2 globally
 npm install -g pm2
 
-# Start Python API backend in background
-pm2 start "loom server --port 8000" --name loom-api
+# 2. Launch all Loom services in 1 command
+pm2 start ecosystem.config.js
 
-# Start Next.js Web Dashboard in background
-pm2 start "npm run start" --cwd ./web --name loom-web
-
-# Check status
+# 3. Check status & logs
 pm2 status
+pm2 logs
 ```
 
-### 2. Podman (100% Free Daemonless Docker Drop-In)
-Podman uses the exact same `Dockerfile` without requiring Docker Desktop:
+---
+
+### Method 2: Direct Terminal Startup
+Run backend API and web frontend directly in separate terminals:
 
 ```bash
-# Podman Compose (exact drop-in for docker-compose)
-podman-compose up --build -d
+# Terminal 1: Launch FastAPI Backend Server
+loom server --port 8000
 
-# Or build individual podman images
-podman build -t loom-api .
-podman run -d -p 8000:8000 loom-api
+# Terminal 2: Launch Next.js Web Dashboard
+cd web
+npm run dev
 ```
 
 ---

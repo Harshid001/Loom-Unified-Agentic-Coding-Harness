@@ -4,44 +4,29 @@ This document outlines deployment configurations, containerization, environment 
 
 ---
 
-## 1. Quick Start with Docker Compose
+## 1. Native Deployment with PM2 Process Manager
 
-To deploy both the **Python Harness Backend API** and the **Next.js Web Dashboard** via Docker Compose:
+Loom is designed to run natively on Python 3.10+ and Node 20+ without requiring Docker containers or container runtime engines.
 
+### Startup via PM2 Ecosystem
 ```bash
 # Clone and navigate to workspace
 cd "Unified agentic coding harness"
 
-# Build and start services in detached mode
-docker-compose up --build -d
+# Install PM2 process manager
+npm install -g pm2
 
-# Check running container statuses
-docker-compose ps
+# Launch all Loom services (FastAPI Backend + Next.js Web UI)
+pm2 start ecosystem.config.js
+
+# Monitor running processes
+pm2 status
 ```
 
 Services exposed:
 - **Backend API**: `http://localhost:8000`
 - **OpenAPI / Swagger UI**: `http://localhost:8000/docs`
 - **Web Dashboard**: `http://localhost:3000`
-
----
-
-## 1.5 Docker Alternatives (Daemonless / Native Deployment)
-
-If Docker Desktop is not available, use one of these alternatives:
-
-### Alternative A: PM2 Process Manager (Native Python + Node)
-```bash
-npm install -g pm2
-pm2 start "loom server --port 8000" --name loom-api
-pm2 start "npm run start" --cwd ./web --name loom-web
-pm2 save
-```
-
-### Alternative B: Podman / Podman-Compose (Drop-in Daemonless Replacement)
-```bash
-podman-compose up --build -d
-```
 
 ---
 
