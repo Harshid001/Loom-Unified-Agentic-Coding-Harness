@@ -26,6 +26,25 @@ Services exposed:
 
 ---
 
+## 1.5 Docker Alternatives (Daemonless / Native Deployment)
+
+If Docker Desktop is not available, use one of these alternatives:
+
+### Alternative A: PM2 Process Manager (Native Python + Node)
+```bash
+npm install -g pm2
+pm2 start "loom server --port 8000" --name loom-api
+pm2 start "npm run start" --cwd ./web --name loom-web
+pm2 save
+```
+
+### Alternative B: Podman / Podman-Compose (Drop-in Daemonless Replacement)
+```bash
+podman-compose up --build -d
+```
+
+---
+
 ## 2. Environment Variable Configuration
 
 Create a `.env` file in the root directory (refer to [.env.example](file:///d:/NewVolumeE/Unified%20agentic%20coding%20harness/.env.example)):

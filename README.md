@@ -162,6 +162,41 @@ loom rollback <run_id>
 
 ---
 
+## ⚡ Docker Alternatives (Running Without Docker)
+
+If you don't use Docker or Docker Desktop, you can run Loom using these lightweight alternatives:
+
+### 1. PM2 Process Manager (Recommended Non-Docker Production)
+Run both backend API and web frontend in background processes natively:
+
+```bash
+# Install PM2 globally
+npm install -g pm2
+
+# Start Python API backend in background
+pm2 start "loom server --port 8000" --name loom-api
+
+# Start Next.js Web Dashboard in background
+pm2 start "npm run start" --cwd ./web --name loom-web
+
+# Check status
+pm2 status
+```
+
+### 2. Podman (100% Free Daemonless Docker Drop-In)
+Podman uses the exact same `Dockerfile` without requiring Docker Desktop:
+
+```bash
+# Podman Compose (exact drop-in for docker-compose)
+podman-compose up --build -d
+
+# Or build individual podman images
+podman build -t loom-api .
+podman run -d -p 8000:8000 loom-api
+```
+
+---
+
 ## 🛠️ CLI Reference
 
 | Command | Usage | Description |
