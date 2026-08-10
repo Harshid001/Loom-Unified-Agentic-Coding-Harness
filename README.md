@@ -202,8 +202,8 @@ npm run dev
 | `loom version` | `loom version` | Display Loom CLI version. |
 | `loom init` | `loom init [--path <dir>]` | Intake codebase, build AST symbol index and memory store. |
 | `loom issue` | `loom issue "<prompt>" [--path <dir>]` | Set active issue description for execution. |
-| `loom run` | `loom run [--mock / --no-mock] [--model <name>]` | Execute the DAG task graph through all specialist agents. |
-| `loom fix` | `loom fix "<prompt>"` | Single-command shortcut to intake, set issue, and run harness. |
+| `loom run` | `loom run [--mock / --no-mock] [--model <name>] [--api-key <key>] [--api-base <url>]` | Execute the DAG task graph through all specialist agents. |
+| `loom fix` | `loom fix "<prompt>" [--mock / --no-mock] [--model <name>] [--api-key <key>] [--api-base <url>]` | Single-command shortcut to intake, set issue, and run harness. |
 | `loom trace` | `loom trace <run_id>` | Display interactive tree view of execution trace events and costs. |
 | `loom rollback` | `loom rollback <run_id>` | Restore target workspace to pre-patch snapshot state. |
 | `loom bench` | `loom bench` | Execute controlled same-model ablation matrix benchmarks. |
