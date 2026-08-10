@@ -1,8 +1,9 @@
 import asyncio
 import json
+import os
 import uuid
 from pathlib import Path
-
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -27,6 +28,19 @@ app = typer.Typer(
     add_completion=False
 )
 console = Console()
+
+def _apply_api_key_if_provided(api_key: Optional[str], model: str):
+    if not api_key:
+        return
+    if "claude" in model.lower() or "anthropic" in model.lower():
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+    elif "gpt" in model.lower() or "openai" in model.lower():
+        os.environ["OPENAI_API_KEY"] = api_key
+    elif "gemini" in model.lower():
+        os.environ["GEMINI_API_KEY"] = api_key
+    else:
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+        os.environ["OPENAI_API_KEY"] = api_key
 
 @app.command()
 def version():
@@ -68,15 +82,17 @@ def fix(
     description: str = typer.Argument(None, help="Issue or feature description to resolve in 1 step"),
     repo_path: str = typer.Option(".", "--path", "-p", help="Path to repository root"),
     mock: bool = typer.Option(True, "--mock/--no-mock", help="Run in mock/offline mode"),
-    model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing")
+    model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command")
 ):
     """Single-command solution: Intakes repo, sets issue, and executes Loom harness in 1 shot!"""
     if not description:
         description = typer.prompt("What bug or feature should Loom resolve on this project?")
 
+    _apply_api_key_if_provided(api_key, model)
     init(repo_path=repo_path)
     issue(description=description, repo_path=repo_path)
-    run(mock=mock, model=model)
+    run(mock=mock, model=model, api_key=api_key)
 
 
 @app.command()
@@ -98,9 +114,11 @@ def issue(
 @app.command()
 def run(
     mock: bool = typer.Option(True, "--mock/--no-mock", help="Run in mock/offline mode without calling paid API keys"),
-    model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing")
+    model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command")
 ):
     """Execute the task graph through onboarding, reproduction, patching, verification, and reviewer report."""
+    _apply_api_key_if_provided(api_key, model)
     issue_file = Path.home() / ".loom" / "active_issue.json"
     if not issue_file.exists():
         console.print("[bold red]No active issue set. Run 'loom issue \"<description>\"' first.[/bold red]")
