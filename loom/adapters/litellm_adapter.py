@@ -27,8 +27,15 @@ class LiteLLMAdapter(BaseModelAdapter):
             if request.system_prompt:
                 messages.insert(0, {"role": "system", "content": request.system_prompt})
 
+            target_model = request.model
+            if "deepseek" in target_model.lower() and not target_model.lower().startswith("deepseek/"):
+                if target_model.lower() in ["deepseek", "deepseek v4 pro", "deepseek-v4 pro", "deepseek-v4", "deepseek-chat"]:
+                    target_model = "deepseek/deepseek-chat"
+                else:
+                    target_model = f"deepseek/{target_model}"
+
             kwargs: Dict[str, Any] = {
-                "model": request.model,
+                "model": target_model,
                 "messages": messages,
                 "temperature": request.temperature,
             }

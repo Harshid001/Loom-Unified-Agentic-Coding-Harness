@@ -32,13 +32,17 @@ console = Console()
 def _apply_api_key_if_provided(api_key: Optional[str], model: str):
     if not api_key:
         return
-    if "claude" in model.lower() or "anthropic" in model.lower():
+    m_lower = model.lower()
+    if "deepseek" in m_lower:
+        os.environ["DEEPSEEK_API_KEY"] = api_key
+    if "claude" in m_lower or "anthropic" in m_lower:
         os.environ["ANTHROPIC_API_KEY"] = api_key
-    elif "gpt" in model.lower() or "openai" in model.lower():
+    if "gpt" in m_lower or "openai" in m_lower:
         os.environ["OPENAI_API_KEY"] = api_key
-    elif "gemini" in model.lower():
+    if "gemini" in m_lower:
         os.environ["GEMINI_API_KEY"] = api_key
-    else:
+    if not any(k in m_lower for k in ["deepseek", "claude", "anthropic", "gpt", "openai", "gemini"]):
+        os.environ["DEEPSEEK_API_KEY"] = api_key
         os.environ["ANTHROPIC_API_KEY"] = api_key
         os.environ["OPENAI_API_KEY"] = api_key
 
