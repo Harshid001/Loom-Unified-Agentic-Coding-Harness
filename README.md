@@ -64,22 +64,20 @@
 
 ---
 
-### 1. Installation
+### 1. Direct Terminal Installation (1 Command)
 
-Clone the repository and install the Python CLI package in editable mode:
+Install Loom directly from GitHub into any terminal without cloning manually:
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/loom-harness.git
-cd loom-harness
+pip install git+https://github.com/Harshid001/Loom-Unified-Agentic-Coding-Harness.git
+```
 
-# Install Python backend & CLI
+Or install locally from a cloned repository:
+
+```bash
+git clone https://github.com/Harshid001/Loom-Unified-Agentic-Coding-Harness.git
+cd Loom-Unified-Agentic-Coding-Harness
 pip install -e .
-
-# Install Web Dashboard dependencies
-cd web
-npm install
-cd ..
 ```
 
 ---
