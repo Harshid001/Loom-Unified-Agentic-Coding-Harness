@@ -29,7 +29,10 @@ app = typer.Typer(
 )
 console = Console()
 
-def _apply_api_key_if_provided(api_key: Optional[str], model: str):
+def _apply_api_key_if_provided(api_key: Optional[str], model: str, api_base: Optional[str] = None):
+    if api_base:
+        os.environ["API_BASE"] = api_base
+        os.environ["OPENAI_API_BASE"] = api_base
     if not api_key:
         return
     m_lower = model.lower()
@@ -87,16 +90,17 @@ def fix(
     repo_path: str = typer.Option(".", "--path", "-p", help="Path to repository root"),
     mock: bool = typer.Option(True, "--mock/--no-mock", help="Run in mock/offline mode"),
     model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
-    api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command")
+    api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command"),
+    api_base: Optional[str] = typer.Option(None, "--api-base", "-b", help="Pass custom LLM provider API base URL")
 ):
     """Single-command solution: Intakes repo, sets issue, and executes Loom harness in 1 shot!"""
     if not description:
         description = typer.prompt("What bug or feature should Loom resolve on this project?")
 
-    _apply_api_key_if_provided(api_key, model)
+    _apply_api_key_if_provided(api_key, model, api_base)
     init(repo_path=repo_path)
     issue(description=description, repo_path=repo_path)
-    run(mock=mock, model=model, api_key=api_key)
+    run(mock=mock, model=model, api_key=api_key, api_base=api_base)
 
 
 @app.command()
@@ -119,10 +123,11 @@ def issue(
 def run(
     mock: bool = typer.Option(True, "--mock/--no-mock", help="Run in mock/offline mode without calling paid API keys"),
     model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
-    api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command")
+    api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command"),
+    api_base: Optional[str] = typer.Option(None, "--api-base", "-b", help="Pass custom LLM provider API base URL")
 ):
     """Execute the task graph through onboarding, reproduction, patching, verification, and reviewer report."""
-    _apply_api_key_if_provided(api_key, model)
+    _apply_api_key_if_provided(api_key, model, api_base)
     issue_file = Path.home() / ".loom" / "active_issue.json"
     if not issue_file.exists():
         console.print("[bold red]No active issue set. Run 'loom issue \"<description>\"' first.[/bold red]")

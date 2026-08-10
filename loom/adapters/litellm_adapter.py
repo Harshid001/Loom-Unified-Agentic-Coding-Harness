@@ -34,11 +34,15 @@ class LiteLLMAdapter(BaseModelAdapter):
                 else:
                     target_model = f"deepseek/{target_model}"
 
+            import os
+            api_base = os.getenv("API_BASE") or os.getenv("OPENAI_API_BASE")
             kwargs: Dict[str, Any] = {
                 "model": target_model,
                 "messages": messages,
                 "temperature": request.temperature,
             }
+            if api_base:
+                kwargs["api_base"] = api_base
 
             if request.max_tokens:
                 kwargs["max_tokens"] = request.max_tokens
