@@ -31,3 +31,7 @@ out/
 Thumbs.db
 .vscode/
 .idea/
+
+# Scratch & temporary artifacts
+scratch/
+artifacts/

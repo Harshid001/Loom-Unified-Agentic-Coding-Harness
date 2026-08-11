@@ -1,22 +1,28 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface RunItem {
   id: string;
   issue: string;
   status: string;
   cost?: number;
+  createdAt?: number;
+}
+
+interface RunDetails {
+  checkpoint: any;
+  trace_events: any[];
 }
 
 export function useRuns() {
   const [selectedRun, setSelectedRun] = useState<string | null>(null);
   const [runHistory, setRunHistory] = useState<RunItem[]>([]);
-  const [selectedRunDetails, setSelectedRunDetails] = useState<any>(null);
+  const [selectedRunDetails, setSelectedRunDetails] = useState<RunDetails | null>(null);
   const [isLoadingRuns, setIsLoadingRuns] = useState<boolean>(true);
   const [isLoadingDetails, setIsLoadingDetails] = useState<boolean>(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchRuns = useCallback(() => {
-    setIsLoadingRuns(true);
     fetch('/api/runs')
       .then(res => {
         if (!res.ok) throw new Error(`API returned status ${res.status}`);
@@ -24,11 +30,12 @@ export function useRuns() {
       })
       .then(data => {
         if (Array.isArray(data)) {
-          const mappedRuns = data.map((r: any) => ({
+          const mappedRuns: RunItem[] = data.map((r: any) => ({
             id: r.id,
             issue: r.issue,
             status: r.status,
-            cost: r.cost
+            cost: r.cost,
+            createdAt: r.created_at,
           }));
           setRunHistory(mappedRuns);
           if (mappedRuns.length > 0 && !selectedRun) {
@@ -47,6 +54,13 @@ export function useRuns() {
 
   useEffect(() => {
     fetchRuns();
+  }, [fetchRuns]);
+
+  useEffect(() => {
+    pollRef.current = setInterval(fetchRuns, 15000);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [fetchRuns]);
 
   useEffect(() => {

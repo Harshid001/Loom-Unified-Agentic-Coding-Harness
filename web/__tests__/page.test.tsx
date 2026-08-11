@@ -7,17 +7,26 @@ import { NewRunModal } from '../src/components/NewRunModal';
 
 describe('Header component', () => {
   it('renders title and model badge', () => {
-    const handleOpenModal = vi.fn();
-    render(<Header modelName="claude-3-5-sonnet" onOpenModal={handleOpenModal} />);
+    const handleOpenLiveBox = vi.fn();
+    const handleModelChange = vi.fn();
+    render(
+      <Header
+        modelName="claude-3-5-sonnet"
+        availableModels={['claude-3-5-sonnet', 'gpt-4o']}
+        onModelChange={handleModelChange}
+        onOpenLiveBox={handleOpenLiveBox}
+        runCount={3}
+      />
+    );
 
     expect(screen.getByText(/Loom/i)).toBeInTheDocument();
     expect(screen.getByText(/claude-3-5-sonnet/i)).toBeInTheDocument();
 
-    const startButton = screen.getByRole('button', { name: /Start new execution run/i });
+    const startButton = screen.getByRole('button', { name: /Open Live Box/i });
     expect(startButton).toBeInTheDocument();
 
     fireEvent.click(startButton);
-    expect(handleOpenModal).toHaveBeenCalledTimes(1);
+    expect(handleOpenLiveBox).toHaveBeenCalledTimes(1);
   });
 });
 
