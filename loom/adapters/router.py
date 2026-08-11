@@ -3,7 +3,6 @@ from typing import Dict, Optional
 from loom.adapters.base import BaseModelAdapter
 from loom.adapters.litellm_adapter import LiteLLMAdapter
 
-
 MODEL_PRICING = {
     "claude-3-5-sonnet-20241022": {"input": 3.00 / 1e6, "output": 15.00 / 1e6},
     "gpt-4o": {"input": 2.50 / 1e6, "output": 10.00 / 1e6},

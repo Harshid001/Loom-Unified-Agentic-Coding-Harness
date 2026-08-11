@@ -4,16 +4,18 @@ Launch with: loom tui
 Requires: textual>=0.52.0
 """
 
+import asyncio
 import json
 import time
-import asyncio
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Optional
+
+from loom.repo_intel.mapper import RepoMapper
 
 _HAS_TEXTUAL = False
 try:
     from textual.app import App, ComposeResult
-    from textual.containers import Horizontal, Vertical, Container, ScrollableContainer
+    from textual.containers import Container, Horizontal, Vertical
     from textual.widget import Widget
     from textual.widgets import (
         Button,
@@ -24,16 +26,13 @@ try:
         Label,
         ProgressBar,
         RichLog,
+        Static,
         TabbedContent,
         TabPane,
-        Static,
-        Select,
     )
     _HAS_TEXTUAL = True
 except ImportError:
     pass
-
-from loom.repo_intel.mapper import RepoMapper
 
 
 def launch_tui() -> None:

@@ -4,9 +4,8 @@ Allows Loom agents to autonomously control browsers, capture screenshots,
 interact with web dashboard UIs, and perform E2E web verification.
 """
 
-import asyncio
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 try:
     from playwright.async_api import async_playwright
@@ -20,7 +19,7 @@ class LoomBrowserRunner:
 
     def __init__(self, headless: bool = True):
         self.headless = headless
-        self._playwright = None
+        self._playwright: Optional[Any] = None
         self._browser: Optional[Any] = None
         self._page: Optional[Any] = None
 
@@ -28,14 +27,16 @@ class LoomBrowserRunner:
         """Launch browser instance."""
         if not _HAS_PLAYWRIGHT:
             raise RuntimeError("playwright package is not installed. Run: pip install playwright && playwright install chromium")
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=self.headless)
+        playwright_obj = await async_playwright().start()
+        self._playwright = playwright_obj
+        self._browser = await playwright_obj.chromium.launch(headless=self.headless)
         self._page = await self._browser.new_page(viewport={"width": 1280, "height": 800})
 
     async def navigate(self, url: str) -> Dict[str, Any]:
         """Navigate to URL and return page title & status."""
         if not self._page:
             await self.start()
+        assert self._page is not None
         response = await self._page.goto(url, wait_until="domcontentloaded")
         title = await self._page.title()
         status = response.status if response else 200

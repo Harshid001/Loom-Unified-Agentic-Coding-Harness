@@ -3,10 +3,10 @@ Loom Web & Browser Verification Gate.
 Executes automated E2E web verification using Playwright against Next.js Dashboard.
 """
 
-import asyncio
 from pathlib import Path
-from typing import Dict, Any
-from loom.sandbox.browser import LoomBrowserRunner, _HAS_PLAYWRIGHT
+from typing import Any, Dict
+
+from loom.sandbox.browser import _HAS_PLAYWRIGHT, LoomBrowserRunner
 
 
 class WebVerificationGate:
