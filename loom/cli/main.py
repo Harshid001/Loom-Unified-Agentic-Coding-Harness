@@ -352,7 +352,7 @@ def wizard():
     run_id = selections.get("resume_run_id")
 
     if selections.get("monorepo_config") and selections.get("selected_subprojects"):
-        if streaming is not None:
+        if streaming is not None and console.is_terminal:
             with Live(streaming.render_context(), console=console, refresh_per_second=10):
                 results = asyncio.run(_run_monorepo(
                     selections["monorepo_config"],
@@ -393,7 +393,7 @@ def wizard():
     record = RunRecord(run_id=run_id, repo_path=repo_path, issue_description=issue, model_used=selections["model"])
     RecoveryManager.save_run(record)
 
-    if streaming is not None:
+    if streaming is not None and console.is_terminal:
         with Live(streaming.render_context(), console=console, refresh_per_second=10):
             final_state = asyncio.run(_execute_task_graph(
                 state, router, advanced_router, tracer, cost_tracker,
@@ -485,7 +485,7 @@ def run(
             human_loop = HumanInTheLoop() if human else None
             streaming = StreamingOutput(console) if stream else None
 
-            if streaming is not None:
+            if streaming is not None and console.is_terminal:
                 with Live(streaming.render_context(), console=console, refresh_per_second=10):
                     final_state = asyncio.run(_execute_task_graph(
                         state, router, advanced_router, tracer, cost_tracker,
@@ -531,7 +531,7 @@ def run(
     record = RunRecord(run_id=run_id, repo_path=repo_path, issue_description=state.issue_description, model_used=model)
     RecoveryManager.save_run(record)
 
-    if stream and streaming is not None:
+    if stream and streaming is not None and console.is_terminal:
         with Live(streaming.render_context(), console=console, refresh_per_second=10):
             final_state = asyncio.run(_execute_task_graph(
                 state, router, advanced_router, tracer, cost_tracker,
