@@ -807,9 +807,10 @@ def browser(
 
 
 @app.callback(invoke_without_command=True)
-def default_callback():
+def default_callback(ctx: typer.Context):
     """Launch the TUI dashboard when no subcommand is given."""
-    launch_tui()
+    if ctx.invoked_subcommand is None:
+        launch_tui()
 
 
 if __name__ == "__main__":
