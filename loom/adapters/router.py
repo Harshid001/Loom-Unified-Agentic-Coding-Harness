@@ -1,9 +1,20 @@
-from typing import Dict, Optional
+import logging
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from enum import Enum
+from fnmatch import fnmatch
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from loom.adapters.base import BaseModelAdapter
 from loom.adapters.litellm_adapter import LiteLLMAdapter
 
-MODEL_PRICING = {
+logger = logging.getLogger("loom.adapters.router")
+
+DEFAULT_WEIGHTS = {"w1_cost": 0.25, "w2_latency": 0.15, "w3_success_rate": 0.35, "w4_capability": 0.25}
+DEFAULT_SENSITIVE_GLOBS = ["**/auth/**", "**/billing/**", "**/migrations/**"]
+
+MODEL_PRICING: Dict[str, Dict[str, float]] = {
     "claude-3-5-sonnet-20241022": {"input": 3.00 / 1e6, "output": 15.00 / 1e6},
     "gpt-4o": {"input": 2.50 / 1e6, "output": 10.00 / 1e6},
     "gpt-4o-mini": {"input": 0.15 / 1e6, "output": 0.60 / 1e6},
@@ -14,39 +25,339 @@ MODEL_PRICING = {
     "mock": {"input": 0.001 / 1e6, "output": 0.002 / 1e6},
 }
 
+CAPABILITY_MATRIX: Dict[str, Dict[str, Any]] = {
+    "claude-3-5-sonnet-20241022": {"context_window": 200_000, "languages": ["*"], "strength": "reasoning"},
+    "gpt-4o": {"context_window": 128_000, "languages": ["*"], "strength": "tool_calling"},
+    "gpt-4o-mini": {"context_window": 128_000, "languages": ["*"], "strength": "cheap"},
+    "gemini-1.5-pro": {"context_window": 1_000_000, "languages": ["*"], "strength": "large_context"},
+    "deepseek-v3": {"context_window": 128_000, "languages": ["*"], "strength": "cost_efficient"},
+    "claude-3-opus-20240229": {"context_window": 200_000, "languages": ["*"], "strength": "deep_reasoning"},
+    "ollama/codellama": {"context_window": 16_000, "languages": ["*"], "strength": "local"},
+    "mock": {"context_window": 4_096, "languages": ["*"], "strength": "testing"},
+}
+
+
+class TaskType(str, Enum):
+    ONBOARDING = "onboarding"
+    REPRODUCTION = "reproduction"
+    PLANNING = "planning"
+    PATCHING = "patcher"
+    VERIFYING = "verifier"
+    REVIEWING = "reviewer"
+
+
+class RouterEventType(str, Enum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    TIMEOUT = "timeout"
+
+
+@dataclass
+class RouterEvent:
+    model: str
+    task_type: TaskType
+    event_type: RouterEventType
+    latency_ms: int
+    timestamp: float = field(default_factory=time.time)
+
+
+class ConsensusResult:
+    def __init__(self, required_patches: int, agreed_model_ids: List[str], passed: bool):
+        self.required_patches = required_patches
+        self.agreed_model_ids = agreed_model_ids
+        self.passed = passed
+
+    def __bool__(self) -> bool:
+        return self.passed
+
+    def __repr__(self) -> str:
+        return (
+            f"ConsensusResult(required={self.required_patches}, "
+            f"agreed={len(self.agreed_model_ids)}, passed={self.passed})"
+        )
+
 
 class ModelRouter:
-    """Routes task nodes to models based on task complexity and spend policies."""
+    """Model router with weighted scoring, fallback cascade, and consensus verification."""
 
-    def __init__(self, default_model: str = "claude-3-5-sonnet-20241022", mock_mode: bool = False):
+    EVENTS_WINDOW_SIZE = 200
+    ERROR_RATE_WINDOW_SECONDS = 300
+    ERROR_RATE_THRESHOLD = 0.10
+    REQUEST_TIMEOUT_MS = 90_000
+
+    def __init__(
+        self,
+        default_model: str = "claude-3-5-sonnet-20241022",
+        mock_mode: bool = False,
+        weights: Optional[Dict[str, float]] = None,
+        sensitive_globs: Optional[List[str]] = None,
+    ):
         self.default_model = default_model
         self.mock_mode = mock_mode
+        self.weights = weights or dict(DEFAULT_WEIGHTS)
+        self.sensitive_globs = sensitive_globs or list(DEFAULT_SENSITIVE_GLOBS)
         self.adapter = LiteLLMAdapter(mock_mode=mock_mode)
 
-        # Route high-complexity reasoning vs low-complexity formatting
-        self.node_model_map: Dict[str, str] = {
-            "onboarding": default_model,
-            "reproduction": default_model,
-            "planning": default_model,
-            "patcher": default_model,
-            "verifier": default_model,
-            "reviewer": default_model,
-        }
+        self._eligible_models: List[str] = [
+            "claude-3-5-sonnet-20241022",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "deepseek-v3",
+        ]
+        self._events: Deque[RouterEvent] = deque(maxlen=self.EVENTS_WINDOW_SIZE)
+        self._model_quota_headroom: Dict[str, int] = {}
+
+        self.node_model_map: Dict[str, str] = {t.value: default_model for t in TaskType}
 
     def set_model(self, new_model: str) -> None:
         self.default_model = new_model
         for key in self.node_model_map:
             self.node_model_map[key] = new_model
 
-    def get_adapter(self, task_node_name: Optional[str] = None) -> BaseModelAdapter:
-        return self.adapter
+    def set_eligible_models(self, models: List[str]) -> None:
+        self._eligible_models = list(models)
+
+    def set_quota_headroom(self, model: str, remaining_tokens: int) -> None:
+        self._model_quota_headroom[model] = remaining_tokens
+
+    def record_event(self, model: str, task_type: TaskType, event_type: RouterEventType, latency_ms: int) -> None:
+        self._events.append(RouterEvent(model=model, task_type=task_type, event_type=event_type, latency_ms=latency_ms))
+
+    def _provider_error_rate(self, model: str) -> float:
+        now = time.time()
+        recent = [
+            e for e in self._events
+            if e.model == model
+            and e.event_type in (RouterEventType.FAILURE, RouterEventType.TIMEOUT)
+            and (now - e.timestamp) <= self.ERROR_RATE_WINDOW_SECONDS
+        ]
+        total_recent = sum(
+            1 for e in self._events
+            if e.model == model and (now - e.timestamp) <= self.ERROR_RATE_WINDOW_SECONDS
+        )
+        if total_recent == 0:
+            return 0.0
+        return len(recent) / total_recent
+
+    def _is_provider_unhealthy(self, model: str) -> bool:
+        return self._provider_error_rate(model) > self.ERROR_RATE_THRESHOLD
+
+    def _normalized_cost(self, model: str) -> float:
+        max_price = max(
+            (MODEL_PRICING.get(m, {}).get("input", 0) + MODEL_PRICING.get(m, {}).get("output", 0))
+            for m in self._eligible_models + [self.default_model]
+        ) or 1.0
+        pricing = MODEL_PRICING.get(model, {"input": 3e-6, "output": 15e-6})
+        combined = pricing["input"] + pricing["output"]
+        if max_price == 0:
+            return 1.0
+        return 1.0 - (combined / max_price)
+
+    def _normalized_latency(self, model: str) -> float:
+        now = time.time()
+        successes = [
+            e for e in self._events
+            if e.model == model and e.event_type == RouterEventType.SUCCESS
+            and (now - e.timestamp) <= self.ERROR_RATE_WINDOW_SECONDS
+        ]
+        if not successes:
+            return 0.5
+        avg_latency = sum(e.latency_ms for e in successes) / len(successes)
+        return 1.0 / (1.0 + avg_latency / 1000.0)
+
+    def _historical_success_rate(self, model: str, task_type: TaskType) -> float:
+        now = time.time()
+        thirty_days_ago = now - 30 * 86400
+        relevant = [
+            e for e in self._events
+            if e.model == model and e.task_type == task_type
+            and e.timestamp >= thirty_days_ago
+        ]
+        if not relevant:
+            return 0.85
+        successes = sum(1 for e in relevant if e.event_type == RouterEventType.SUCCESS)
+        return successes / len(relevant)
+
+    def _capability_match(self, model: str, task_type: TaskType) -> float:
+        caps = CAPABILITY_MATRIX.get(model, {"context_window": 128_000})
+        context: float = float(caps.get("context_window", 128_000))
+
+        task_context_need = {
+            TaskType.ONBOARDING: 64_000,
+            TaskType.REPRODUCTION: 32_000,
+            TaskType.PLANNING: 64_000,
+            TaskType.PATCHING: 128_000,
+            TaskType.VERIFYING: 32_000,
+            TaskType.REVIEWING: 64_000,
+        }.get(task_type, 64_000)
+
+        context_score = min(1.0, context / max(task_context_need, 1))
+
+        if caps.get("strength") == "deep_reasoning" and task_type in (TaskType.PATCHING, TaskType.PLANNING):
+            context_score = min(1.0, context_score * 1.1)
+        if caps.get("strength") == "cheap" and task_type == TaskType.PATCHING:
+            context_score *= 0.85
+
+        return context_score
+
+    def score_model(self, model: str, task_type: TaskType) -> float:
+        if self._is_provider_unhealthy(model):
+            return 0.0
+
+        headroom = self._model_quota_headroom.get(model, None)
+        if headroom is not None and headroom <= 0:
+            return 0.0
+
+        w = self.weights
+        return (
+            w.get("w1_cost", 0.25) * self._normalized_cost(model)
+            + w.get("w2_latency", 0.15) * self._normalized_latency(model)
+            + w.get("w3_success_rate", 0.35) * self._historical_success_rate(model, task_type)
+            + w.get("w4_capability", 0.25) * self._capability_match(model, task_type)
+        )
+
+    def rank_models(self, task_type: TaskType, excluded: Optional[List[str]] = None) -> List[Tuple[str, float]]:
+        excluded_set = set(excluded or [])
+        candidates = [m for m in self._eligible_models if m not in excluded_set]
+        if not candidates:
+            candidates = [self.default_model]
+
+        scored = [(m, self.score_model(m, task_type)) for m in candidates]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored
+
+    def select_model(
+        self,
+        task_type: TaskType,
+        excluded: Optional[List[str]] = None,
+    ) -> str:
+        ranked = self.rank_models(task_type, excluded=excluded)
+        for model, score in ranked:
+            if score > 0:
+                return model
+
+        return self.default_model
+
+    def build_fallback_cascade(self, task_type: TaskType) -> List[str]:
+        ranked = self.rank_models(task_type)
+        cascade = [m for m, s in ranked if s > 0]
+        if not cascade:
+            cascade = [self.default_model]
+        return cascade[:3]
 
     def resolve_model(self, task_node_name: str) -> str:
         if self.mock_mode:
             return "mock"
-        return self.node_model_map.get(task_node_name, self.default_model)
+
+        task_type = TaskType(task_node_name) if task_node_name in TaskType._value2member_map_ else None
+        if task_type is None:
+            return self.node_model_map.get(task_node_name, self.default_model)
+
+        return self.select_model(task_type)
+
+    def classify_patch_risk(
+        self,
+        diff_size: int,
+        touched_files: List[str],
+        prior_confidence: Optional[float] = None,
+    ) -> bool:
+        for glob_pattern in self.sensitive_globs:
+            for path in touched_files:
+                if fnmatch(path, glob_pattern):
+                    return True
+
+        if diff_size > 150:
+            return True
+
+        if prior_confidence is not None and prior_confidence < 0.6:
+            return True
+
+        return False
+
+    def _extract_patch_intent(self, patch_content: str) -> str:
+        lines = patch_content.strip().split("\n")
+        semantic_lines = [
+            line for line in lines
+            if (line.startswith("+") or line.startswith("-"))
+            and not line.startswith("+++") and not line.startswith("---")
+        ]
+        normalized = "\n".join(line.strip("+- ") for line in semantic_lines[:20])
+        return normalized[:500]
+
+    def needs_consensus(
+        self,
+        patch_diff: str,
+        touched_files: List[str],
+        prior_confidence: Optional[float] = None,
+        consensus_mode: str = "auto",
+    ) -> bool:
+        if consensus_mode == "always-on":
+            return True
+        if consensus_mode == "off":
+            return False
+
+        diff_line_count = len(patch_diff.strip().split("\n"))
+        return self.classify_patch_risk(diff_line_count, touched_files, prior_confidence)
+
+    async def verify_consensus(
+        self,
+        patch_contents: List[str],
+        required_agreement: int = 2,
+        generate_patch_fn: Optional[Callable[..., Any]] = None,
+    ) -> ConsensusResult:
+        if len(patch_contents) < required_agreement:
+            return ConsensusResult(
+                required_patches=required_agreement,
+                agreed_model_ids=[],
+                passed=False,
+            )
+
+        if len(patch_contents) < 2:
+            return ConsensusResult(
+                required_patches=required_agreement,
+                agreed_model_ids=["primary"],
+                passed=required_agreement <= 1,
+            )
+
+        intents = [self._extract_patch_intent(p) for p in patch_contents]
+        agreement_groups: List[List[Tuple[int, str]]] = []
+
+        for idx, intent in enumerate(intents):
+            matched = False
+            for group in agreement_groups:
+                base = group[0][1]
+                if self._intents_similar(base, intent):
+                    group.append((idx, intent))
+                    matched = True
+                    break
+            if not matched:
+                agreement_groups.append([(idx, intent)])
+
+        best_group = max(agreement_groups, key=len)
+        model_ids = [patch_contents[i][:30] for i, _ in best_group]
+        passed = len(best_group) >= required_agreement
+
+        return ConsensusResult(
+            required_patches=required_agreement,
+            agreed_model_ids=model_ids,
+            passed=passed,
+        )
+
+    def _intents_similar(self, intent_a: str, intent_b: str) -> bool:
+        if not intent_a or not intent_b:
+            return False
+        words_a = set(intent_a.lower().split())
+        words_b = set(intent_b.lower().split())
+        if not words_a or not words_b:
+            return False
+        intersection = words_a & words_b
+        union = words_a | words_b
+        jaccard = len(intersection) / len(union)
+        return jaccard >= 0.5
+
+    def get_adapter(self, task_node_name: Optional[str] = None) -> BaseModelAdapter:
+        return self.adapter
 
     def estimate_cost(self, model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
         pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["claude-3-5-sonnet-20241022"])
         return (prompt_tokens * pricing["input"]) + (completion_tokens * pricing["output"])
-

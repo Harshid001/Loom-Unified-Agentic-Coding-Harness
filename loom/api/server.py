@@ -35,6 +35,15 @@ except ImportError:
     Histogram = DummyMetricFactory()  # type: ignore
 
 from loom.adapters.router import ModelRouter
+from loom.business.entitlements import EntitlementService
+from loom.business.models import (
+    FeatureKey,
+    Membership,
+    MembershipRole,
+    Organization,
+    OrgTier,
+)
+from loom.business.rbac import RBACEnforcer
 from loom.memory.store import TieredMemoryStore
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
@@ -472,3 +481,65 @@ def rollback(run_id: str):
     success = sandbox.restore_snapshot(snapshot_id)
     return {"success": success, "snapshot_id": snapshot_id}
 
+
+_entitlements = EntitlementService()
+_default_org = Organization(name="Default", tier=OrgTier.SOLO)
+_entitlements.register_org(_default_org)
+_default_membership = Membership(user_id="dev_user", org_id=_default_org.id, role=MembershipRole.OWNER)
+_entitlements.add_membership(_default_membership)
+
+class EntitlementCheckRequest(BaseModel):
+    org_id: str = ""
+    feature_key: str
+
+class EntitlementCheckResponse(BaseModel):
+    allowed: bool
+    reason: Optional[str] = None
+
+@app.get("/api/v1/orgs/{org_id}/usage", dependencies=[Depends(verify_api_key)])
+def get_org_usage(org_id: str):
+    org = _entitlements.get_org(org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
+    from loom.business.usage_ledger import get_usage_ledger
+    ledger = get_usage_ledger()
+    snapshot = ledger.build_snapshot(org_id, org.tier)
+    allowed, reason = _entitlements.evaluate_quota(org_id, snapshot)
+    return {
+        "org_id": org_id,
+        "tier": org.tier.value,
+        "snapshot": snapshot.model_dump(),
+        "quota_ok": allowed,
+        "quota_reason": reason,
+    }
+
+@app.post("/v1/entitlements/check", dependencies=[Depends(verify_api_key)])
+@app.post("/api/v1/entitlements/check", dependencies=[Depends(verify_api_key)])
+def check_entitlement(req: EntitlementCheckRequest):
+    org_id = req.org_id or _default_org.id
+    try:
+        feature_key = FeatureKey(req.feature_key)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown feature_key: {req.feature_key}")
+    result = _entitlements.check(org_id, feature_key)
+    if not result.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=result.reason or "Feature not available on current tier"
+        )
+    return {"allowed": True}
+
+def require_entitlement(feature_key: FeatureKey):
+    def dependency(org_id: str = _default_org.id):
+        result = _entitlements.check(org_id, feature_key)
+        if not result.allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=result.reason or f"Feature '{feature_key.value}' not available"
+            )
+        return True
+    return dependency
+
+def get_rbac(org_id: str = _default_org.id, user_id: str = "dev_user") -> RBACEnforcer:
+    role = _entitlements.get_role(org_id, user_id)
+    return RBACEnforcer(role)

@@ -8,11 +8,13 @@ from pydantic import BaseModel, Field
 
 class NodeStatus(BaseModel):
     node_name: str
-    status: str = "pending"  # "pending", "running", "completed", "failed", "skipped"
+    status: str = "pending"
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
     output: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    attempt_count: int = 0
+    error_signatures: list[str] = Field(default_factory=list)
 
 
 class OnboardingSummary(BaseModel):
