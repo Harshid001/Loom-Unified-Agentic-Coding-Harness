@@ -30,6 +30,7 @@ try:
         TabbedContent,
         TabPane,
     )
+
     _HAS_TEXTUAL = True
 except ImportError:
     pass
@@ -81,7 +82,7 @@ def launch_tui() -> None:
                 Input(placeholder="Model name", id="inp-model", value="claude-3-5-sonnet-20241022"),
                 Static("Time: [blue]0.0s[/blue]", id="lbl-time"),
                 Static("Cost: [emerald]$0.0000[/emerald]", id="lbl-cost"),
-                id="metrics-row"
+                id="metrics-row",
             )
             yield Horizontal(
                 Button("▶ Start", id="btn-start", variant="success"),
@@ -90,7 +91,7 @@ def launch_tui() -> None:
                 Button("🔄 Rollback", id="btn-rollback", variant="default"),
                 Button("📜 History (Hide/Show)", id="btn-toggle-history", variant="default"),
                 Button("⏹ Stop", id="btn-stop", variant="error"),
-                id="controls-row"
+                id="controls-row",
             )
 
     class DAGProgressPanel(Widget):
@@ -101,7 +102,7 @@ def launch_tui() -> None:
             ("reproduction", "Reproduction Generator"),
             ("patcher", "LLM Code Mutator"),
             ("verifier", "Automated Verifier"),
-            ("reviewer", "Evidence Review Gate")
+            ("reviewer", "Evidence Review Gate"),
         ]
 
         def compose(self) -> ComposeResult:
@@ -110,7 +111,7 @@ def launch_tui() -> None:
                 yield Horizontal(
                     Static(f"⏳ {label}", id=f"status-{key}", classes="step-label"),
                     ProgressBar(total=100, id=f"pb-{key}", show_percentage=False),
-                    classes="step-row"
+                    classes="step-row",
                 )
 
         def update_step(self, step_name: str, status: str, percent: float = 0):
@@ -142,13 +143,23 @@ def launch_tui() -> None:
             yield Horizontal(
                 Label("Real-Time Execution Log Stream", classes="section-title"),
                 Button("Clear Logs", id="btn-clear-log", variant="default"),
-                id="log-header-row"
+                id="log-header-row",
             )
             yield RichLog(id="live-log-stream", max_lines=600, highlight=True, markup=True)
 
         def append_log(self, level: str, agent: str, message: str):
             ts = time.strftime("%H:%M:%S")
-            color = "cyan" if level == "info" else "yellow" if level == "warn" else "red" if level == "error" else "green" if level == "success" else "dim"
+            color = (
+                "cyan"
+                if level == "info"
+                else "yellow"
+                if level == "warn"
+                else "red"
+                if level == "error"
+                else "green"
+                if level == "success"
+                else "dim"
+            )
             entry = f"[dim]{ts}[/dim] [{color}]{level.upper():7s}[/{color}] [bold blue][{agent}][/bold blue] {message}"
             try:
                 self.query_one("#live-log-stream", RichLog).write(entry)
@@ -170,7 +181,7 @@ def launch_tui() -> None:
             yield Horizontal(
                 Button("✅ Approve Patch & Verify", id="btn-approve-patch", variant="success"),
                 Button("❌ Reject & Rollback Snapshot", id="btn-reject-patch", variant="error"),
-                id="diff-actions"
+                id="diff-actions",
             )
 
         def set_diff(self, diff_text: str):
@@ -204,10 +215,16 @@ def launch_tui() -> None:
                 mapper = RepoMapper()
                 repo_map = mapper.map_repository(str(Path.cwd()))
                 num_files = repo_map.total_files
-                langs = ", ".join([f"{k} ({v})" for k, v in repo_map.languages.items()]) if repo_map.languages else "Python"
+                langs = (
+                    ", ".join([f"{k} ({v})" for k, v in repo_map.languages.items()]) if repo_map.languages else "Python"
+                )
                 builds = ", ".join(repo_map.build_system) if repo_map.build_system else "pip/uv"
                 tests = ", ".join(repo_map.test_frameworks) if repo_map.test_frameworks else "pytest"
-                key_files = "\n".join([f"  • {f}" for f in repo_map.key_files[:5]]) if repo_map.key_files else "  • (No key files)"
+                key_files = (
+                    "\n".join([f"  • {f}" for f in repo_map.key_files[:5]])
+                    if repo_map.key_files
+                    else "  • (No key files)"
+                )
 
                 self.query_one("#ast-info", Static).update(
                     f"Sanitizer Guard: [bold green]ACTIVE (Prompt Injection Protection Enabled)[/bold green]\n"
@@ -224,7 +241,10 @@ def launch_tui() -> None:
 
         def compose(self) -> ComposeResult:
             yield Label("Evidence Bundle & Verification Gate", classes="section-title")
-            yield Static("[dim]No verification run recorded yet. Submit a prompt to execute verification.[/dim]", id="evidence-info")
+            yield Static(
+                "[dim]No verification run recorded yet. Submit a prompt to execute verification.[/dim]",
+                id="evidence-info",
+            )
 
         def set_evidence(self, passed: Optional[bool] = None, details: str = ""):
             ev_widget = self.query_one("#evidence-info", Static)
@@ -493,7 +513,9 @@ def launch_tui() -> None:
             elif btn_id == "btn-step":
                 self.query_one(LogConsole).append_log("info", "system", "Executing single step over...")
             elif btn_id == "btn-rollback":
-                self.query_one(LogConsole).append_log("warn", "system", "1-Click Snapshot Restoration executed! Workspace rolled back.")
+                self.query_one(LogConsole).append_log(
+                    "warn", "system", "1-Click Snapshot Restoration executed! Workspace rolled back."
+                )
             elif btn_id == "btn-toggle-history":
                 self.action_toggle_history()
             elif btn_id == "btn-stop":
@@ -502,7 +524,9 @@ def launch_tui() -> None:
             elif btn_id == "btn-approve-patch":
                 self.query_one(LogConsole).append_log("success", "reviewer", "Patch approved by human operator!")
             elif btn_id == "btn-reject-patch":
-                self.query_one(LogConsole).append_log("warn", "reviewer", "Patch rejected by human operator. Triggering rollback...")
+                self.query_one(LogConsole).append_log(
+                    "warn", "reviewer", "Patch rejected by human operator. Triggering rollback..."
+                )
             elif btn_id == "btn-clear-log":
                 self.query_one(LogConsole).clear_logs()
 
@@ -527,7 +551,9 @@ def launch_tui() -> None:
             diff_drawer = self.query_one(DiffDrawer)
 
             if not issue_text:
-                console.append_log("warn", "system", "Please type an issue prompt in the top box before pressing Enter or Start.")
+                console.append_log(
+                    "warn", "system", "Please type an issue prompt in the top box before pressing Enter or Start."
+                )
                 return
 
             self.pipeline_running = True
@@ -542,11 +568,36 @@ def launch_tui() -> None:
             start_time = time.time()
 
             steps = [
-                ("onboarding", "Repo Mapper & AST Index", "Parsing AST symbols & repository dependency map...", "Indexed workspace structure. Sanitizer status: SAFE."),
-                ("reproduction", "Reproduction Generator", "Generating pytest reproduction test case...", "Generated test reproduction targeting issue."),
-                ("patcher", "LLM Code Mutator", "Generating LLM code patch proposal...", "Unified diff patch generated and applied to sandbox snapshot."),
-                ("verifier", "Automated Verifier", "Executing automated test suite against sandbox...", "Automated verification tests PASSED."),
-                ("reviewer", "Evidence Review Gate", "Evaluating evidence bundle & security gates...", "Reviewer verdict: APPROVED.")
+                (
+                    "onboarding",
+                    "Repo Mapper & AST Index",
+                    "Parsing AST symbols & repository dependency map...",
+                    "Indexed workspace structure. Sanitizer status: SAFE.",
+                ),
+                (
+                    "reproduction",
+                    "Reproduction Generator",
+                    "Generating pytest reproduction test case...",
+                    "Generated test reproduction targeting issue.",
+                ),
+                (
+                    "patcher",
+                    "LLM Code Mutator",
+                    "Generating LLM code patch proposal...",
+                    "Unified diff patch generated and applied to sandbox snapshot.",
+                ),
+                (
+                    "verifier",
+                    "Automated Verifier",
+                    "Executing automated test suite against sandbox...",
+                    "Automated verification tests PASSED.",
+                ),
+                (
+                    "reviewer",
+                    "Evidence Review Gate",
+                    "Evaluating evidence bundle & security gates...",
+                    "Reviewer verdict: APPROVED.",
+                ),
             ]
 
             diff_drawer.set_diff("")
@@ -570,7 +621,9 @@ def launch_tui() -> None:
 
                 elapsed = time.time() - start_time
                 self.query_one("#lbl-time", Static).update(f"Time: [blue]{elapsed:.1f}s[/blue]")
-                self.query_one("#lbl-cost", Static).update(f"Cost: [emerald]${(0.0005 * (steps.index((step_key, label, msg1, msg2)) + 1)):.4f}[/emerald]")
+                self.query_one("#lbl-cost", Static).update(
+                    f"Cost: [emerald]${(0.0005 * (steps.index((step_key, label, msg1, msg2)) + 1)):.4f}[/emerald]"
+                )
 
             if self.pipeline_running:
                 console.append_log("success", "reviewer", f"LiveBox pipeline completed! Run ID: {run_id}")

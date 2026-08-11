@@ -42,7 +42,7 @@ class VerifierAgent(BaseAgent):
             "build_passed": res.build_passed,
             "tests_passed": res.tests_passed,
             "failure_reason": res.failure_reason,
-            "test_count": len(res.test_results)
+            "test_count": len(res.test_results),
         }
         state.shared_data["verification_output"] = verifier_output
         return verifier_output

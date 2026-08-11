@@ -162,17 +162,20 @@ async def _execute_task_graph(
         for group in parallel_groups:
             tasks: list[Any] = []
             for node_name, agent_cls in group:
-                model_name = advanced_router.resolve_model(node_name) if advanced_router else router.resolve_model(node_name)
+                model_name = (
+                    advanced_router.resolve_model(node_name) if advanced_router else router.resolve_model(node_name)
+                )
                 adapter = router.get_adapter(node_name)
                 status = NodeStatus(node_name=node_name, status="running", started_at=time.time())
                 state.nodes[node_name] = status
                 state.current_node = node_name
                 state.save_checkpoint()
                 tracer.log_event("task_start", node_name, {"model": model_name})
-                tasks.append(_run_agent_with_hooks(
-                    agent_cls, node_name, state, adapter, model_name,
-                    human_loop, streaming, tracer, cost_tracker
-                ))
+                tasks.append(
+                    _run_agent_with_hooks(
+                        agent_cls, node_name, state, adapter, model_name, human_loop, streaming, tracer, cost_tracker
+                    )
+                )
                 RecoveryManager.mark_node_completed(state.run_id, node_name)
 
             results: list = await asyncio.gather(*tasks, return_exceptions=True)
@@ -189,7 +192,9 @@ async def _execute_task_graph(
                     all_completed.append(node_name)
     else:
         for node_name, agent_cls in node_sequence:
-            model_name = advanced_router.resolve_model(node_name) if advanced_router else router.resolve_model(node_name)
+            model_name = (
+                advanced_router.resolve_model(node_name) if advanced_router else router.resolve_model(node_name)
+            )
             adapter = router.get_adapter(node_name)
             status = NodeStatus(node_name=node_name, status="running", started_at=time.time())
             state.nodes[node_name] = status
@@ -199,8 +204,7 @@ async def _execute_task_graph(
 
             try:
                 output = await _run_agent_with_hooks(
-                    agent_cls, node_name, state, adapter, model_name,
-                    human_loop, streaming, tracer, cost_tracker
+                    agent_cls, node_name, state, adapter, model_name, human_loop, streaming, tracer, cost_tracker
                 )
                 status.status = "completed"
                 status.completed_at = time.time()
@@ -220,8 +224,7 @@ async def _execute_task_graph(
                     console.print(f"[yellow]Retrying {node_name} with fallback model: {fallback}[/yellow]")
                     try:
                         output = await _run_agent_with_hooks(
-                            agent_cls, node_name, state, adapter, fallback,
-                            human_loop, streaming, tracer, cost_tracker
+                            agent_cls, node_name, state, adapter, fallback, human_loop, streaming, tracer, cost_tracker
                         )
                         status.status = "completed"
                         status.completed_at = time.time()
@@ -269,8 +272,7 @@ async def _run_monorepo(
         RecoveryManager.save_run(record)
 
         final_state = await _execute_task_graph(
-            state, router, advanced_router, tracer, cost_tracker,
-            human_loop, streaming, parallel
+            state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel
         )
         results[sp_name] = final_state
 
@@ -284,9 +286,7 @@ def version():
 
 
 @app.command()
-def init(
-    repo_path: str = typer.Option(".", "--path", "-p", help="Path to repository root")
-):
+def init(repo_path: str = typer.Option(".", "--path", "-p", help="Path to repository root")):
     """Intake repository, build file map, AST symbol index, and memory store."""
     path = Path(repo_path).resolve()
     console.print(f"[bold blue]Intaking repository at:[/bold blue] {path}")
@@ -295,11 +295,13 @@ def init(
     repo_map = mapper.map_repository(str(path))
 
     store = TieredMemoryStore()
-    store.add(MemoryItem(
-        tier=MemoryTier.PROJECT_CONVENTIONS,
-        content=f"Build systems: {', '.join(repo_map.build_system)}; Test frameworks: {', '.join(repo_map.test_frameworks)}",
-        source="loom_init"
-    ))
+    store.add(
+        MemoryItem(
+            tier=MemoryTier.PROJECT_CONVENTIONS,
+            content=f"Build systems: {', '.join(repo_map.build_system)}; Test frameworks: {', '.join(repo_map.test_frameworks)}",
+            source="loom_init",
+        )
+    )
 
     table = Table(title="Repository Intelligence Map")
     table.add_column("Property", style="cyan")
@@ -338,8 +340,7 @@ def wizard():
 
     router = ModelRouter(default_model=selections["model"], mock_mode=selections.get("mock", True))
     advanced_router = CostOptimizedRouter(
-        default_model=selections["model"],
-        profile=selections.get("routing_profile", "balanced")
+        default_model=selections["model"], profile=selections.get("routing_profile", "balanced")
     )
     human_loop = HumanInTheLoop() if selections.get("human_in_the_loop") else None
     streaming = StreamingOutput(console) if selections.get("streaming") else None
@@ -354,19 +355,33 @@ def wizard():
     if selections.get("monorepo_config") and selections.get("selected_subprojects"):
         if streaming is not None and console.is_terminal:
             with Live(streaming.render_context(), console=console, refresh_per_second=10):
-                results = asyncio.run(_run_monorepo(
+                results = asyncio.run(
+                    _run_monorepo(
+                        selections["monorepo_config"],
+                        selections["selected_subprojects"],
+                        issue,
+                        mock,
+                        selections["model"],
+                        advanced_router,
+                        human_loop,
+                        streaming,
+                        parallel,
+                    )
+                )
+        else:
+            results = asyncio.run(
+                _run_monorepo(
                     selections["monorepo_config"],
                     selections["selected_subprojects"],
-                    issue, mock, selections["model"],
-                    advanced_router, human_loop, streaming, parallel
-                ))
-        else:
-            results = asyncio.run(_run_monorepo(
-                selections["monorepo_config"],
-                selections["selected_subprojects"],
-                issue, mock, selections["model"],
-                advanced_router, human_loop, streaming, parallel
-            ))
+                    issue,
+                    mock,
+                    selections["model"],
+                    advanced_router,
+                    human_loop,
+                    streaming,
+                    parallel,
+                )
+            )
         _print_monorepo_summary(results)
         return
 
@@ -378,10 +393,11 @@ def wizard():
             console.print(f"[yellow]Resuming run {run_id} from {resume_from}[/yellow]")
             tracer = TelemetryTracer(run_id=run_id)
             cost_tracker = CostTracker(run_id=run_id)
-            final_state = asyncio.run(_execute_task_graph(
-                state, router, advanced_router, tracer, cost_tracker,
-                human_loop, streaming, parallel, resume_from
-            ))
+            final_state = asyncio.run(
+                _execute_task_graph(
+                    state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel, resume_from
+                )
+            )
             _print_run_summary(final_state, run_id)
             return
 
@@ -395,15 +411,15 @@ def wizard():
 
     if streaming is not None and console.is_terminal:
         with Live(streaming.render_context(), console=console, refresh_per_second=10):
-            final_state = asyncio.run(_execute_task_graph(
-                state, router, advanced_router, tracer, cost_tracker,
-                human_loop, streaming, parallel
-            ))
+            final_state = asyncio.run(
+                _execute_task_graph(
+                    state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel
+                )
+            )
     else:
-        final_state = asyncio.run(_execute_task_graph(
-            state, router, advanced_router, tracer, cost_tracker,
-            human_loop, streaming, parallel
-        ))
+        final_state = asyncio.run(
+            _execute_task_graph(state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel)
+        )
 
     _print_run_summary(final_state, run_id)
 
@@ -416,7 +432,9 @@ def fix(
     model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command"),
     api_base: Optional[str] = typer.Option(None, "--api-base", "-b", help="Pass custom LLM provider API base URL"),
-    profile: str = typer.Option("balanced", "--profile", help="Routing profile: balanced, minimal_cost, max_quality, hybrid"),
+    profile: str = typer.Option(
+        "balanced", "--profile", help="Routing profile: balanced, minimal_cost, max_quality, hybrid"
+    ),
     human: bool = typer.Option(False, "--human/--no-human", help="Enable human-in-the-loop approval"),
     stream: bool = typer.Option(True, "--stream/--no-stream", help="Enable real-time streaming output"),
     parallel: bool = typer.Option(False, "--parallel", help="Enable parallel agent execution where possible"),
@@ -435,8 +453,14 @@ def fix(
     init(repo_path=repo_path)
     issue(description=description, repo_path=repo_path)
     run(
-        mock=mock, model=model, api_key=api_key, api_base=api_base,
-        profile=profile, human=human, stream=stream, parallel=parallel,
+        mock=mock,
+        model=model,
+        api_key=api_key,
+        api_base=api_base,
+        profile=profile,
+        human=human,
+        stream=stream,
+        parallel=parallel,
         resume=resume,
     )
 
@@ -444,15 +468,12 @@ def fix(
 @app.command()
 def issue(
     description: str = typer.Argument(..., help="Issue or feature description to resolve"),
-    repo_path: str = typer.Option(".", "--path", "-p", help="Path to repository root")
+    repo_path: str = typer.Option(".", "--path", "-p", help="Path to repository root"),
 ):
     """Set active issue description for harness execution."""
     issue_file = Path.home() / ".loom" / "active_issue.json"
     issue_file.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "description": description,
-        "repo_path": str(Path(repo_path).resolve())
-    }
+    data = {"description": description, "repo_path": str(Path(repo_path).resolve())}
     issue_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
     console.print(Panel(f"[bold yellow]Active Issue Set:[/bold yellow]\n{description}", title="Loom Task Graph"))
 
@@ -463,7 +484,9 @@ def run(
     model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command"),
     api_base: Optional[str] = typer.Option(None, "--api-base", "-b", help="Pass custom LLM provider API base URL"),
-    profile: str = typer.Option("balanced", "--profile", help="Routing profile: balanced, minimal_cost, max_quality, hybrid"),
+    profile: str = typer.Option(
+        "balanced", "--profile", help="Routing profile: balanced, minimal_cost, max_quality, hybrid"
+    ),
     human: bool = typer.Option(False, "--human/--no-human", help="Enable human-in-the-loop approval"),
     stream: bool = typer.Option(True, "--stream/--no-stream", help="Enable real-time streaming output"),
     parallel: bool = typer.Option(False, "--parallel", help="Enable parallel agent execution where possible"),
@@ -487,15 +510,33 @@ def run(
 
             if streaming is not None and console.is_terminal:
                 with Live(streaming.render_context(), console=console, refresh_per_second=10):
-                    final_state = asyncio.run(_execute_task_graph(
-                        state, router, advanced_router, tracer, cost_tracker,
-                        human_loop, streaming, parallel, resume_point
-                    ))
+                    final_state = asyncio.run(
+                        _execute_task_graph(
+                            state,
+                            router,
+                            advanced_router,
+                            tracer,
+                            cost_tracker,
+                            human_loop,
+                            streaming,
+                            parallel,
+                            resume_point,
+                        )
+                    )
             else:
-                final_state = asyncio.run(_execute_task_graph(
-                    state, router, advanced_router, tracer, cost_tracker,
-                    human_loop, streaming, parallel, resume_point
-                ))
+                final_state = asyncio.run(
+                    _execute_task_graph(
+                        state,
+                        router,
+                        advanced_router,
+                        tracer,
+                        cost_tracker,
+                        human_loop,
+                        streaming,
+                        parallel,
+                        resume_point,
+                    )
+                )
             _print_run_summary(final_state, resume)
             return
 
@@ -515,9 +556,7 @@ def run(
     console.print(f"[bold magenta]Starting Loom Harness Execution (Run ID: {run_id})[/bold magenta]")
 
     state = OrchestratorState(
-        run_id=run_id,
-        repo_path=repo_path,
-        issue_description=issue_data.get("description", "Unspecified issue")
+        run_id=run_id, repo_path=repo_path, issue_description=issue_data.get("description", "Unspecified issue")
     )
     state.shared_data["mock_mode"] = mock
 
@@ -533,22 +572,26 @@ def run(
 
     if stream and streaming is not None and console.is_terminal:
         with Live(streaming.render_context(), console=console, refresh_per_second=10):
-            final_state = asyncio.run(_execute_task_graph(
-                state, router, advanced_router, tracer, cost_tracker,
-                human_loop, streaming, parallel
-            ))
+            final_state = asyncio.run(
+                _execute_task_graph(
+                    state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel
+                )
+            )
     else:
-        final_state = asyncio.run(_execute_task_graph(
-            state, router, advanced_router, tracer, cost_tracker,
-            human_loop, streaming, parallel
-        ))
+        final_state = asyncio.run(
+            _execute_task_graph(state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel)
+        )
 
     _print_run_summary(final_state, run_id)
 
 
 def _print_run_summary(final_state: OrchestratorState, run_id: str):
     report = final_state.shared_data.get("reviewer_report", {})
-    status_str = "[bold green]VERIFIED SUCCESS[/bold green]" if final_state.verification_passed else "[bold red]FAILED[/bold red]"
+    status_str = (
+        "[bold green]VERIFIED SUCCESS[/bold green]"
+        if final_state.verification_passed
+        else "[bold red]FAILED[/bold red]"
+    )
 
     console.print("\n" + "=" * 50)
     console.print(f"Loom Harness Execution Complete: {status_str}")
@@ -586,9 +629,7 @@ def _print_monorepo_summary(results: Dict[str, OrchestratorState]):
 
 
 @app.command()
-def trace(
-    run_id: str = typer.Argument(..., help="Run ID to view trace events for")
-):
+def trace(run_id: str = typer.Argument(..., help="Run ID to view trace events for")):
     """Inspect execution trace logs, DAG node events, and evidence for a run."""
     trace_file = Path.home() / ".loom" / "traces" / f"trace_{run_id}.json"
     if not trace_file.exists():
@@ -598,7 +639,9 @@ def trace(
     events = json.loads(trace_file.read_text(encoding="utf-8"))
     tree = Tree(f"[bold magenta]Execution Trace (Run: {run_id})[/bold magenta]")
     for ev in events:
-        tree.add(f"[cyan]{ev.get('event_type')}[/cyan] @ [yellow]{ev.get('node_name')}[/yellow] - {json.dumps(ev.get('data'))}")
+        tree.add(
+            f"[cyan]{ev.get('event_type')}[/cyan] @ [yellow]{ev.get('node_name')}[/yellow] - {json.dumps(ev.get('data'))}"
+        )
     console.print(tree)
 
     record = RecoveryManager.load_run(run_id)
@@ -611,9 +654,7 @@ def trace(
 
 
 @app.command()
-def rollback(
-    run_id: str = typer.Argument(..., help="Run ID to revert workspace changes for")
-):
+def rollback(run_id: str = typer.Argument(..., help="Run ID to revert workspace changes for")):
     """Roll back repository workspace to snapshot before patch application."""
     checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
@@ -657,7 +698,9 @@ def resume_run(
         return
 
     if not RecoveryManager.can_resume(run_id):
-        console.print(f"[red]Run {run_id} cannot be resumed (not found, already completed, or max retries exceeded).[/red]")
+        console.print(
+            f"[red]Run {run_id} cannot be resumed (not found, already completed, or max retries exceeded).[/red]"
+        )
         return
 
     record = RecoveryManager.load_run(run_id)
@@ -674,10 +717,9 @@ def resume_run(
     tracer = TelemetryTracer(run_id=run_id)
     cost_tracker = CostTracker(run_id=run_id)
 
-    final_state = asyncio.run(_execute_task_graph(
-        state, router, advanced_router, tracer, cost_tracker,
-        resume_from=resume_point
-    ))
+    final_state = asyncio.run(
+        _execute_task_graph(state, router, advanced_router, tracer, cost_tracker, resume_from=resume_point)
+    )
     _print_run_summary(final_state, run_id)
 
 
@@ -692,15 +734,17 @@ def plugins():
         return
 
     for m in manifests:
-        console.print(Panel(
-            f"Version: {m.version}\n"
-            f"Author: {m.author}\n"
-            f"Description: {m.description}\n"
-            f"Hooks: {', '.join(m.hooks) if m.hooks else 'none'}\n"
-            f"Custom Agents: {', '.join(m.custom_agents) if m.custom_agents else 'none'}",
-            title=f"[cyan]{m.name}[/cyan]",
-            border_style="green"
-        ))
+        console.print(
+            Panel(
+                f"Version: {m.version}\n"
+                f"Author: {m.author}\n"
+                f"Description: {m.description}\n"
+                f"Hooks: {', '.join(m.hooks) if m.hooks else 'none'}\n"
+                f"Custom Agents: {', '.join(m.custom_agents) if m.custom_agents else 'none'}",
+                title=f"[cyan]{m.name}[/cyan]",
+                border_style="green",
+            )
+        )
 
 
 @app.command()
@@ -745,7 +789,7 @@ def bench():
             "ON" if cfg["memory_enabled"] else "OFF",
             "ON" if cfg["context_ranking_enabled"] else "OFF",
             "ON" if cfg["multi_agent_enabled"] else "OFF",
-            "ON" if cfg["verification_enabled"] else "OFF"
+            "ON" if cfg["verification_enabled"] else "OFF",
         )
 
     console.print(table)
@@ -761,10 +805,11 @@ def tui():
 @app.command()
 def server(
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host address"),
-    port: int = typer.Option(8000, "--port", "-p", help="Port number")
+    port: int = typer.Option(8000, "--port", "-p", help="Port number"),
 ):
     """Start Loom API Backend Server connecting Web UI & Terminal."""
     import uvicorn
+
     console.print(f"[bold magenta]Starting Loom API Server on http://{host}:{port}[/bold magenta]")
     uvicorn.run("loom.api.server:app", host=host, port=port, reload=False)
 
@@ -774,10 +819,13 @@ def browser(
     url: str = typer.Option("http://localhost:3000", "--url", "-u", help="URL to navigate and verify"),
     headed: bool = typer.Option(False, "--headed", help="Open visible Chromium browser window on desktop screen"),
     open_sys: bool = typer.Option(False, "--open", "-o", help="Open default system browser directly"),
-    screenshot: str = typer.Option("artifacts/screenshots/page.png", "--screenshot", "-s", help="Output screenshot path"),
+    screenshot: str = typer.Option(
+        "artifacts/screenshots/page.png", "--screenshot", "-s", help="Output screenshot path"
+    ),
 ):
     """Launch Loom Browser subagent to navigate, capture screenshots, and perform E2E web verification."""
     import webbrowser
+
     if open_sys:
         console.print(f"[bold cyan]Opening system browser directly to:[/bold cyan] {url}")
         webbrowser.open(url)

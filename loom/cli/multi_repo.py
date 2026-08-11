@@ -93,7 +93,8 @@ class MonorepoScanner:
                 sp.depends_on = deps
 
         config.shared_packages = [
-            sp.name for sp in config.sub_projects
+            sp.name
+            for sp in config.sub_projects
             if any(k in sp.name.lower() for k in ("common", "shared", "lib", "util", "core", "base"))
         ]
 

@@ -22,10 +22,7 @@ class StreamingOutput:
         self._tasks: Dict[str, Any] = {}
 
     def start_node(self, node_name: str, description: str = ""):
-        task_id = self.progress.add_task(
-            f"[cyan]{node_name}[/cyan] {description}",
-            total=100
-        )
+        task_id = self.progress.add_task(f"[cyan]{node_name}[/cyan] {description}", total=100)
         self._tasks[node_name] = task_id
         return task_id
 
@@ -38,9 +35,7 @@ class StreamingOutput:
         if node_name in self._tasks:
             status = "[green]DONE" if success else "[red]FAILED"
             self.progress.update(
-                self._tasks[node_name],
-                completed=100,
-                description=f"[cyan]{node_name}[/cyan] {status}"
+                self._tasks[node_name], completed=100, description=f"[cyan]{node_name}[/cyan] {status}"
             )
 
     def render_context(self):
@@ -67,13 +62,7 @@ class StreamingOutput:
             cost = data.get("cost_usd", 0)
             duration = data.get("duration", 0)
 
-            table.add_row(
-                node_name,
-                status_style,
-                str(tokens),
-                f"${cost:.4f}",
-                f"{duration:.1f}s"
-            )
+            table.add_row(node_name, status_style, str(tokens), f"${cost:.4f}", f"{duration:.1f}s")
 
         self.console.print(table)
 
@@ -101,4 +90,4 @@ class AsyncStreamProcessor:
         """Simulate streaming for mock mode by yielding content character by character."""
         for i in range(0, len(content), chunk_size):
             time.sleep(delay)
-            yield content[i:i + chunk_size]
+            yield content[i : i + chunk_size]

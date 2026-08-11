@@ -1,12 +1,12 @@
-import asyncio
 import pytest
-from pathlib import Path
+
+from loom.adapters.router import ModelRouter
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
-from loom.adapters.router import ModelRouter
-from loom.telemetry.tracer import TelemetryTracer
-from loom.telemetry.cost_tracker import CostTracker
 from loom.sandbox.local_process import LocalProcessSandbox
+from loom.telemetry.cost_tracker import CostTracker
+from loom.telemetry.tracer import TelemetryTracer
+
 
 @pytest.mark.asyncio
 async def test_full_pipeline_e2e(tmp_path):
@@ -20,7 +20,7 @@ async def test_full_pipeline_e2e(tmp_path):
     state = OrchestratorState(
         run_id=run_id,
         repo_path=str(repo_dir),
-        issue_description="Fix bug in add function: returns a - b instead of a + b"
+        issue_description="Fix bug in add function: returns a - b instead of a + b",
     )
 
     router = ModelRouter(default_model="claude-3-5-sonnet-20241022", mock_mode=True)
@@ -41,7 +41,7 @@ async def test_full_pipeline_e2e(tmp_path):
     sandbox = LocalProcessSandbox(repo_path=str(repo_dir))
     snapshot_id = sandbox.create_snapshot("Pre-patch snapshot")
     assert snapshot_id is not None
-    
+
     # Modify file and restore
     src_file.write_text("broken content", encoding="utf-8")
     success = sandbox.restore_snapshot(snapshot_id)

@@ -10,6 +10,7 @@ class LanguageInfo(BaseModel):
     file_count: int = 0
     extensions: List[str] = Field(default_factory=list)
 
+
 class RepoMap(BaseModel):
     root_path: str
     total_files: int = 0
@@ -19,12 +20,23 @@ class RepoMap(BaseModel):
     key_files: List[str] = Field(default_factory=list)
     file_tree: List[str] = Field(default_factory=list)
 
+
 class RepoMapper:
     """Scans repository structure, languages, build setup, and test entry points."""
 
     IGNORE_DIRS = {
-        ".git", ".venv", "node_modules", "__pycache__", ".pytest_cache",
-        "dist", "build", ".next", ".cache", "target", "vendor", ".gemini"
+        ".git",
+        ".venv",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        "dist",
+        "build",
+        ".next",
+        ".cache",
+        "target",
+        "vendor",
+        ".gemini",
     }
 
     BUILD_INDICATORS = {
@@ -35,7 +47,7 @@ class RepoMapper:
         "go.mod": ("Go", "go modules"),
         "pom.xml": ("Java", "maven"),
         "build.gradle": ("Java/Kotlin", "gradle"),
-        "Makefile": ("Polyglot", "make")
+        "Makefile": ("Polyglot", "make"),
     }
 
     TEST_INDICATORS = {
@@ -43,7 +55,7 @@ class RepoMapper:
         "conftest.py": "pytest",
         "jest.config.js": "jest",
         "jest.config.ts": "jest",
-        "vitest.config.ts": "vitest"
+        "vitest.config.ts": "vitest",
     }
 
     EXT_MAP = {
@@ -61,7 +73,7 @@ class RepoMapper:
         ".md": "Markdown",
         ".json": "JSON",
         ".yaml": "YAML",
-        ".yml": "YAML"
+        ".yml": "YAML",
     }
 
     def map_repository(self, repo_path: str, max_depth: int = 4) -> RepoMap:
@@ -123,5 +135,5 @@ class RepoMapper:
             build_system=sorted(list(build_systems)),
             test_frameworks=sorted(list(test_frameworks)),
             key_files=sorted(key_files),
-            file_tree=file_tree[:300]
+            file_tree=file_tree[:300],
         )

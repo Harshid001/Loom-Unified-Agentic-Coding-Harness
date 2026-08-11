@@ -14,6 +14,7 @@ class CommitInfo(BaseModel):
     message: str
     files_changed: List[str] = Field(default_factory=list)
 
+
 class GitHistoryAnalyzer:
     """Analyzes Git history, file churn, and recent commits in the repository."""
 
@@ -32,13 +33,11 @@ class GitHistoryAnalyzer:
                 if len(header) >= 4:
                     commit_hash, author, date, message = header[0], header[1], header[2], header[3]
                     files = lines[1:]
-                    commits.append(CommitInfo(
-                        commit_hash=commit_hash[:8],
-                        author=author,
-                        date=date,
-                        message=message,
-                        files_changed=files
-                    ))
+                    commits.append(
+                        CommitInfo(
+                            commit_hash=commit_hash[:8], author=author, date=date, message=message, files_changed=files
+                        )
+                    )
         except (subprocess.CalledProcessError, FileNotFoundError, OSError, ValueError) as err:
             logger.warning("Failed to retrieve git history for %s: %s", repo_path, err)
 
@@ -57,4 +56,3 @@ class GitHistoryAnalyzer:
             logger.warning("Failed to retrieve git file churn for %s: %s", repo_path, err)
 
         return churn
-

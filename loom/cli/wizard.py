@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 try:
     import questionary
+
     HAS_QUESTIONARY = True
 except ImportError:
     HAS_QUESTIONARY = False
@@ -110,7 +111,9 @@ class InteractiveWizard:
         mapper = RepoMapper()
         repo_map = mapper.map_repository(repo_path)
         self._selections["repo_map"] = repo_map
-        self.console.print(f"[green]Found {repo_map.total_files} files, languages: {list(repo_map.languages.keys())}[/green]")
+        self.console.print(
+            f"[green]Found {repo_map.total_files} files, languages: {list(repo_map.languages.keys())}[/green]"
+        )
 
     def _step_issue(self):
         self.console.rule("[cyan]Step 2: Issue[/cyan]")
@@ -132,8 +135,7 @@ class InteractiveWizard:
         profile = self._select("Select routing profile:", profiles, default="balanced")
 
         router = CostOptimizedRouter(
-            default_model=self._selections.get("model", "claude-3-5-sonnet-20241022"),
-            profile=profile
+            default_model=self._selections.get("model", "claude-3-5-sonnet-20241022"), profile=profile
         )
         self._selections["routing_profile"] = profile
 
@@ -187,7 +189,7 @@ class InteractiveWizard:
             f"Parallel: {self._selections.get('parallel', False)}\n"
             f"Plugins: {self._selections.get('load_plugins', True)}",
             title="Configuration",
-            border_style="green"
+            border_style="green",
         )
         self.console.print(summary)
 

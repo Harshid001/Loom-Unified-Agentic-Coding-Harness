@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 try:
     from playwright.async_api import async_playwright
+
     _HAS_PLAYWRIGHT = True
 except ImportError:
     _HAS_PLAYWRIGHT = False
@@ -26,7 +27,9 @@ class LoomBrowserRunner:
     async def start(self) -> None:
         """Launch browser instance."""
         if not _HAS_PLAYWRIGHT:
-            raise RuntimeError("playwright package is not installed. Run: pip install playwright && playwright install chromium")
+            raise RuntimeError(
+                "playwright package is not installed. Run: pip install playwright && playwright install chromium"
+            )
         playwright_obj = await async_playwright().start()
         self._playwright = playwright_obj
         self._browser = await playwright_obj.chromium.launch(headless=self.headless)

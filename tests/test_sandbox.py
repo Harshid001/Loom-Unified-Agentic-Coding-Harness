@@ -1,5 +1,6 @@
 from loom.sandbox.local_process import LocalProcessSandbox
 
+
 def test_local_sandbox(tmp_path):
     sandbox = LocalProcessSandbox(str(tmp_path))
     res = sandbox.run_command("python -c \"print('hello')\"")
@@ -25,4 +26,3 @@ def test_cross_instance_rollback(tmp_path):
 
     assert success is True
     assert test_file.read_text(encoding="utf-8") == "original content"
-

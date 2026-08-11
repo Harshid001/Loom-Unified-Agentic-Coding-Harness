@@ -1,20 +1,21 @@
 import asyncio
+
 import pytest
+
 from loom.adapters.base import ModelRequest
 from loom.adapters.litellm_adapter import LiteLLMAdapter
 from loom.adapters.router import ModelRouter
 
+
 def test_mock_adapter():
     async def run():
         adapter = LiteLLMAdapter(mock_mode=True)
-        req = ModelRequest(
-            model="mock",
-            messages=[{"role": "user", "content": "Test issue reproduction"}]
-        )
+        req = ModelRequest(model="mock", messages=[{"role": "user", "content": "Test issue reproduction"}])
         res = await adapter.generate(req)
         assert res.content is not None
         assert "Reproduction" in res.content
         assert res.usage.total_tokens > 0
+
     asyncio.run(run())
 
 
@@ -24,7 +25,7 @@ def test_model_router():
 
 
 def test_litellm_adapter_live_mocked():
-    from unittest.mock import patch, AsyncMock, MagicMock
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     async def run():
         adapter = LiteLLMAdapter(mock_mode=False)
@@ -53,7 +54,7 @@ def test_litellm_adapter_live_mocked():
             model="claude-3-5-sonnet-20241022",
             messages=[{"role": "user", "content": "Run tests"}],
             system_prompt="You are a helpful assistant",
-            tools=[{"type": "function", "function": {"name": "execute_command"}}]
+            tools=[{"type": "function", "function": {"name": "execute_command"}}],
         )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
@@ -72,13 +73,12 @@ def test_litellm_adapter_live_mocked():
 
 
 def test_litellm_adapter_exception_in_production():
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
 
     async def run():
         adapter = LiteLLMAdapter(mock_mode=False)
         req = ModelRequest(
-            model="claude-3-5-sonnet-20241022",
-            messages=[{"role": "user", "content": "Test patch issue"}]
+            model="claude-3-5-sonnet-20241022", messages=[{"role": "user", "content": "Test patch issue"}]
         )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
@@ -93,4 +93,3 @@ def test_litellm_adapter_exception_in_production():
         assert "Applied patch" in res.content
 
     asyncio.run(run())
-

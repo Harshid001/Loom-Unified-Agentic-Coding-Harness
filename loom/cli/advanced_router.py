@@ -31,21 +31,21 @@ class CostOptimizedRouter:
                 RoutingRule(agent_name="patcher", model="claude-3-5-sonnet-20241022", priority=2),
                 RoutingRule(agent_name="verifier", model="gpt-4o", priority=1),
                 RoutingRule(agent_name="reviewer", model="claude-3-5-sonnet-20241022", priority=2),
-            ]
+            ],
         ),
         "minimal_cost": RoutingProfile(
             name="minimal_cost",
             description="Lowest cost — routes everything to cheapest available model",
             rules=[
                 RoutingRule(agent_name="*", model="gpt-4o", priority=0),
-            ]
+            ],
         ),
         "max_quality": RoutingProfile(
             name="max_quality",
             description="Maximum quality — routes everything to Claude 3.5 Sonnet",
             rules=[
                 RoutingRule(agent_name="*", model="claude-3-5-sonnet-20241022", priority=3),
-            ]
+            ],
         ),
         "hybrid": RoutingProfile(
             name="hybrid",
@@ -56,7 +56,7 @@ class CostOptimizedRouter:
                 RoutingRule(agent_name="patcher", model="claude-3-5-sonnet-20241022", priority=2),
                 RoutingRule(agent_name="verifier", model="gpt-4o", priority=1),
                 RoutingRule(agent_name="reviewer", model="claude-3-5-sonnet-20241022", priority=2),
-            ]
+            ],
         ),
     }
 
@@ -89,10 +89,7 @@ class CostOptimizedRouter:
         return self.default_model
 
     def estimate_cost(
-        self,
-        agent_name: str,
-        estimated_input_tokens: int = 500,
-        estimated_output_tokens: int = 1000
+        self, agent_name: str, estimated_input_tokens: int = 500, estimated_output_tokens: int = 1000
     ) -> Tuple[str, float]:
         model = self.resolve_model(agent_name)
         rates = self.MODEL_COSTS.get(model, {"input": 0.000003, "output": 0.000015})

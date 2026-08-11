@@ -12,14 +12,11 @@ class CommandResult(BaseModel):
     duration_seconds: float
     timed_out: bool = False
 
+
 class BaseSandbox(ABC):
     @abstractmethod
     def run_command(
-        self,
-        cmd: str,
-        cwd: Optional[str] = None,
-        timeout: int = 60,
-        env: Optional[Dict[str, str]] = None
+        self, cmd: str, cwd: Optional[str] = None, timeout: int = 60, env: Optional[Dict[str, str]] = None
     ) -> CommandResult:
         """Run a command inside the sandbox."""
         pass

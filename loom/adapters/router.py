@@ -126,14 +126,14 @@ class ModelRouter:
     def _provider_error_rate(self, model: str) -> float:
         now = time.time()
         recent = [
-            e for e in self._events
+            e
+            for e in self._events
             if e.model == model
             and e.event_type in (RouterEventType.FAILURE, RouterEventType.TIMEOUT)
             and (now - e.timestamp) <= self.ERROR_RATE_WINDOW_SECONDS
         ]
         total_recent = sum(
-            1 for e in self._events
-            if e.model == model and (now - e.timestamp) <= self.ERROR_RATE_WINDOW_SECONDS
+            1 for e in self._events if e.model == model and (now - e.timestamp) <= self.ERROR_RATE_WINDOW_SECONDS
         )
         if total_recent == 0:
             return 0.0
@@ -143,10 +143,13 @@ class ModelRouter:
         return self._provider_error_rate(model) > self.ERROR_RATE_THRESHOLD
 
     def _normalized_cost(self, model: str) -> float:
-        max_price = max(
-            (MODEL_PRICING.get(m, {}).get("input", 0) + MODEL_PRICING.get(m, {}).get("output", 0))
-            for m in self._eligible_models + [self.default_model]
-        ) or 1.0
+        max_price = (
+            max(
+                (MODEL_PRICING.get(m, {}).get("input", 0) + MODEL_PRICING.get(m, {}).get("output", 0))
+                for m in self._eligible_models + [self.default_model]
+            )
+            or 1.0
+        )
         pricing = MODEL_PRICING.get(model, {"input": 3e-6, "output": 15e-6})
         combined = pricing["input"] + pricing["output"]
         if max_price == 0:
@@ -156,8 +159,10 @@ class ModelRouter:
     def _normalized_latency(self, model: str) -> float:
         now = time.time()
         successes = [
-            e for e in self._events
-            if e.model == model and e.event_type == RouterEventType.SUCCESS
+            e
+            for e in self._events
+            if e.model == model
+            and e.event_type == RouterEventType.SUCCESS
             and (now - e.timestamp) <= self.ERROR_RATE_WINDOW_SECONDS
         ]
         if not successes:
@@ -169,9 +174,7 @@ class ModelRouter:
         now = time.time()
         thirty_days_ago = now - 30 * 86400
         relevant = [
-            e for e in self._events
-            if e.model == model and e.task_type == task_type
-            and e.timestamp >= thirty_days_ago
+            e for e in self._events if e.model == model and e.task_type == task_type and e.timestamp >= thirty_days_ago
         ]
         if not relevant:
             return 0.85
@@ -277,9 +280,11 @@ class ModelRouter:
     def _extract_patch_intent(self, patch_content: str) -> str:
         lines = patch_content.strip().split("\n")
         semantic_lines = [
-            line for line in lines
+            line
+            for line in lines
             if (line.startswith("+") or line.startswith("-"))
-            and not line.startswith("+++") and not line.startswith("---")
+            and not line.startswith("+++")
+            and not line.startswith("---")
         ]
         normalized = "\n".join(line.strip("+- ") for line in semantic_lines[:20])
         return normalized[:500]

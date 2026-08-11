@@ -10,12 +10,7 @@ class MemoryRetriever:
     def __init__(self, store: TieredMemoryStore):
         self.store = store
 
-    def retrieve(
-        self,
-        query: str,
-        tiers: Optional[List[MemoryTier]] = None,
-        limit: int = 5
-    ) -> List[MemoryItem]:
+    def retrieve(self, query: str, tiers: Optional[List[MemoryTier]] = None, limit: int = 5) -> List[MemoryItem]:
         results: List[MemoryItem] = []
 
         if not tiers:

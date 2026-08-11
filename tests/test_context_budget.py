@@ -1,5 +1,3 @@
-
-
 from loom.context.budget import (
     RELEVANCE_WEIGHTS,
     BudgetAssembly,
@@ -99,7 +97,9 @@ class TestGraphProximity:
 
     def test_connected_file_via_edge(self):
         b = ContextBudgetManager()
-        edge = GraphEdge(source_file="src/auth/login.py", target_file="src/utils/helpers.py", symbol_name="hash_password")
+        edge = GraphEdge(
+            source_file="src/auth/login.py", target_file="src/utils/helpers.py", symbol_name="hash_password"
+        )
         graph = CallGraph(
             nodes={"src/auth/login.py", "src/utils/helpers.py"},
             edges=[edge],
@@ -190,8 +190,11 @@ class TestBudgetAssembly:
             Symbol(name="f1", kind="function", file_path="a.py", line_number=1),
         ]
         result = b.assemble_context(
-            "Fix the bug", syms, "Fix the bug",
-            ["a.py"], ["convention: use logging"],
+            "Fix the bug",
+            syms,
+            "Fix the bug",
+            ["a.py"],
+            ["convention: use logging"],
             repo_path=".",
         )
         assert isinstance(result, BudgetAssembly)
@@ -204,12 +207,27 @@ class TestBudgetAssembly:
     def test_assembly_includes_ranked_symbols(self):
         b = ContextBudgetManager(model_name="claude-3-5-sonnet-20241022")
         syms = [
-            Symbol(name="calculate_total", kind="function", file_path="src/billing.py", line_number=10, docstring="Calculate the total price"),
-            Symbol(name="validate_user", kind="function", file_path="src/auth.py", line_number=20, docstring="Validate user credentials"),
+            Symbol(
+                name="calculate_total",
+                kind="function",
+                file_path="src/billing.py",
+                line_number=10,
+                docstring="Calculate the total price",
+            ),
+            Symbol(
+                name="validate_user",
+                kind="function",
+                file_path="src/auth.py",
+                line_number=20,
+                docstring="Validate user credentials",
+            ),
         ]
         result = b.assemble_context(
-            "Fix price calculation", syms, "Fix price calculation",
-            ["src/billing.py"], [],
+            "Fix price calculation",
+            syms,
+            "Fix price calculation",
+            ["src/billing.py"],
+            [],
             repo_path=".",
         )
         assert len(result.ranked_symbols) == 2
@@ -217,13 +235,15 @@ class TestBudgetAssembly:
     def test_truncated_count_increases_on_tight_budget(self):
         b = ContextBudgetManager(model_name="mock")
         syms = [
-            Symbol(name=f"sym_{i}", kind="function", file_path=f"file_{i}.py", line_number=1,
-                   docstring="x" * 500)
+            Symbol(name=f"sym_{i}", kind="function", file_path=f"file_{i}.py", line_number=1, docstring="x" * 500)
             for i in range(100)
         ]
         result = b.assemble_context(
-            "Fix the bug " * 50, syms, "Fix the bug " * 50,
-            ["file_0.py"], [],
+            "Fix the bug " * 50,
+            syms,
+            "Fix the bug " * 50,
+            ["file_0.py"],
+            [],
             repo_path=".",
         )
         assert result.truncated_count > 0
@@ -231,7 +251,11 @@ class TestBudgetAssembly:
     def test_no_symbols_produces_empty_assembly(self):
         b = ContextBudgetManager()
         result = b.assemble_context(
-            "Fix", [], "Fix", [], [],
+            "Fix",
+            [],
+            "Fix",
+            [],
+            [],
             repo_path=".",
         )
         assert len(result.ranked_symbols) == 0
@@ -240,20 +264,24 @@ class TestBudgetAssembly:
     def test_headroom_present_with_small_input(self):
         b = ContextBudgetManager(model_name="claude-3-5-sonnet-20241022")
         result = b.assemble_context(
-            "Fix", [], "Fix", [], [],
+            "Fix",
+            [],
+            "Fix",
+            [],
+            [],
             repo_path=".",
         )
         assert result.headroom_remaining > 0
 
     def test_headroom_zero_with_large_input(self):
         b = ContextBudgetManager(model_name="mock")
-        syms = [
-            Symbol(name=f"sym_{i}", kind="function", file_path=f"file_{i}.py", line_number=1)
-            for i in range(30)
-        ]
+        syms = [Symbol(name=f"sym_{i}", kind="function", file_path=f"file_{i}.py", line_number=1) for i in range(30)]
         result = b.assemble_context(
-            "Fix the bug " * 200, syms, "Fix the bug " * 200,
-            ["file_0.py"], ["memory " * 50],
+            "Fix the bug " * 200,
+            syms,
+            "Fix the bug " * 200,
+            ["file_0.py"],
+            ["memory " * 50],
             repo_path=".",
         )
         assert result.headroom_remaining >= 0
@@ -274,12 +302,15 @@ class TestRankedSymbolTruncation:
     def test_truncated_flag_set_on_budget_exhausted(self):
         b = ContextBudgetManager(model_name="mock")
         syms = [
-            Symbol(name=f"f{i}", kind="function", file_path=f"f{i}.py", line_number=1,
-                   docstring="x" * 400)
+            Symbol(name=f"f{i}", kind="function", file_path=f"f{i}.py", line_number=1, docstring="x" * 400)
             for i in range(100)
         ]
         result = b.assemble_context(
-            "fix " * 200, syms, "fix " * 200, ["f0.py"], [],
+            "fix " * 200,
+            syms,
+            "fix " * 200,
+            ["f0.py"],
+            [],
             repo_path=".",
         )
         truncated = [rs for rs in result.ranked_symbols if rs.context_truncated]
@@ -293,7 +324,11 @@ class TestRankedSymbolTruncation:
             Symbol(name="f1", kind="function", file_path="f1.py", line_number=1),
         ]
         result = b.assemble_context(
-            "fix", syms, "fix", ["f1.py"], [],
+            "fix",
+            syms,
+            "fix",
+            ["f1.py"],
+            [],
             repo_path=".",
         )
         truncated = [rs for rs in result.ranked_symbols if rs.context_truncated]

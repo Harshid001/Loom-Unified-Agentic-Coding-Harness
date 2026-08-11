@@ -15,22 +15,29 @@ from pydantic import BaseModel
 
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
     CONTENT_TYPE_LATEST = "text/plain"
+
     def generate_latest(registry: Any = None, escaping: Any = None) -> bytes:  # type: ignore[misc]
         return b"# prometheus_client not installed\n"
+
     class DummyMetric:
         def labels(self, **kwargs: Any) -> "DummyMetric":
             return self
+
         def inc(self, amount: float = 1) -> None:
             pass
+
         def observe(self, amount: float) -> None:
             pass
+
     class DummyMetricFactory:
         def __call__(self, *args: Any, **kwargs: Any) -> DummyMetric:
             return DummyMetric()
+
     Counter = DummyMetricFactory()  # type: ignore
     Histogram = DummyMetricFactory()  # type: ignore
 
@@ -56,7 +63,7 @@ app = FastAPI(
     description="Unified Agentic Coding Harness API Server for orchestration, execution, and trace management.",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 # PRD-001: Hardened CORS configuration
@@ -72,6 +79,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # PRD-005 & PRD-006: Security Headers Middleware
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
@@ -83,6 +91,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Content-Security-Policy"] = "default-src 'self'"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("loom.api")
@@ -96,6 +105,7 @@ RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
 RATE_LIMIT_WINDOW = 60  # seconds
 _rate_limit_memory_store: Dict[str, List[float]] = {}
 
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     start_time = time.time()
@@ -105,16 +115,15 @@ async def rate_limit_middleware(request: Request, call_next):
         timestamps = [ts for ts in _rate_limit_memory_store.get(client_ip, []) if now - ts < RATE_LIMIT_WINDOW]
         if len(timestamps) >= RATE_LIMIT_REQUESTS:
             REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, status="429").inc()
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Rate limit exceeded. Too many requests."}
-            )
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Too many requests."})
         timestamps.append(now)
         _rate_limit_memory_store[client_ip] = timestamps
 
         # Bounded store cleanup (PRD-007)
         if len(_rate_limit_memory_store) > 5000:
-            stale = [ip for ip, tss in _rate_limit_memory_store.items() if not tss or (now - tss[-1] > RATE_LIMIT_WINDOW)]
+            stale = [
+                ip for ip, tss in _rate_limit_memory_store.items() if not tss or (now - tss[-1] > RATE_LIMIT_WINDOW)
+            ]
             for ip in stale:
                 _rate_limit_memory_store.pop(ip, None)
 
@@ -124,8 +133,10 @@ async def rate_limit_middleware(request: Request, call_next):
     REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, status=str(response.status_code)).inc()
     return response
 
+
 # PRD-010: Request Body Size Limit Middleware (10MB Max Body Size)
 MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB
+
 
 @app.middleware("http")
 async def limit_request_body_size(request: Request, call_next):
@@ -135,27 +146,28 @@ async def limit_request_body_size(request: Request, call_next):
             if int(content_length) > MAX_REQUEST_SIZE:
                 return JSONResponse(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    content={"detail": "Request payload exceeds maximum allowed size of 10MB."}
+                    content={"detail": "Request payload exceeds maximum allowed size of 10MB."},
                 )
         except ValueError:
             pass
     return await call_next(request)
 
+
 def get_required_api_key() -> Optional[str]:
     return os.getenv("API_KEY")
+
 
 async def verify_api_key(x_api_key: Optional[str] = Header(None)):
     required_key = get_required_api_key()
     if not required_key:
         return x_api_key or "dev_key"
     if not x_api_key or not secrets.compare_digest(x_api_key, required_key):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing X-API-Key header"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing X-API-Key header")
     return x_api_key
 
+
 ACTIVE_RUNS: Dict[str, Dict[str, Any]] = {}
+
 
 class RunRequest(BaseModel):
     issue: str
@@ -163,6 +175,7 @@ class RunRequest(BaseModel):
     model: str = "gpt-4o"
     mock: bool = True
     async_mode: bool = False
+
 
 class ControlRequest(BaseModel):
     run_id: str
@@ -178,12 +191,14 @@ def metrics():
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
+
 # PRD-103: Authenticated health probes
 @app.get("/api/v1/health/liveness")
 @app.get("/api/health/liveness")
 @app.get("/healthz")
 def liveness_health():
     return {"status": "alive", "service": "Loom API"}
+
 
 @app.get("/api/v1/health/readiness")
 @app.get("/api/health/readiness")
@@ -203,21 +218,22 @@ def readiness_health():
     if not db_ok or not storage_ok:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"status": "not_ready", "components": {"database": "failed" if not db_ok else "ok", "storage": "failed" if not storage_ok else "ok"}}
+            content={
+                "status": "not_ready",
+                "components": {
+                    "database": "failed" if not db_ok else "ok",
+                    "storage": "failed" if not storage_ok else "ok",
+                },
+            },
         )
 
-    return {
-        "status": "ready",
-        "service": "Loom API",
-        "components": {
-            "database": "ok",
-            "storage": "ok"
-        }
-    }
+    return {"status": "ready", "service": "Loom API", "components": {"database": "ok", "storage": "ok"}}
+
 
 @app.get("/api/health")
 def legacy_health_alias():
     return {"status": "ok", "service": "Loom API"}
+
 
 # PRD-103: Authenticated run list endpoint
 @app.get("/api/v1/runs", dependencies=[Depends(verify_api_key)])
@@ -229,14 +245,16 @@ def list_runs(offset: int = 0, limit: int = 50):
         for f in checkpoints_dir.glob("checkpoint_*.json"):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
-                runs.append({
-                    "id": data.get("run_id"),
-                    "issue": data.get("issue_description"),
-                    "status": "VERIFIED SUCCESS" if data.get("verification_passed") else "EXECUTED",
-                    "repo_path": data.get("repo_path"),
-                    "created_at": data.get("created_at"),
-                    "cost": data.get("shared_data", {}).get("cost_report", {}).get("total_cost_usd", 0.0025)
-                })
+                runs.append(
+                    {
+                        "id": data.get("run_id"),
+                        "issue": data.get("issue_description"),
+                        "status": "VERIFIED SUCCESS" if data.get("verification_passed") else "EXECUTED",
+                        "repo_path": data.get("repo_path"),
+                        "created_at": data.get("created_at"),
+                        "cost": data.get("shared_data", {}).get("cost_report", {}).get("total_cost_usd", 0.0025),
+                    }
+                )
             except (json.JSONDecodeError, OSError, ValueError) as err:
                 logger.warning("Error reading checkpoint file %s: %s", f, err)
     runs.sort(key=lambda x: x.get("created_at", 0), reverse=True)
@@ -249,7 +267,9 @@ async def create_run(req: RunRequest):
     # PRD-004: Validate repo_path boundaries
     raw_path = Path(req.repo_path or ".").resolve()
     if not raw_path.exists() or not raw_path.is_dir():
-        raise HTTPException(status_code=400, detail=f"Target repo_path does not exist or is not a directory: {req.repo_path}")
+        raise HTTPException(
+            status_code=400, detail=f"Target repo_path does not exist or is not a directory: {req.repo_path}"
+        )
 
     allowed_roots = os.getenv("ALLOWED_REPO_ROOTS")
     if allowed_roots:
@@ -260,21 +280,13 @@ async def create_run(req: RunRequest):
     repo_path = str(raw_path)
     run_id = f"run_{uuid.uuid4().hex[:8]}"
 
-    state = OrchestratorState(
-        run_id=run_id,
-        repo_path=repo_path,
-        issue_description=req.issue
-    )
+    state = OrchestratorState(run_id=run_id, repo_path=repo_path, issue_description=req.issue)
 
     router = ModelRouter(default_model=req.model, mock_mode=req.mock)
     tracer = TelemetryTracer(run_id=run_id)
     cost_tracker = CostTracker(run_id=run_id)
 
-    run_entry: Dict[str, Any] = {
-        "queues": [],
-        "events": [],
-        "state": state
-    }
+    run_entry: Dict[str, Any] = {"queues": [], "events": [], "state": state}
     ACTIVE_RUNS[run_id] = run_entry
 
     def broadcast_event(event_type: str, step_name: str, data: Dict[str, Any]):
@@ -283,7 +295,7 @@ async def create_run(req: RunRequest):
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "run_id": run_id,
             "step_name": step_name,
-            "data": data
+            "data": data,
         }
         run_entry["events"].append(evt)
         for q in list(run_entry["queues"]):
@@ -315,20 +327,18 @@ async def create_run(req: RunRequest):
         on_step_start=on_step_start,
         on_step_log=on_step_log,
         on_step_complete=on_step_complete,
-        on_step_fail=on_step_fail
+        on_step_fail=on_step_fail,
     )
     run_entry["graph"] = task_graph
 
     if req.async_mode:
         asyncio.create_task(task_graph.run())
-        return {
-            "run_id": run_id,
-            "status": "RUNNING",
-            "stream_url": f"/api/v1/stream/{run_id}"
-        }
+        return {"run_id": run_id, "status": "RUNNING", "stream_url": f"/api/v1/stream/{run_id}"}
 
     final_state = await task_graph.run()
-    broadcast_event("status_change", "pipeline", {"status": "completed", "verification_passed": final_state.verification_passed})
+    broadcast_event(
+        "status_change", "pipeline", {"status": "completed", "verification_passed": final_state.verification_passed}
+    )
 
     return {
         "run_id": run_id,
@@ -337,13 +347,15 @@ async def create_run(req: RunRequest):
         "patch_diff": final_state.patch_diff,
         "reproduction_test": final_state.reproduction_test,
         "reviewer_report": final_state.shared_data.get("reviewer_report"),
-        "cost_report": final_state.shared_data.get("cost_report")
+        "cost_report": final_state.shared_data.get("cost_report"),
     }
+
 
 @app.get("/api/v1/stream/{run_id}")
 @app.get("/api/stream/{run_id}")
 async def stream_run_events(run_id: str):
     """Server-Sent Events (SSE) streaming endpoint for live execution logs and progress."""
+
     async def event_generator():
         queue: asyncio.Queue = asyncio.Queue()
         run_entry = ACTIVE_RUNS.get(run_id)
@@ -357,10 +369,17 @@ async def stream_run_events(run_id: str):
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=2.0)
                     yield f"data: {json.dumps(event)}\n\n"
-                    if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
+                    if event.get("type") == "status_change" and event.get("data", {}).get("status") in (
+                        "completed",
+                        "failed",
+                    ):
                         break
                 except asyncio.TimeoutError:
-                    ping_event = {"type": "ping", "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run_id": run_id}
+                    ping_event = {
+                        "type": "ping",
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "run_id": run_id,
+                    }
                     yield f"data: {json.dumps(ping_event)}\n\n"
         except asyncio.CancelledError:
             pass
@@ -369,6 +388,7 @@ async def stream_run_events(run_id: str):
                 run_entry["queues"].remove(queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 
 @app.post("/api/v1/run/control", dependencies=[Depends(verify_api_key)])
 @app.post("/api/run/control", dependencies=[Depends(verify_api_key)])
@@ -407,6 +427,7 @@ async def control_run(req: ControlRequest):
 
     return {"status": "ok", "action": action, "run_id": req.run_id}
 
+
 @app.get("/api/v1/runs/{run_id}/ast", dependencies=[Depends(verify_api_key)])
 @app.get("/api/runs/{run_id}/ast", dependencies=[Depends(verify_api_key)])
 def get_run_ast(run_id: str):
@@ -417,16 +438,20 @@ def get_run_ast(run_id: str):
             "files_indexed": 243,
             "modules": 12,
             "sanitizer_status": "safe",
-            "token_usage": {"used": 4120, "max": 200000}
+            "token_usage": {"used": 4120, "max": 200000},
         }
     data = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-    return data.get("shared_data", {}).get("ast_summary", {
-        "symbols": ["ModelRouter", "TaskGraph", "WorktreeManager", "LiteLLMAdapter", "TieredMemoryStore"],
-        "files_indexed": 243,
-        "modules": 12,
-        "sanitizer_status": "safe",
-        "token_usage": {"used": 4120, "max": 200000}
-    })
+    return data.get("shared_data", {}).get(
+        "ast_summary",
+        {
+            "symbols": ["ModelRouter", "TaskGraph", "WorktreeManager", "LiteLLMAdapter", "TieredMemoryStore"],
+            "files_indexed": 243,
+            "modules": 12,
+            "sanitizer_status": "safe",
+            "token_usage": {"used": 4120, "max": 200000},
+        },
+    )
+
 
 @app.get("/api/v1/runs/{run_id}/evidence", dependencies=[Depends(verify_api_key)])
 @app.get("/api/runs/{run_id}/evidence", dependencies=[Depends(verify_api_key)])
@@ -440,8 +465,9 @@ def get_run_evidence(run_id: str):
         "score": 100 if data.get("verification_passed") else 0,
         "reproduction_script": data.get("reproduction_test"),
         "patch_diff": data.get("patch_diff"),
-        "reviewer_report": data.get("shared_data", {}).get("reviewer_report")
+        "reviewer_report": data.get("shared_data", {}).get("reviewer_report"),
     }
+
 
 # PRD-103: Authenticated run detail endpoint
 @app.get("/api/v1/runs/{run_id}", dependencies=[Depends(verify_api_key)])
@@ -458,10 +484,8 @@ def get_run(run_id: str):
     if trace_file.exists():
         events = json.loads(trace_file.read_text(encoding="utf-8"))
 
-    return {
-        "checkpoint": data,
-        "trace_events": events
-    }
+    return {"checkpoint": data, "trace_events": events}
+
 
 @app.post("/api/v1/rollback/{run_id}", dependencies=[Depends(verify_api_key)])
 @app.post("/api/rollback/{run_id}", dependencies=[Depends(verify_api_key)])
@@ -488,13 +512,16 @@ _entitlements.register_org(_default_org)
 _default_membership = Membership(user_id="dev_user", org_id=_default_org.id, role=MembershipRole.OWNER)
 _entitlements.add_membership(_default_membership)
 
+
 class EntitlementCheckRequest(BaseModel):
     org_id: str = ""
     feature_key: str
 
+
 class EntitlementCheckResponse(BaseModel):
     allowed: bool
     reason: Optional[str] = None
+
 
 @app.get("/api/v1/orgs/{org_id}/usage", dependencies=[Depends(verify_api_key)])
 def get_org_usage(org_id: str):
@@ -502,6 +529,7 @@ def get_org_usage(org_id: str):
     if org is None:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
     from loom.business.usage_ledger import get_usage_ledger
+
     ledger = get_usage_ledger()
     snapshot = ledger.build_snapshot(org_id, org.tier)
     allowed, reason = _entitlements.evaluate_quota(org_id, snapshot)
@@ -512,6 +540,7 @@ def get_org_usage(org_id: str):
         "quota_ok": allowed,
         "quota_reason": reason,
     }
+
 
 @app.post("/v1/entitlements/check", dependencies=[Depends(verify_api_key)])
 @app.post("/api/v1/entitlements/check", dependencies=[Depends(verify_api_key)])
@@ -524,10 +553,10 @@ def check_entitlement(req: EntitlementCheckRequest):
     result = _entitlements.check(org_id, feature_key)
     if not result.allowed:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=result.reason or "Feature not available on current tier"
+            status_code=status.HTTP_403_FORBIDDEN, detail=result.reason or "Feature not available on current tier"
         )
     return {"allowed": True}
+
 
 def require_entitlement(feature_key: FeatureKey):
     def dependency(org_id: str = _default_org.id):
@@ -535,10 +564,12 @@ def require_entitlement(feature_key: FeatureKey):
         if not result.allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=result.reason or f"Feature '{feature_key.value}' not available"
+                detail=result.reason or f"Feature '{feature_key.value}' not available",
             )
         return True
+
     return dependency
+
 
 def get_rbac(org_id: str = _default_org.id, user_id: str = "dev_user") -> RBACEnforcer:
     role = _entitlements.get_role(org_id, user_id)

@@ -56,7 +56,7 @@ class EntitlementService:
         return EntitlementCheckResult(
             False,
             f"Feature '{feature_key.value}' requires {self._required_tier_for_feature(feature_key)} tier, "
-            f"current tier is {org.tier.value}"
+            f"current tier is {org.tier.value}",
         )
 
     def get_quota(self, org_id: str) -> Quota:
@@ -79,7 +79,11 @@ class EntitlementService:
         quota = self.get_quota(org_id)
 
         runs_pct = (snapshot.runs_consumed / quota.runs_per_month) * 100 if quota.runs_per_month > 0 else 100
-        tokens_pct = (snapshot.tokens_consumed / (quota.runs_per_month * quota.tokens_per_run)) * 100 if quota.runs_per_month > 0 else 100
+        tokens_pct = (
+            (snapshot.tokens_consumed / (quota.runs_per_month * quota.tokens_per_run)) * 100
+            if quota.runs_per_month > 0
+            else 100
+        )
 
         if runs_pct >= 80 or tokens_pct >= 80:
             if runs_pct >= 100 or tokens_pct >= 100:

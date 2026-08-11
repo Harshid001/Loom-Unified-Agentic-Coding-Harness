@@ -127,8 +127,10 @@ class WebhookEngine:
         path = self._subs_file()
         path.write_text(
             json.dumps(
-                [s.model_dump(exclude={"events"}) | {"events": [e.value for e in s.events]}
-                 for s in self._subscriptions.values()],
+                [
+                    s.model_dump(exclude={"events"}) | {"events": [e.value for e in s.events]}
+                    for s in self._subscriptions.values()
+                ],
                 indent=2,
             ),
             encoding="utf-8",
@@ -151,7 +153,9 @@ class WebhookEngine:
             return [s for s in self._subscriptions.values() if s.org_id == org_id]
         return list(self._subscriptions.values())
 
-    def matching_subscriptions(self, event_type: WebhookEventType, org_id: Optional[str] = None) -> List[WebhookSubscription]:
+    def matching_subscriptions(
+        self, event_type: WebhookEventType, org_id: Optional[str] = None
+    ) -> List[WebhookSubscription]:
         results = []
         for sub in self._subscriptions.values():
             if not sub.active:
@@ -233,7 +237,7 @@ class WebhookEngine:
         delivery: WebhookDelivery,
     ) -> WebhookDelivery:
         for attempt in range(subscription.max_retries):
-            delay = subscription.retry_backoff_base_seconds * (2 ** attempt)
+            delay = subscription.retry_backoff_base_seconds * (2**attempt)
             await asyncio.sleep(delay)
             delivery = await self._deliver_one(subscription, delivery)
             if delivery.status == WebhookDeliveryStatus.DELIVERED:

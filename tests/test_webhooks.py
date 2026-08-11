@@ -101,7 +101,9 @@ class TestWebhookDispatch:
         engine.register(subscription)
 
         deliveries = await engine.dispatch(
-            WebhookEventType.RUN_COMPLETED, "run_abc", {"verification_passed": True},
+            WebhookEventType.RUN_COMPLETED,
+            "run_abc",
+            {"verification_passed": True},
             org_id="org_test",
         )
         assert len(deliveries) == 1
@@ -115,7 +117,9 @@ class TestWebhookDispatch:
         engine.register(subscription)
 
         deliveries = await engine.dispatch(
-            WebhookEventType.RUN_COMPLETED, "run_abc", {"verification_passed": True},
+            WebhookEventType.RUN_COMPLETED,
+            "run_abc",
+            {"verification_passed": True},
             org_id="org_test",
         )
         assert deliveries[0].status == WebhookDeliveryStatus.FAILED
@@ -124,7 +128,10 @@ class TestWebhookDispatch:
     @pytest.mark.asyncio
     async def test_dispatch_no_subscriptions_returns_empty(self, engine):
         deliveries = await engine.dispatch(
-            WebhookEventType.RUN_COMPLETED, "run_abc", {}, org_id="nonexistent",
+            WebhookEventType.RUN_COMPLETED,
+            "run_abc",
+            {},
+            org_id="nonexistent",
         )
         assert deliveries == []
 
@@ -134,7 +141,9 @@ class TestWebhookDispatch:
         engine.register(subscription)
 
         await engine.dispatch(
-            WebhookEventType.RUN_COMPLETED, "run_abc", {"key": "value"},
+            WebhookEventType.RUN_COMPLETED,
+            "run_abc",
+            {"key": "value"},
             org_id="org_test",
         )
         call = engine._http.calls[0]
@@ -143,9 +152,7 @@ class TestWebhookDispatch:
         assert sig.startswith("sha256=")
 
         body = call["content"]
-        expected_mac = hmac.new(
-            b"secret123", body, hashlib.sha256
-        ).hexdigest()
+        expected_mac = hmac.new(b"secret123", body, hashlib.sha256).hexdigest()
         assert sig == f"sha256={expected_mac}"
 
     @pytest.mark.asyncio
@@ -154,7 +161,9 @@ class TestWebhookDispatch:
         engine.register(subscription)
 
         await engine.dispatch(
-            WebhookEventType.RUN_COMPLETED, "run_abc", {},
+            WebhookEventType.RUN_COMPLETED,
+            "run_abc",
+            {},
             org_id="org_test",
         )
         headers = engine._http.calls[0]["headers"]
@@ -174,7 +183,9 @@ class TestWebhookDispatch:
         engine.register(subscription)
 
         deliveries = await engine.dispatch(
-            WebhookEventType.RUN_COMPLETED, "run_abc", {},
+            WebhookEventType.RUN_COMPLETED,
+            "run_abc",
+            {},
             org_id="org_test",
         )
         assert deliveries[0].status == WebhookDeliveryStatus.FAILED
@@ -199,9 +210,7 @@ class TestDeliveryPersistence:
     def test_get_delivery_by_id(self, engine, subscription, tmp_path):
         engine._http.responses["https://example.com/webhook"] = FakeResponse(200)
         engine.register(subscription)
-        deliveries = asyncio.run(
-            engine.dispatch(WebhookEventType.RUN_COMPLETED, "run_abc", {}, org_id="org_test")
-        )
+        deliveries = asyncio.run(engine.dispatch(WebhookEventType.RUN_COMPLETED, "run_abc", {}, org_id="org_test"))
         d_id = deliveries[0].id
         retrieved = engine.get_delivery(d_id)
         assert retrieved is not None
@@ -213,9 +222,7 @@ class TestDeliveryPersistence:
         engine._http.responses["https://example.com/webhook"] = FakeResponse(500)
         engine.register(subscription)
 
-        asyncio.run(
-            engine.dispatch(WebhookEventType.RUN_COMPLETED, "run_abc", {}, org_id="org_test")
-        )
+        asyncio.run(engine.dispatch(WebhookEventType.RUN_COMPLETED, "run_abc", {}, org_id="org_test"))
         dead = engine.get_dead_letters()
         assert len(dead) >= 1
         assert dead[0].event_type == WebhookEventType.RUN_COMPLETED
@@ -227,7 +234,9 @@ class TestDispatchSync:
         engine._http.responses["https://example.com/webhook"] = FakeResponse(200)
         engine.register(subscription)
         deliveries = await engine.dispatch(
-            WebhookEventType.RUN_COMPLETED, "run_sync", {"hash": "abc123"},
+            WebhookEventType.RUN_COMPLETED,
+            "run_sync",
+            {"hash": "abc123"},
             org_id="org_test",
         )
         assert len(deliveries) == 1

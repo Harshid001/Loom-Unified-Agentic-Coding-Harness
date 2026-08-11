@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("loom.telemetry")
 
+
 class TraceEvent(BaseModel):
     timestamp: float = Field(default_factory=time.time)
     run_id: str
@@ -16,10 +17,13 @@ class TraceEvent(BaseModel):
     node_name: str
     data: Dict[str, Any] = Field(default_factory=dict)
 
+
 class TelemetryTracer:
     """OpenTelemetry-compatible event tracer recording plan revisions, tool calls, and verification steps."""
 
-    def __init__(self, run_id: str, log_dir: Optional[str] = None, otlp_endpoint: Optional[str] = None, batch_size: int = 5):
+    def __init__(
+        self, run_id: str, log_dir: Optional[str] = None, otlp_endpoint: Optional[str] = None, batch_size: int = 5
+    ):
         self.run_id = run_id
         if not log_dir:
             log_dir = str(Path.home() / ".loom" / "traces")
@@ -40,6 +44,7 @@ class TelemetryTracer:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
             from opentelemetry.sdk.trace import TracerProvider
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
             provider = TracerProvider()
             processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=self.otlp_endpoint))
             provider.add_span_processor(processor)
@@ -49,17 +54,17 @@ class TelemetryTracer:
             logger.info(f"OTLP Exporter not loaded: {e}. Falling back to file-based JSON tracing.")
 
     def log_event(self, event_type: str, node_name: str, data: Optional[Dict[str, Any]] = None):
-        event = TraceEvent(
-            run_id=self.run_id,
-            event_type=event_type,
-            node_name=node_name,
-            data=data or {}
-        )
+        event = TraceEvent(run_id=self.run_id, event_type=event_type, node_name=node_name, data=data or {})
         self.events.append(event)
         self._unflushed_count += 1
 
         # Batch flush to disk when buffer limit reached or critical lifecycle event occurs
-        if self._unflushed_count >= self.batch_size or event_type in ("verification", "error", "completed", "run_complete"):
+        if self._unflushed_count >= self.batch_size or event_type in (
+            "verification",
+            "error",
+            "completed",
+            "run_complete",
+        ):
             self.flush_to_disk()
 
         if self.otel_tracer:
@@ -82,5 +87,3 @@ class TelemetryTracer:
     def close(self):
         """Ensure all buffered trace events are written on shutdown."""
         self.flush_to_disk()
-
-

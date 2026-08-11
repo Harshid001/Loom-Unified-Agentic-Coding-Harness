@@ -113,19 +113,21 @@ class VerificationRunner:
 
         for cmd in test_commands:
             t_res = self.sandbox.run_command(cmd)
-            passed = (t_res.exit_code == 0)
+            passed = t_res.exit_code == 0
             if not passed:
                 tests_passed = False
                 if not failure_reason:
                     failure_reason = f"Test failed: {cmd}\n{t_res.stderr or t_res.stdout}"
 
-            results.append(TestResult(
-                test_command=cmd,
-                passed=passed,
-                stdout=t_res.stdout,
-                stderr=t_res.stderr,
-                duration_seconds=t_res.duration_seconds,
-            ))
+            results.append(
+                TestResult(
+                    test_command=cmd,
+                    passed=passed,
+                    stdout=t_res.stdout,
+                    stderr=t_res.stderr,
+                    duration_seconds=t_res.duration_seconds,
+                )
+            )
 
         overall = build_passed and tests_passed and linter_passed
         return VerificationResult(
@@ -186,13 +188,15 @@ class VerificationRunner:
 
         for rule_id, pattern, severity in secrets_patterns:
             if pattern in diff_lower:
-                findings.append(SASTFinding(
-                    rule_id=rule_id,
-                    severity=severity,
-                    file_path="<diff>",
-                    line=0,
-                    message=f"Potential {severity.value}-severity issue: '{pattern}' found in diff",
-                ))
+                findings.append(
+                    SASTFinding(
+                        rule_id=rule_id,
+                        severity=severity,
+                        file_path="<diff>",
+                        line=0,
+                        message=f"Potential {severity.value}-severity issue: '{pattern}' found in diff",
+                    )
+                )
 
         return findings
 
@@ -275,7 +279,11 @@ class VerificationRunner:
             if f.severity == SASTSeverity.CRITICAL:
                 sast_severity = SASTSeverity.CRITICAL
                 break
-            if f.severity == SASTSeverity.HIGH and sast_severity in (SASTSeverity.CLEAN, SASTSeverity.LOW, SASTSeverity.MEDIUM):
+            if f.severity == SASTSeverity.HIGH and sast_severity in (
+                SASTSeverity.CLEAN,
+                SASTSeverity.LOW,
+                SASTSeverity.MEDIUM,
+            ):
                 sast_severity = SASTSeverity.HIGH
             elif f.severity == SASTSeverity.MEDIUM and sast_severity in (SASTSeverity.CLEAN, SASTSeverity.LOW):
                 sast_severity = SASTSeverity.MEDIUM

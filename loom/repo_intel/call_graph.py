@@ -11,10 +11,12 @@ class GraphEdge(BaseModel):
     symbol_name: str
     weight: int = 1
 
+
 class CallGraph(BaseModel):
     nodes: Set[str] = Field(default_factory=set)
     edges: List[GraphEdge] = Field(default_factory=list)
     symbol_index: Dict[str, List[Symbol]] = Field(default_factory=dict)
+
 
 class CallGraphBuilder:
     """Builds import and invocation dependencies between files in the repository."""
@@ -36,10 +38,8 @@ class CallGraphBuilder:
                 target_syms = symbol_map.get(sym.name, [])
                 for t in target_syms:
                     if t.file_path != sym.file_path:
-                        graph.edges.append(GraphEdge(
-                            source_file=sym.file_path,
-                            target_file=t.file_path,
-                            symbol_name=sym.name
-                        ))
+                        graph.edges.append(
+                            GraphEdge(source_file=sym.file_path, target_file=t.file_path, symbol_name=sym.name)
+                        )
 
         return graph

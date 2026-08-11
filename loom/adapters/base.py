@@ -10,10 +10,12 @@ class TokenUsage(BaseModel):
     total_tokens: int = 0
     estimated_cost_usd: float = 0.0
 
+
 class ToolCall(BaseModel):
     id: str
     name: str
     arguments: Dict[str, Any]
+
 
 class ModelRequest(BaseModel):
     model: str
@@ -23,6 +25,7 @@ class ModelRequest(BaseModel):
     max_tokens: Optional[int] = 4096
     system_prompt: Optional[str] = None
 
+
 class ModelResponse(BaseModel):
     content: Optional[str] = None
     tool_calls: List[ToolCall] = Field(default_factory=list)
@@ -30,6 +33,7 @@ class ModelResponse(BaseModel):
     model: str
     finish_reason: str = "stop"
     raw_response: Optional[Dict[str, Any]] = None
+
 
 class BaseModelAdapter(ABC):
     @abstractmethod

@@ -1,14 +1,17 @@
 import tempfile
-from pathlib import Path
+
 from typer.testing import CliRunner
+
 from loom.cli.main import app
 
 runner = CliRunner()
+
 
 def test_cli_version():
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
     assert "Loom CLI" in result.stdout
+
 
 def test_cli_init():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -16,6 +19,7 @@ def test_cli_init():
         assert result.exit_code == 0
         assert "Repository Intelligence Map" in result.stdout
         assert "Repository successfully intaken" in result.stdout
+
 
 def test_cli_issue_and_run():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -30,11 +34,13 @@ def test_cli_issue_and_run():
         assert "Loom Harness Execution Complete" in run_res.stdout
         assert "Cost Report" in run_res.stdout
 
+
 def test_cli_trace():
     # Test trace command with non-existent run ID
     result = runner.invoke(app, ["trace", "nonexistent_run_999"])
     assert result.exit_code == 1
     assert "Trace file not found" in result.stdout
+
 
 def test_cli_rollback():
     # Test rollback command with non-existent checkpoint
@@ -42,11 +48,13 @@ def test_cli_rollback():
     assert result.exit_code == 1
     assert "Checkpoint file not found" in result.stdout
 
+
 def test_cli_bench():
     result = runner.invoke(app, ["bench"])
     assert result.exit_code == 0
     assert "Controlled Ablation Matrix Benchmark" in result.stdout
     assert "baseline_naive" in result.stdout
+
 
 def test_cli_fix():
     with tempfile.TemporaryDirectory() as tmpdir:

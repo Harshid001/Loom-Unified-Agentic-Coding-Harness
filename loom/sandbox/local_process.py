@@ -21,7 +21,7 @@ class LocalProcessSandbox(BaseSandbox):
         cmd: Union[str, List[str]],
         cwd: Optional[str] = None,
         timeout: int = 60,
-        env: Optional[Dict[str, str]] = None
+        env: Optional[Dict[str, str]] = None,
     ) -> CommandResult:
         exec_cwd = Path(cwd).resolve() if cwd else self.repo_path
 
@@ -51,7 +51,7 @@ class LocalProcessSandbox(BaseSandbox):
                 text=True,
                 timeout=timeout,
                 env=full_env,
-                stdin=subprocess.DEVNULL
+                stdin=subprocess.DEVNULL,
             )
             duration = time.time() - start_time
             return CommandResult(
@@ -60,19 +60,23 @@ class LocalProcessSandbox(BaseSandbox):
                 stdout=res.stdout,
                 stderr=res.stderr,
                 duration_seconds=round(duration, 3),
-                timed_out=False
+                timed_out=False,
             )
         except subprocess.TimeoutExpired as e:
             duration = time.time() - start_time
             out_str = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-            err_str = e.stderr.decode() if isinstance(e.stderr, bytes) else (e.stderr or f"Command timed out after {timeout} seconds.")
+            err_str = (
+                e.stderr.decode()
+                if isinstance(e.stderr, bytes)
+                else (e.stderr or f"Command timed out after {timeout} seconds.")
+            )
             return CommandResult(
                 command=cmd_str,
                 exit_code=124,
                 stdout=out_str,
                 stderr=err_str,
                 duration_seconds=round(duration, 3),
-                timed_out=True
+                timed_out=True,
             )
         except Exception as e:
             duration = time.time() - start_time
@@ -82,7 +86,7 @@ class LocalProcessSandbox(BaseSandbox):
                 stdout="",
                 stderr=str(e),
                 duration_seconds=round(duration, 3),
-                timed_out=False
+                timed_out=False,
             )
 
     def create_snapshot(self, label: str) -> str:

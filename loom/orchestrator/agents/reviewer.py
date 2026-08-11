@@ -17,7 +17,7 @@ class ReviewerAgent(BaseAgent):
             test_summary=state.shared_data.get("verification_output", {}),
             cost_report=state.shared_data.get("cost_report", {"total_cost_usd": 0.001}),
             trace_events=[],
-            rollback_snapshot_id=state.snapshot_id
+            rollback_snapshot_id=state.snapshot_id,
         )
 
         review_report = {
@@ -25,7 +25,7 @@ class ReviewerAgent(BaseAgent):
             "verification_status": "VERIFIED" if state.verification_passed else "FAILED",
             "completion_rationale": "All automated verification checks and reproduction tests passed successfully.",
             "rollback_command": f"loom rollback {state.run_id}",
-            "evidence_bundle": bundle.model_dump()
+            "evidence_bundle": bundle.model_dump(),
         }
         state.shared_data["reviewer_report"] = review_report
         return review_report

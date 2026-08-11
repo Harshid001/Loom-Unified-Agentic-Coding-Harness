@@ -166,7 +166,7 @@ class TaskGraph:
         return self.router.resolve_model(node_name)
 
     def _compute_backoff(self, attempt: int) -> float:
-        delay = self.retry_base * (self.retry_factor ** attempt)
+        delay = self.retry_base * (self.retry_factor**attempt)
         capped = min(delay, self.retry_max)
         jitter = capped * RETRY_JITTER * (random.random() * 2 - 1)
         return capped + jitter
@@ -194,11 +194,13 @@ class TaskGraph:
             self.state.save_checkpoint()
 
             self.tracer.log_event(
-                "task_start", node_name,
+                "task_start",
+                node_name,
                 {"model": model_name, "attempt": attempt_number},
             )
             self.emit_log(
-                node_name, "info",
+                node_name,
+                "info",
                 f"Executing agent {node_name} (attempt {attempt_number}/{self.max_retries + 1}) using {model_name}...",
             )
 
@@ -227,7 +229,8 @@ class TaskGraph:
                 status.completed_at = time.time()
                 status.error = str(e)
                 self.tracer.log_event(
-                    "task_failed", node_name,
+                    "task_failed",
+                    node_name,
                     {"error": str(e), "attempt": attempt_number},
                 )
                 self.emit_log(node_name, "error", f"Agent {node_name} failed: {e}")
@@ -235,7 +238,9 @@ class TaskGraph:
                 if err_sig in previous_errors and attempt > 0:
                     logger.warning(
                         "Identical error signature %s on attempt %d for %s — escalating immediately",
-                        err_sig[:12], attempt_number, node_name,
+                        err_sig[:12],
+                        attempt_number,
+                        node_name,
                     )
                     return False
 
@@ -244,14 +249,19 @@ class TaskGraph:
                 if attempt >= self.max_retries:
                     logger.error(
                         "Task node %s exhausted all %d retries: %s",
-                        node_name, self.max_retries, e,
+                        node_name,
+                        self.max_retries,
+                        e,
                     )
                     return False
 
                 delay = self._compute_backoff(attempt)
                 logger.info(
                     "Retrying node %s in %.2fs (attempt %d of %d)",
-                    node_name, delay, attempt_number, self.max_retries,
+                    node_name,
+                    delay,
+                    attempt_number,
+                    self.max_retries,
                 )
                 await asyncio.sleep(delay)
 

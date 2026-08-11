@@ -21,7 +21,6 @@ class OnboardingAgent(BaseAgent):
         builder = CallGraphBuilder()
         call_graph = builder.build_graph(symbols)
 
-
         onboarding_summary = {
             "total_files": repo_map.total_files,
             "languages": repo_map.languages,
@@ -29,7 +28,7 @@ class OnboardingAgent(BaseAgent):
             "test_frameworks": repo_map.test_frameworks,
             "symbols_count": len(symbols),
             "graph_nodes": len(call_graph.nodes),
-            "key_files": repo_map.key_files
+            "key_files": repo_map.key_files,
         }
 
         state.shared_data["repo_map"] = repo_map.model_dump()

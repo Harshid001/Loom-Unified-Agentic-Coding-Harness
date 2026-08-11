@@ -14,6 +14,7 @@ class Symbol(BaseModel):
     docstring: Optional[str] = None
     parent_symbol: Optional[str] = None
 
+
 class SymbolParser:
     """Extracts symbols, classes, functions, and imports from code files."""
 
@@ -38,49 +39,54 @@ class SymbolParser:
 
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef):
-                    symbols.append(Symbol(
-                        name=node.name,
-                        kind="class",
-                        file_path=rel_path,
-                        line_number=node.lineno,
-                        docstring=ast.get_docstring(node)
-                    ))
+                    symbols.append(
+                        Symbol(
+                            name=node.name,
+                            kind="class",
+                            file_path=rel_path,
+                            line_number=node.lineno,
+                            docstring=ast.get_docstring(node),
+                        )
+                    )
                     for item in node.body:
                         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            symbols.append(Symbol(
-                                name=item.name,
-                                kind="method",
-                                file_path=rel_path,
-                                line_number=item.lineno,
-                                docstring=ast.get_docstring(item),
-                                parent_symbol=node.name
-                            ))
+                            symbols.append(
+                                Symbol(
+                                    name=item.name,
+                                    kind="method",
+                                    file_path=rel_path,
+                                    line_number=item.lineno,
+                                    docstring=ast.get_docstring(item),
+                                    parent_symbol=node.name,
+                                )
+                            )
                 elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     # Only top-level functions (not methods inside classes)
-                    symbols.append(Symbol(
-                        name=node.name,
-                        kind="function",
-                        file_path=rel_path,
-                        line_number=node.lineno,
-                        docstring=ast.get_docstring(node)
-                    ))
+                    symbols.append(
+                        Symbol(
+                            name=node.name,
+                            kind="function",
+                            file_path=rel_path,
+                            line_number=node.lineno,
+                            docstring=ast.get_docstring(node),
+                        )
+                    )
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
-                        symbols.append(Symbol(
-                            name=alias.name,
-                            kind="import",
-                            file_path=rel_path,
-                            line_number=node.lineno
-                        ))
+                        symbols.append(
+                            Symbol(name=alias.name, kind="import", file_path=rel_path, line_number=node.lineno)
+                        )
                 elif isinstance(node, ast.ImportFrom):
                     module = node.module or ""
                     for alias in node.names:
-                        symbols.append(Symbol(
-                            name=f"{module}.{alias.name}" if module else alias.name,
-                            kind="import",
-                            file_path=rel_path,
-                            line_number=node.lineno
-                        ))
+                        symbols.append(
+                            Symbol(
+                                name=f"{module}.{alias.name}" if module else alias.name,
+                                kind="import",
+                                file_path=rel_path,
+                                line_number=node.lineno,
+                            )
+                        )
         except Exception:
             # Fallback regex if AST parsing fails
             symbols.extend(self._parse_generic_regex(path, rel_path))
@@ -91,28 +97,18 @@ class SymbolParser:
         symbols: List[Symbol] = []
         try:
             lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-            fn_pattern = re.compile(r'^\s*(async\s+)?(def|function|func|fn|pub fn)\s+([a-zA-Z0-9_]+)')
-            cls_pattern = re.compile(r'^\s*(class|struct|interface|type)\s+([a-zA-Z0-9_]+)')
+            fn_pattern = re.compile(r"^\s*(async\s+)?(def|function|func|fn|pub fn)\s+([a-zA-Z0-9_]+)")
+            cls_pattern = re.compile(r"^\s*(class|struct|interface|type)\s+([a-zA-Z0-9_]+)")
 
             for idx, line in enumerate(lines, start=1):
                 fn_match = fn_pattern.search(line)
                 if fn_match:
-                    symbols.append(Symbol(
-                        name=fn_match.group(3),
-                        kind="function",
-                        file_path=rel_path,
-                        line_number=idx
-                    ))
+                    symbols.append(Symbol(name=fn_match.group(3), kind="function", file_path=rel_path, line_number=idx))
                     continue
 
                 cls_match = cls_pattern.search(line)
                 if cls_match:
-                    symbols.append(Symbol(
-                        name=cls_match.group(2),
-                        kind="class",
-                        file_path=rel_path,
-                        line_number=idx
-                    ))
+                    symbols.append(Symbol(name=cls_match.group(2), kind="class", file_path=rel_path, line_number=idx))
         except Exception:
             pass
 

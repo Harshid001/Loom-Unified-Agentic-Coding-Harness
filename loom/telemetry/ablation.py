@@ -9,6 +9,7 @@ class AblationConfig(BaseModel):
     multi_agent_enabled: bool = True
     verification_enabled: bool = True
 
+
 class AblationResult(BaseModel):
     config_name: str
     config: AblationConfig
@@ -17,6 +18,7 @@ class AblationResult(BaseModel):
     total_tokens: int
     duration_seconds: float
     verification_passed: bool
+
 
 class AblationHarness:
     """Runs controlled same-model, same-budget comparison runs to prove harness architectural delta."""
@@ -29,8 +31,8 @@ class AblationHarness:
                     memory_enabled=False,
                     context_ranking_enabled=False,
                     multi_agent_enabled=False,
-                    verification_enabled=False
-                ).model_dump()
+                    verification_enabled=False,
+                ).model_dump(),
             },
             {
                 "name": "loom_no_memory",
@@ -38,8 +40,8 @@ class AblationHarness:
                     memory_enabled=False,
                     context_ranking_enabled=True,
                     multi_agent_enabled=True,
-                    verification_enabled=True
-                ).model_dump()
+                    verification_enabled=True,
+                ).model_dump(),
             },
             {
                 "name": "loom_no_context_ranking",
@@ -47,8 +49,8 @@ class AblationHarness:
                     memory_enabled=True,
                     context_ranking_enabled=False,
                     multi_agent_enabled=True,
-                    verification_enabled=True
-                ).model_dump()
+                    verification_enabled=True,
+                ).model_dump(),
             },
             {
                 "name": "loom_full",
@@ -56,7 +58,7 @@ class AblationHarness:
                     memory_enabled=True,
                     context_ranking_enabled=True,
                     multi_agent_enabled=True,
-                    verification_enabled=True
-                ).model_dump()
-            }
+                    verification_enabled=True,
+                ).model_dump(),
+            },
         ]

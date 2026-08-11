@@ -1,5 +1,6 @@
 import pytest
-from loom.business.entitlements import EntitlementService, EntitlementCheckResult
+
+from loom.business.entitlements import EntitlementService
 from loom.business.models import (
     FeatureKey,
     HardStopPolicy,
@@ -163,13 +164,21 @@ class TestUsageLedger:
         assert event1.dedup_key == event2.dedup_key
 
     def test_dedup_key_differs_on_different_attempt(self):
-        event1 = UsageEvent(run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=1, input_context_hash="abc")
-        event2 = UsageEvent(run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=2, input_context_hash="abc")
+        event1 = UsageEvent(
+            run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=1, input_context_hash="abc"
+        )
+        event2 = UsageEvent(
+            run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=2, input_context_hash="abc"
+        )
         assert event1.dedup_key != event2.dedup_key
 
     def test_dedup_key_differs_on_different_input(self):
-        event1 = UsageEvent(run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=1, input_context_hash="aaa")
-        event2 = UsageEvent(run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=1, input_context_hash="bbb")
+        event1 = UsageEvent(
+            run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=1, input_context_hash="aaa"
+        )
+        event2 = UsageEvent(
+            run_id="run_1", org_id="org_1", step_id="step_a", attempt_number=1, input_context_hash="bbb"
+        )
         assert event1.dedup_key != event2.dedup_key
 
     def test_ledger_rejects_duplicates(self, tmp_path):

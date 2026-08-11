@@ -24,10 +24,7 @@ class PatcherAgent(BaseAgent):
             f"Reproduction test: {state.reproduction_test}\n"
             f"Repository context: {state.shared_data.get('onboarding_summary')}"
         )
-        req = ModelRequest(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        req = ModelRequest(model=self.model_name, messages=[{"role": "user", "content": prompt}])
         res = await self.adapter.generate(req)
 
         raw_content = res.content or ""
@@ -44,7 +41,11 @@ class PatcherAgent(BaseAgent):
                     if line.startswith("```") and len(diff_lines) > 1:
                         break
                     # Path traversal sanity check
-                    if (".." in line and ("--- " in line or "+++ " in line)) or line.startswith("--- /") or line.startswith("+++ /"):
+                    if (
+                        (".." in line and ("--- " in line or "+++ " in line))
+                        or line.startswith("--- /")
+                        or line.startswith("+++ /")
+                    ):
                         logger.warning("Unsafe path traversal detected in patch line: %s", line)
                         patch_diff = ""
                         break
@@ -74,16 +75,17 @@ class PatcherAgent(BaseAgent):
                     except OSError as unlink_err:
                         logger.debug("Failed to unlink patch file %s: %s", patch_file, unlink_err)
 
-        usage_data = res.usage.model_dump() if hasattr(res.usage, "model_dump") else {
-            "prompt_tokens": 150, "completion_tokens": 50, "estimated_cost_usd": 0.0005
-        }
+        usage_data = (
+            res.usage.model_dump()
+            if hasattr(res.usage, "model_dump")
+            else {"prompt_tokens": 150, "completion_tokens": 50, "estimated_cost_usd": 0.0005}
+        )
 
         patch_result = {
             "patch_diff": patch_diff,
             "snapshot_id": snapshot_id,
             "summary": f"Applied patch to resolve target issue: {state.issue_description}",
-            "_usage": usage_data
+            "_usage": usage_data,
         }
         state.shared_data["patch_summary"] = patch_result
         return patch_result
-

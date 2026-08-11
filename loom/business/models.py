@@ -12,10 +12,12 @@ class OrgTier(str, Enum):
     TEAM = "team"
     ENTERPRISE = "enterprise"
 
+
 class HardStopPolicy(str, Enum):
     BLOCK = "block"
     ALLOW_WITH_OVERAGE_BILLING = "allow_with_overage_billing"
     REQUIRE_ADMIN_APPROVAL = "require_admin_approval"
+
 
 class MembershipRole(str, Enum):
     OWNER = "owner"
@@ -24,6 +26,7 @@ class MembershipRole(str, Enum):
     REVIEWER = "reviewer"
     BILLING_ADMIN = "billing_admin"
     AUDITOR = "auditor"
+
 
 class Organization(BaseModel):
     id: str = Field(default_factory=lambda: f"org_{uuid.uuid4().hex[:12]}")
@@ -35,24 +38,30 @@ class Organization(BaseModel):
     burst_grace_pct: float = 20.0
     burst_grace_hours: int = 48
     post_merge_monitor_timeout_seconds: int = 3600
-    router_weights: Dict[str, float] = Field(default_factory=lambda: {
-        "w1_cost": 0.25,
-        "w2_latency": 0.15,
-        "w3_success_rate": 0.35,
-        "w4_capability": 0.25,
-    })
-    sensitive_path_globs: List[str] = Field(default_factory=lambda: [
-        "**/auth/**",
-        "**/billing/**",
-        "**/migrations/**",
-    ])
+    router_weights: Dict[str, float] = Field(
+        default_factory=lambda: {
+            "w1_cost": 0.25,
+            "w2_latency": 0.15,
+            "w3_success_rate": 0.35,
+            "w4_capability": 0.25,
+        }
+    )
+    sensitive_path_globs: List[str] = Field(
+        default_factory=lambda: [
+            "**/auth/**",
+            "**/billing/**",
+            "**/migrations/**",
+        ]
+    )
     created_at: float = Field(default_factory=time.time)
+
 
 class Membership(BaseModel):
     user_id: str
     org_id: str
     role: MembershipRole = MembershipRole.DEVELOPER
     joined_at: float = Field(default_factory=time.time)
+
 
 class Quota(BaseModel):
     org_id: str
@@ -63,6 +72,7 @@ class Quota(BaseModel):
     seats: int = 1
     overage_token_margin_pct: float = 15.0
 
+
 class OrgUsageSnapshot(BaseModel):
     org_id: str
     month_start: str
@@ -71,6 +81,7 @@ class OrgUsageSnapshot(BaseModel):
     sandbox_ms_consumed: int = 0
     cost_usd_accrued: float = 0.0
     snapshot_at: float = Field(default_factory=time.time)
+
 
 class FeatureKey(str, Enum):
     SANDBOX_TIER_B_CONTAINER = "sandbox.tier_b_container"
@@ -81,6 +92,7 @@ class FeatureKey(str, Enum):
     GOVERNANCE_SOC2_AUDIT_EXPORT = "governance.soc2_audit_export"
     INTEGRATIONS_CI_BOT = "integrations.ci_bot"
     INTEGRATIONS_IDE_PLUGINS = "integrations.ide_plugins"
+
 
 TIER_FEATURE_MATRIX: Dict[OrgTier, Dict[FeatureKey, bool]] = {
     OrgTier.SOLO: {

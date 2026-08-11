@@ -35,7 +35,7 @@ class WorktreeManager:
             shutil.copytree(
                 self.repo_path,
                 snapshot_dir,
-                ignore=shutil.ignore_patterns(".loom_snapshots", ".venv", "node_modules", ".git")
+                ignore=shutil.ignore_patterns(".loom_snapshots", ".venv", "node_modules", ".git"),
             )
             self.snapshots[snapshot_id] = str(snapshot_dir)
 
@@ -77,10 +77,11 @@ class WorktreeManager:
             path = Path(self.snapshots[snapshot_id])
             if path.exists():
                 try:
-                    subprocess.run(["git", "worktree", "remove", "--force", str(path)], cwd=self.repo_path, capture_output=True)
+                    subprocess.run(
+                        ["git", "worktree", "remove", "--force", str(path)], cwd=self.repo_path, capture_output=True
+                    )
                 except (subprocess.CalledProcessError, FileNotFoundError, OSError) as err:
                     logger.warning("Worktree cleanup warning for %s: %s", snapshot_id, err)
                 if path.exists():
                     shutil.rmtree(path, ignore_errors=True)
             del self.snapshots[snapshot_id]
-

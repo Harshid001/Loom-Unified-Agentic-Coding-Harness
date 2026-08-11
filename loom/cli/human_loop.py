@@ -23,11 +23,9 @@ class HumanInTheLoop:
         self.console.rule(f"[bold cyan]Agent: {node_name}[/bold cyan]")
 
         if context:
-            self.console.print(Panel(
-                str(context.get("issue_description", "No issue")),
-                title="Issue",
-                border_style="yellow"
-            ))
+            self.console.print(
+                Panel(str(context.get("issue_description", "No issue")), title="Issue", border_style="yellow")
+            )
 
         if output:
             self._display_output(output)
@@ -72,11 +70,13 @@ class HumanInTheLoop:
                 except Exception:
                     self.console.print(str(value)[:500])
             elif isinstance(value, dict):
-                self.console.print(Panel(
-                    "\n".join(f"{k}: {v}" for k, v in value.items()),
-                    title=key.replace("_", " ").title(),
-                    border_style="green"
-                ))
+                self.console.print(
+                    Panel(
+                        "\n".join(f"{k}: {v}" for k, v in value.items()),
+                        title=key.replace("_", " ").title(),
+                        border_style="green",
+                    )
+                )
             elif isinstance(value, list):
                 self.console.print(f"[bold]{key}:[/bold] {', '.join(str(v) for v in value)}")
             elif isinstance(value, bool):

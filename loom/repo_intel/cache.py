@@ -35,7 +35,23 @@ class RepoIntelCache:
         # Fallback to mtime/size hash of top 200 files
         hasher = hashlib.sha256()
         count = 0
-        ignore_dirs = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build", ".next", ".cache", "target", "vendor", ".gemini", ".loom_snapshots", "artifacts", "scratch"}
+        ignore_dirs = {
+            ".git",
+            ".venv",
+            "node_modules",
+            "__pycache__",
+            ".pytest_cache",
+            "dist",
+            "build",
+            ".next",
+            ".cache",
+            "target",
+            "vendor",
+            ".gemini",
+            ".loom_snapshots",
+            "artifacts",
+            "scratch",
+        }
         for root, dirs, files in os.walk(path):
             dirs[:] = [d for d in dirs if d not in ignore_dirs]
             for f in sorted(files):

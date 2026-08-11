@@ -38,7 +38,7 @@ class WebVerificationGate:
                 "url": self.target_url,
                 "status": res["status"],
                 "screenshot": shot_file,
-                "details": f"Web verification passed at {self.target_url}. Title: {res['title']}"
+                "details": f"Web verification passed at {self.target_url}. Title: {res['title']}",
             }
         except Exception as err:
             await runner.close()
@@ -46,5 +46,5 @@ class WebVerificationGate:
                 "passed": False,
                 "url": self.target_url,
                 "error": str(err),
-                "details": f"Web verification failed: {err}"
+                "details": f"Web verification failed: {err}",
             }

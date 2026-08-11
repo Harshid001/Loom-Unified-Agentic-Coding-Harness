@@ -264,9 +264,7 @@ class ContextBudgetManager:
         messages: List[Dict[str, Any]] = []
         messages.append({"role": "system", "content": system_content})
 
-        ranked = self.rank_symbols(
-            symbols, issue_text, touched_files, call_graph, git_analyzer, repo_path
-        )
+        ranked = self.rank_symbols(symbols, issue_text, touched_files, call_graph, git_analyzer, repo_path)
 
         used_symbol_tokens = 0
         symbol_entries: List[str] = []
@@ -291,9 +289,7 @@ class ContextBudgetManager:
 
             if entry_tokens * 2 <= remaining:
                 full_content = self._read_file_content(symbol.file_path, repo_path)
-                body_text = self.sanitizer.wrap_untrusted_content(
-                    full_content, symbol.file_path
-                )
+                body_text = self.sanitizer.wrap_untrusted_content(full_content, symbol.file_path)
                 entry = f"{sig_doc}\n{body_text}"
             elif entry_tokens <= remaining:
                 entry = f"{sig_doc}\n...[body truncated, budget constrained]"
@@ -329,18 +325,12 @@ class ContextBudgetManager:
         full_user_prompt = (
             f"{task_instruction}\n\n"
             f"{memory_text}\n\n"
-            f"### Relevant Symbols (ranked by relevance):\n"
-            + "\n\n".join(symbol_entries)
+            f"### Relevant Symbols (ranked by relevance):\n" + "\n\n".join(symbol_entries)
         )
 
         messages.append({"role": "user", "content": full_user_prompt})
 
-        total_used = (
-            system_tokens
-            + used_memory_tokens
-            + used_symbol_tokens
-            + self.estimate_tokens(task_instruction)
-        )
+        total_used = system_tokens + used_memory_tokens + used_symbol_tokens + self.estimate_tokens(task_instruction)
         headroom = max(0, C - total_used)
 
         return BudgetAssembly(
@@ -361,13 +351,15 @@ class ContextBudgetManager:
         symbols: List[Symbol] = []
         for file_path, content in file_snippets.items():
             wrapped = self.sanitizer.wrap_untrusted_content(content, file_path)
-            symbols.append(Symbol(
-                name=file_path,
-                kind="file",
-                file_path=file_path,
-                line_number=1,
-                docstring=wrapped[:200],
-            ))
+            symbols.append(
+                Symbol(
+                    name=file_path,
+                    kind="file",
+                    file_path=file_path,
+                    line_number=1,
+                    docstring=wrapped[:200],
+                )
+            )
 
         result = self.assemble_context(
             task_instruction=task_instruction,

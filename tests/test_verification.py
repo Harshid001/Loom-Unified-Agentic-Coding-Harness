@@ -23,13 +23,16 @@ class FakeSandbox:
                 else:
                     actual_code = code
                 from loom.sandbox.base import CommandResult
+
                 return CommandResult(
-                    command=cmd, exit_code=actual_code,
+                    command=cmd,
+                    exit_code=actual_code,
                     stdout="ok" if actual_code == 0 else "FAILED",
                     stderr="",
                     duration_seconds=0.1,
                 )
         from loom.sandbox.base import CommandResult
+
         return CommandResult(command=cmd, exit_code=0, stdout="ok", stderr="", duration_seconds=0.1)
 
     def create_snapshot(self, label):

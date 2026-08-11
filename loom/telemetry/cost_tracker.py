@@ -14,6 +14,7 @@ class NodeCost(BaseModel):
     total_tokens: int = 0
     cost_usd: float = 0.0
 
+
 class CostTracker:
     """Tracks token and cost usage broken down per task graph node and model.
 
@@ -38,7 +39,7 @@ class CostTracker:
         nc = self.node_costs[node_name]
         nc.prompt_tokens += prompt_tokens
         nc.completion_tokens += completion_tokens
-        nc.total_tokens += (prompt_tokens + completion_tokens)
+        nc.total_tokens += prompt_tokens + completion_tokens
         nc.cost_usd += cost_usd
 
     def add_usage_with_context(
@@ -81,5 +82,5 @@ class CostTracker:
             "total_completion_tokens": total_completion,
             "total_tokens": total_prompt + total_completion,
             "total_cost_usd": round(total_cost, 6),
-            "by_node": {k: v.model_dump() for k, v in self.node_costs.items()}
+            "by_node": {k: v.model_dump() for k, v in self.node_costs.items()},
         }

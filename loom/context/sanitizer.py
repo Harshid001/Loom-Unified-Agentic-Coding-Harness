@@ -17,8 +17,4 @@ class PromptSanitizer:
         for pattern in self.INJECTION_PATTERNS:
             clean_text = pattern.sub("[SANITIZED_INSTRUCTION]", clean_text)
 
-        return (
-            f"<untrusted_file_content path=\"{file_path}\">\n"
-            f"{clean_text}\n"
-            f"</untrusted_file_content>"
-        )
+        return f'<untrusted_file_content path="{file_path}">\n{clean_text}\n</untrusted_file_content>'

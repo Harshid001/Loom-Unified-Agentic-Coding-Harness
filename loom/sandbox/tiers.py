@@ -96,6 +96,7 @@ class EgressEnforcer:
     def check_command_egress(self, command: str, tier: SandboxTier) -> List[str]:
         blocked: List[str] = []
         import re
+
         url_pattern = re.compile(r'https?://([^\s/"\'<>]+)')
         for match in url_pattern.finditer(command):
             target = match.group(1)

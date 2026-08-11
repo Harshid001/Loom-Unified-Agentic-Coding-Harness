@@ -15,6 +15,7 @@ class MemoryTier(str, Enum):
     USER_PREFERENCE = "user_preference"
     VERIFIED_EVIDENCE = "verified_evidence"
 
+
 class InvalidationRule(BaseModel):
     rule_type: str = "never"  # "never", "time_to_live", "file_changed", "manual"
     ttl_seconds: Optional[int] = None
@@ -30,6 +31,7 @@ class InvalidationRule(BaseModel):
                 if any(tf in f for tf in self.target_files):
                     return True
         return False
+
 
 class MemoryItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))

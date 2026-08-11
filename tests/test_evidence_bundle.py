@@ -31,7 +31,7 @@ class TestEvidenceBundle:
             verification_success=False,
             test_summary={},
             cost_report={},
-            trace_events=[]
+            trace_events=[],
         )
         entry = bundler.export_bundle(bundle)
         assert entry.run_id == "run_456"
@@ -41,18 +41,36 @@ class TestEvidenceBundle:
 
     def test_chain_is_linked_across_multiple_exports(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
-        e1 = bundler.export_bundle(EvidenceBundle(
-            run_id="r1", verified_patch="p1", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
-        e2 = bundler.export_bundle(EvidenceBundle(
-            run_id="r2", verified_patch="p2", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
-        e3 = bundler.export_bundle(EvidenceBundle(
-            run_id="r3", verified_patch="p3", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
+        e1 = bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r1",
+                verified_patch="p1",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
+        e2 = bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r2",
+                verified_patch="p2",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
+        e3 = bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r3",
+                verified_patch="p3",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
         assert e1.index == 0
         assert e2.index == 1
         assert e3.index == 2
@@ -61,20 +79,32 @@ class TestEvidenceBundle:
 
     def test_genesis_prev_hash(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
-        e1 = bundler.export_bundle(EvidenceBundle(
-            run_id="r1", verified_patch="p1", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
+        e1 = bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r1",
+                verified_patch="p1",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
         expected_genesis = hashlib.sha256(b"GENESIS").hexdigest()
         assert e1.prev_hash == expected_genesis
 
     def test_verify_chain_passes_for_valid_chain(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
         for i in range(5):
-            bundler.export_bundle(EvidenceBundle(
-                run_id=f"r{i}", verified_patch=f"p{i}", verification_success=True,
-                test_summary={}, cost_report={}, trace_events=[],
-            ))
+            bundler.export_bundle(
+                EvidenceBundle(
+                    run_id=f"r{i}",
+                    verified_patch=f"p{i}",
+                    verification_success=True,
+                    test_summary={},
+                    cost_report={},
+                    trace_events=[],
+                )
+            )
         ok, msg, indices = bundler.verify_chain()
         assert ok is True
         assert msg is None
@@ -82,14 +112,26 @@ class TestEvidenceBundle:
 
     def test_verify_chain_detects_tampered_payload_hash(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
-        bundler.export_bundle(EvidenceBundle(
-            run_id="r0", verified_patch="p0", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
-        bundler.export_bundle(EvidenceBundle(
-            run_id="r1", verified_patch="p1", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r0",
+                verified_patch="p0",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r1",
+                verified_patch="p1",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
 
         chain_path = tmp_path / "evidence_chain.json"
         raw = json.loads(chain_path.read_text())
@@ -102,14 +144,26 @@ class TestEvidenceBundle:
 
     def test_verify_chain_detects_tampered_prev_hash(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
-        bundler.export_bundle(EvidenceBundle(
-            run_id="r0", verified_patch="p0", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
-        bundler.export_bundle(EvidenceBundle(
-            run_id="r1", verified_patch="p1", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r0",
+                verified_patch="p0",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r1",
+                verified_patch="p1",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
 
         chain_path = tmp_path / "evidence_chain.json"
         raw = json.loads(chain_path.read_text())
@@ -122,10 +176,16 @@ class TestEvidenceBundle:
 
     def test_verify_chain_detects_broken_chain_hash(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
-        bundler.export_bundle(EvidenceBundle(
-            run_id="r0", verified_patch="p0", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r0",
+                verified_patch="p0",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
 
         chain_path = tmp_path / "evidence_chain.json"
         raw = json.loads(chain_path.read_text())
@@ -146,13 +206,25 @@ class TestEvidenceBundle:
         hmac_key = "super-secret-key"
         bundler = EvidenceBundler(output_dir=str(tmp_path))
         bundler.export_bundle(
-            EvidenceBundle(run_id="r0", verified_patch="p0", verification_success=True,
-                           test_summary={}, cost_report={}, trace_events=[]),
+            EvidenceBundle(
+                run_id="r0",
+                verified_patch="p0",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            ),
             hmac_key=hmac_key,
         )
         bundler.export_bundle(
-            EvidenceBundle(run_id="r1", verified_patch="p1", verification_success=True,
-                           test_summary={}, cost_report={}, trace_events=[]),
+            EvidenceBundle(
+                run_id="r1",
+                verified_patch="p1",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            ),
             hmac_key=hmac_key,
         )
         ok, msg, indices = bundler.verify_chain(hmac_key=hmac_key)
@@ -163,8 +235,14 @@ class TestEvidenceBundle:
         hmac_key = "secret"
         bundler = EvidenceBundler(output_dir=str(tmp_path))
         bundler.export_bundle(
-            EvidenceBundle(run_id="r0", verified_patch="p0", verification_success=True,
-                           test_summary={}, cost_report={}, trace_events=[]),
+            EvidenceBundle(
+                run_id="r0",
+                verified_patch="p0",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            ),
             hmac_key=hmac_key,
         )
 
@@ -180,8 +258,12 @@ class TestEvidenceBundle:
     def test_verify_bundle_payload_matches(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
         bundle = EvidenceBundle(
-            run_id="rX", verified_patch="real_patch", verification_success=True,
-            test_summary={"passed": 1}, cost_report={"total_cost_usd": 0.05}, trace_events=[],
+            run_id="rX",
+            verified_patch="real_patch",
+            verification_success=True,
+            test_summary={"passed": 1},
+            cost_report={"total_cost_usd": 0.05},
+            trace_events=[],
         )
         bundler.export_bundle(bundle)
         assert bundler.verify_bundle_payload(bundle) is True
@@ -189,8 +271,12 @@ class TestEvidenceBundle:
     def test_verify_bundle_payload_detects_tamper(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
         bundle = EvidenceBundle(
-            run_id="rX", verified_patch="real_patch", verification_success=True,
-            test_summary={"passed": 1}, cost_report={"total_cost_usd": 0.05}, trace_events=[],
+            run_id="rX",
+            verified_patch="real_patch",
+            verification_success=True,
+            test_summary={"passed": 1},
+            cost_report={"total_cost_usd": 0.05},
+            trace_events=[],
         )
         bundler.export_bundle(bundle)
 
@@ -200,14 +286,22 @@ class TestEvidenceBundle:
     def test_rollback_snapshot_id_is_optional(self):
         bundler = EvidenceBundler()
         bundle = bundler.create_bundle(
-            run_id="run_789", patch_diff="diff", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
+            run_id="run_789",
+            patch_diff="diff",
+            verification_success=True,
+            test_summary={},
+            cost_report={},
+            trace_events=[],
         )
         assert bundle.rollback_snapshot_id is None
 
         bundle2 = bundler.create_bundle(
-            run_id="run_789", patch_diff="diff", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
+            run_id="run_789",
+            patch_diff="diff",
+            verification_success=True,
+            test_summary={},
+            cost_report={},
+            trace_events=[],
             rollback_snapshot_id="snap_001",
         )
         assert bundle2.rollback_snapshot_id == "snap_001"
@@ -215,22 +309,40 @@ class TestEvidenceBundle:
     def test_chain_length(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
         assert bundler.chain_length() == 0
-        bundler.export_bundle(EvidenceBundle(
-            run_id="r0", verified_patch="p0", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
-        bundler.export_bundle(EvidenceBundle(
-            run_id="r1", verified_patch="p1", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r0",
+                verified_patch="p0",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="r1",
+                verified_patch="p1",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
         assert bundler.chain_length() == 2
 
     def test_get_entry_by_run_id(self, tmp_path):
         bundler = EvidenceBundler(output_dir=str(tmp_path))
-        bundler.export_bundle(EvidenceBundle(
-            run_id="find_me", verified_patch="p", verification_success=True,
-            test_summary={}, cost_report={}, trace_events=[],
-        ))
+        bundler.export_bundle(
+            EvidenceBundle(
+                run_id="find_me",
+                verified_patch="p",
+                verification_success=True,
+                test_summary={},
+                cost_report={},
+                trace_events=[],
+            )
+        )
         entry = bundler.get_entry("find_me")
         assert entry is not None
         assert entry.run_id == "find_me"

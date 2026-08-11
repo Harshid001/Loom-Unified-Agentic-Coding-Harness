@@ -58,15 +58,19 @@ class EvidenceBundler:
         return Path(self.output_dir) / self.CHAIN_FILE_NAME
 
     def _payload_hash(self, bundle: EvidenceBundle) -> str:
-        payload = json.dumps({
-            "run_id": bundle.run_id,
-            "timestamp": bundle.timestamp,
-            "verified_patch": bundle.verified_patch,
-            "verification_success": bundle.verification_success,
-            "test_summary": bundle.test_summary,
-            "cost_report": bundle.cost_report,
-            "rollback_snapshot_id": bundle.rollback_snapshot_id,
-        }, sort_keys=True, ensure_ascii=False)
+        payload = json.dumps(
+            {
+                "run_id": bundle.run_id,
+                "timestamp": bundle.timestamp,
+                "verified_patch": bundle.verified_patch,
+                "verification_success": bundle.verification_success,
+                "test_summary": bundle.test_summary,
+                "cost_report": bundle.cost_report,
+                "rollback_snapshot_id": bundle.rollback_snapshot_id,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _compute_chain_hash(self, index: int, payload_hash: str, prev_hash: str) -> str:
@@ -77,6 +81,7 @@ class EvidenceBundler:
         message = self.SEPARATOR.join([entry.chain_hash, entry.payload_hash, entry.prev_hash])
         if hmac_key:
             import hmac
+
             return hmac.new(hmac_key.encode(), message.encode(), hashlib.sha256).hexdigest()
         return ""
 
@@ -173,11 +178,7 @@ class EvidenceBundler:
                 tampered_indices.append(i)
                 continue
 
-            expected_prev = (
-                hashlib.sha256(b"GENESIS").hexdigest()
-                if i == 0
-                else chain[i - 1].chain_hash
-            )
+            expected_prev = hashlib.sha256(b"GENESIS").hexdigest() if i == 0 else chain[i - 1].chain_hash
             if entry.prev_hash != expected_prev:
                 tampered_indices.append(i)
                 continue
