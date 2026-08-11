@@ -10,6 +10,7 @@ jobs:
   backend-tests:
     name: Python Backend Build & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +23,7 @@ jobs:
       - name: Install CI Dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install ruff mypy pytest pytest-cov pip-audit
+          pip install ruff mypy pytest pytest-cov pytest-timeout pip-audit
 
       - name: Dependency Vulnerability Audit (pip-audit)
         run: pip-audit --skip-editable
@@ -37,7 +38,7 @@ jobs:
         run: mypy loom/ --ignore-missing-imports
 
       - name: Run Test Suite with Coverage
-        run: pytest
+        run: pytest --timeout=120
 
   frontend-checks:
     name: Next.js Frontend Lint & Build
