@@ -21,7 +21,9 @@ class WorktreeManager:
         snapshot_dir.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Attempt git worktree add if repo is a git repo
+            # Attempt git worktree add if repo is a git repo root
+            if not (self.repo_path / ".git").exists():
+                raise OSError(f"{self.repo_path} is not a git repository root")
             cmd = ["git", "worktree", "add", "-b", f"loom/{snapshot_id}", str(snapshot_dir), "HEAD"]
             subprocess.run(cmd, cwd=self.repo_path, capture_output=True, check=True)
             self.snapshots[snapshot_id] = str(snapshot_dir)

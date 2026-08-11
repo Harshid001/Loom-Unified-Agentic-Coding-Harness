@@ -64,7 +64,7 @@ class PatcherAgent(BaseAgent):
                 patch_file.write_text(patch_diff, encoding="utf-8")
                 apply_res = sandbox.run_command(["git", "apply", str(patch_file)])
                 if apply_res.exit_code != 0:
-                    sandbox.run_command(f"patch -p1 < {patch_file.name}")
+                    sandbox.run_command(["patch", "-p1", "-i", str(patch_file)])
             except (subprocess.CalledProcessError, OSError, IOError) as err:
                 logger.warning("Error applying patch file %s: %s", patch_file, err)
             finally:

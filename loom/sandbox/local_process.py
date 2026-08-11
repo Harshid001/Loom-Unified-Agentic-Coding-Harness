@@ -50,7 +50,8 @@ class LocalProcessSandbox(BaseSandbox):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=full_env
+                env=full_env,
+                stdin=subprocess.DEVNULL
             )
             duration = time.time() - start_time
             return CommandResult(
