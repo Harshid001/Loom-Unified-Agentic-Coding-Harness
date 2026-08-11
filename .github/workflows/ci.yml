@@ -37,7 +37,7 @@ jobs:
         run: mypy loom/ --ignore-missing-imports
 
       - name: Run Test Suite with Coverage
-        run: pytest --cov=loom --cov-report=term-missing
+        run: pytest
 
   frontend-checks:
     name: Next.js Frontend Lint & Build
