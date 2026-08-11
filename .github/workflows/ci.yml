@@ -19,14 +19,16 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Dependencies
+      - name: Install CI Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install ruff mypy pytest pytest-cov pip-audit
-          pip install -e .
 
       - name: Dependency Vulnerability Audit (pip-audit)
-        run: pip-audit
+        run: pip-audit --skip-editable
+
+      - name: Install Local Package
+        run: pip install -e .
 
       - name: Run Python Linter (Ruff)
         run: ruff check loom/
