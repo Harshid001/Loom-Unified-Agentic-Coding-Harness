@@ -23,7 +23,7 @@ jobs:
       - name: Install CI Dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install ruff mypy pytest pytest-cov pytest-timeout pip-audit
+          pip install ruff mypy pytest pytest-asyncio pytest-cov pytest-timeout pip-audit
 
       - name: Dependency Vulnerability Audit (pip-audit)
         run: pip-audit --skip-editable
