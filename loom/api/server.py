@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -42,6 +43,7 @@ except ImportError:
     Histogram = DummyMetricFactory()  # type: ignore
 
 from loom.adapters.router import ModelRouter
+from loom.api.webhooks import WebhookEventType, get_webhook_engine
 from loom.business.entitlements import EntitlementService
 from loom.business.models import (
     FeatureKey,
@@ -49,14 +51,17 @@ from loom.business.models import (
     MembershipRole,
     Organization,
     OrgTier,
+    RunRecord,
 )
-from loom.business.rbac import RBACEnforcer
+from loom.business.rbac import Action, RBACEnforcer
+from loom.db.records_store import get_run_record_store
 from loom.memory.store import TieredMemoryStore
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
 from loom.sandbox.local_process import LocalProcessSandbox
 from loom.telemetry.cost_tracker import CostTracker
 from loom.telemetry.tracer import TelemetryTracer
+from loom.verification.bundle import EvidenceBundler
 
 app = FastAPI(
     title="Loom Agentic Harness API",
@@ -169,12 +174,20 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None)):
 ACTIVE_RUNS: Dict[str, Dict[str, Any]] = {}
 
 
+def _evidence_dir() -> Path:
+    raw = os.getenv("LOOM_EVIDENCE_DIR")
+    if raw:
+        return Path(raw)
+    return Path.home() / ".loom" / "evidence"
+
+
 class RunRequest(BaseModel):
     issue: str
     repo_path: Optional[str] = "."
     model: str = "gpt-4o"
     mock: bool = True
     async_mode: bool = False
+    sandbox_tier: Optional[str] = None
 
 
 class ControlRequest(BaseModel):
@@ -261,10 +274,97 @@ def list_runs(offset: int = 0, limit: int = 50):
     return runs[offset : offset + limit]
 
 
-@app.post("/api/v1/run", dependencies=[Depends(verify_api_key)])
-@app.post("/api/run", dependencies=[Depends(verify_api_key)])
-async def create_run(req: RunRequest):
-    # PRD-004: Validate repo_path boundaries
+def get_rbac(org_id: str = "org_placeholder", user_id: str = "dev_user") -> RBACEnforcer:
+    role = _entitlements.get_role(org_id, user_id)
+    return RBACEnforcer(role)
+
+
+async def require_run_permission(
+    x_api_key: str = Depends(verify_api_key),
+    x_org_id: str = Header(default="", alias="X-Org-Id"),
+    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
+) -> RBACEnforcer:
+    org_id = x_org_id or _default_org.id
+    enforcer = get_rbac(org_id, x_user_id)
+    enforcer.authorize(Action.TRIGGER_RUN, resource=f"org:{org_id}")
+    return enforcer
+
+
+async def require_admin_permission(
+    x_api_key: str = Depends(verify_api_key),
+    x_org_id: str = Header(default="", alias="X-Org-Id"),
+    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
+) -> RBACEnforcer:
+    org_id = x_org_id or _default_org.id
+    enforcer = get_rbac(org_id, x_user_id)
+    enforcer.authorize(Action.MODIFY_ENTITLEMENTS, resource=f"org:{org_id}")
+    return enforcer
+
+
+async def require_auditor_permission(
+    x_api_key: str = Depends(verify_api_key),
+    x_org_id: str = Header(default="", alias="X-Org-Id"),
+    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
+) -> RBACEnforcer:
+    org_id = x_org_id or _default_org.id
+    enforcer = get_rbac(org_id, x_user_id)
+    enforcer.authorize(Action.EXPORT_EVIDENCE, resource=f"org:{org_id}")
+    return enforcer
+
+
+async def resolve_org_id(
+    x_org_id: str = Header(default="", alias="X-Org-Id"),
+) -> str:
+    return x_org_id or _default_org.id
+
+
+_entitlements = EntitlementService()
+_default_org = Organization(name="Default", tier=OrgTier.SOLO)
+_entitlements.register_org(_default_org)
+_default_membership = Membership(user_id="dev_user", org_id=_default_org.id, role=MembershipRole.OWNER)
+_entitlements.add_membership(_default_membership)
+
+
+class EntitlementCheckRequest(BaseModel):
+    org_id: str = ""
+    feature_key: str
+
+
+class EntitlementCheckResponse(BaseModel):
+    allowed: bool
+    reason: Optional[str] = None
+
+
+@app.post("/api/v1/run")
+@app.post("/api/run")
+async def create_run(
+    req: RunRequest,
+    _rbac: RBACEnforcer = Depends(require_run_permission),
+    org_id: str = Depends(resolve_org_id),
+):
+    org = _entitlements.get_org(org_id) or _default_org
+
+    sandbox_tier = (req.sandbox_tier or "A").upper()
+    if sandbox_tier not in ("A", "B", "C"):
+        raise HTTPException(status_code=400, detail=f"Invalid sandbox_tier: {req.sandbox_tier}")
+
+    tier_gated_feature = {
+        "B": FeatureKey.SANDBOX_TIER_B_CONTAINER,
+        "C": FeatureKey.SANDBOX_TIER_C_MICROVM,
+    }
+    if sandbox_tier in tier_gated_feature:
+        result = _entitlements.check(org_id, tier_gated_feature[sandbox_tier])
+        if not result.allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=result.reason)
+
+    from loom.business.usage_ledger import get_usage_ledger
+
+    ledger = get_usage_ledger()
+    snapshot = ledger.build_snapshot(org_id, org.tier)
+    ok, reason = _entitlements.evaluate_quota(org_id, snapshot)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=reason)
+
     raw_path = Path(req.repo_path or ".").resolve()
     if not raw_path.exists() or not raw_path.is_dir():
         raise HTTPException(
@@ -281,10 +381,15 @@ async def create_run(req: RunRequest):
     run_id = f"run_{uuid.uuid4().hex[:8]}"
 
     state = OrchestratorState(run_id=run_id, repo_path=repo_path, issue_description=req.issue)
+    state.shared_data["org_id"] = org_id
+    state.shared_data["_org"] = org
+    state.shared_data["sandbox_tier"] = sandbox_tier
+    state.shared_data["auto_merge_threshold"] = org.auto_merge_threshold
 
     router = ModelRouter(default_model=req.model, mock_mode=req.mock)
     tracer = TelemetryTracer(run_id=run_id)
     cost_tracker = CostTracker(run_id=run_id)
+    records_store = get_run_record_store()
 
     run_entry: Dict[str, Any] = {"queues": [], "events": [], "state": state}
     ACTIVE_RUNS[run_id] = run_entry
@@ -328,8 +433,22 @@ async def create_run(req: RunRequest):
         on_step_log=on_step_log,
         on_step_complete=on_step_complete,
         on_step_fail=on_step_fail,
+        webhook_engine=get_webhook_engine(),
+        evidence_bundler=EvidenceBundler(output_dir=str(_evidence_dir())),
+        records_store=records_store,
     )
     run_entry["graph"] = task_graph
+
+    records_store.record_run(
+        RunRecord(
+            run_id=run_id,
+            org_id=org_id,
+            repo_id=repo_path,
+            issue_text=req.issue,
+            status="queued",
+            sandbox_tier=sandbox_tier,
+        )
+    )
 
     if req.async_mode:
         asyncio.create_task(task_graph.run())
@@ -348,6 +467,12 @@ async def create_run(req: RunRequest):
         "reproduction_test": final_state.reproduction_test,
         "reviewer_report": final_state.shared_data.get("reviewer_report"),
         "cost_report": final_state.shared_data.get("cost_report"),
+        "confidence_score": final_state.shared_data.get("confidence_score"),
+        "merge_decision": final_state.shared_data.get("merge_decision"),
+        "evidence": {
+            "exported": final_state.shared_data.get("evidence_exported", False),
+            "chain_hash": final_state.shared_data.get("evidence_bundle_chain_hash"),
+        },
     }
 
 
@@ -456,6 +581,19 @@ def get_run_ast(run_id: str):
 @app.get("/api/v1/runs/{run_id}/evidence", dependencies=[Depends(verify_api_key)])
 @app.get("/api/runs/{run_id}/evidence", dependencies=[Depends(verify_api_key)])
 def get_run_evidence(run_id: str):
+    bundler = EvidenceBundler(output_dir=str(_evidence_dir()))
+    entry = bundler.get_entry(run_id)
+    bundle_path = _evidence_dir() / f"evidence_{run_id}.json"
+    if entry is not None and bundle_path.exists():
+        bundle_data = json.loads(bundle_path.read_text(encoding="utf-8"))
+        chain_ok, chain_reason, _tampered = bundler.verify_chain()
+        return {
+            "verified": bundle_data.get("verification_success", False),
+            "score": bundle_data.get("test_summary", {}).get("confidence_score", 0),
+            "evidence_bundle": bundle_data,
+            "chain_integrity": chain_ok,
+            "chain_reason": chain_reason,
+        }
     checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
         return {"verified": False, "score": 0, "pytest_output": "No evidence recorded yet."}
@@ -487,6 +625,24 @@ def get_run(run_id: str):
     return {"checkpoint": data, "trace_events": events}
 
 
+@app.get("/api/v1/runs/{run_id}/records", dependencies=[Depends(verify_api_key)])
+@app.get("/api/runs/{run_id}/records", dependencies=[Depends(verify_api_key)])
+def get_run_records(run_id: str):
+    """Relational run record with nested AgentStep/Patch/VerificationResult rows (spec §2)."""
+    store = get_run_record_store()
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    return {
+        "run": run.model_dump(),
+        "steps": [s.model_dump() for s in store.get_steps(run_id)],
+        "patches": [p.model_dump() for p in store.get_patches(run_id)],
+        "verifications": [v.model_dump() for v in store.get_verifications(run_id)],
+    }
+
+
+@app.post("/v1/runs/{run_id}/rollback", dependencies=[Depends(verify_api_key)])
 @app.post("/api/v1/rollback/{run_id}", dependencies=[Depends(verify_api_key)])
 @app.post("/api/rollback/{run_id}", dependencies=[Depends(verify_api_key)])
 def rollback(run_id: str):
@@ -506,25 +662,70 @@ def rollback(run_id: str):
     return {"success": success, "snapshot_id": snapshot_id}
 
 
-_entitlements = EntitlementService()
-_default_org = Organization(name="Default", tier=OrgTier.SOLO)
-_entitlements.register_org(_default_org)
-_default_membership = Membership(user_id="dev_user", org_id=_default_org.id, role=MembershipRole.OWNER)
-_entitlements.add_membership(_default_membership)
+class CiReportRequest(BaseModel):
+    merge_time: float
+    ci_failure_detected: bool
+    monitor_timeout_seconds: int = 3600
 
 
-class EntitlementCheckRequest(BaseModel):
-    org_id: str = ""
-    feature_key: str
+# PRD §3.6: Post-merge CI monitoring endpoint — auto-rollback within monitor window
+@app.post("/api/v1/runs/{run_id}/ci-report", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runs/{run_id}/ci-report", dependencies=[Depends(verify_api_key)])
+async def report_ci_status(run_id: str, req: CiReportRequest):
+    from loom.business.audit_log import get_audit_logger
+    from loom.business.models import AuditAction
+    from loom.business.post_merge import auto_rollback_triggered, generate_revert_patch
+
+    state = OrchestratorState.load_checkpoint(run_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    org_id = state.shared_data.get("org_id", "unknown")
+    rollback_needed = auto_rollback_triggered(req.merge_time, req.ci_failure_detected, req.monitor_timeout_seconds)
+    revert_patch = generate_revert_patch(state.patch_diff or "") if rollback_needed else ""
+
+    report = {
+        "run_id": run_id,
+        "rollback_needed": rollback_needed,
+        "ci_failure_detected": req.ci_failure_detected,
+        "monitor_timeout_seconds": req.monitor_timeout_seconds,
+        "elapsed_seconds": round(time.time() - req.merge_time, 3),
+        "revert_patch": revert_patch,
+    }
+
+    if rollback_needed:
+        state.shared_data["run_status"] = "rolled_back"
+        prior_decision = state.shared_data.get("merge_decision")
+        if not isinstance(prior_decision, dict):
+            prior_decision = {}
+            state.shared_data["merge_decision"] = prior_decision
+        prior_decision["auto_rolled_back"] = True
+        state.save_checkpoint()
+        get_audit_logger().record(
+            org_id=org_id,
+            action=AuditAction.RUN_ROLLED_BACK,
+            actor_id="ci_monitor",
+            target=run_id,
+            metadata={"reason": "post_merge_ci_failure", "revert_hash": hashlib.sha256(revert_patch.encode()).hexdigest()},
+        )
+        try:
+            await get_webhook_engine().dispatch(
+                WebhookEventType.RUN_ROLLED_BACK,
+                run_id,
+                {"reason": "post_merge_ci_failure", "merge_decision": state.shared_data.get("merge_decision")},
+                org_id,
+            )
+        except Exception as exc:
+            logger.warning("Failed to dispatch run.rolled_back webhook for %s: %s", run_id, exc)
+
+    return report
 
 
-class EntitlementCheckResponse(BaseModel):
-    allowed: bool
-    reason: Optional[str] = None
-
-
-@app.get("/api/v1/orgs/{org_id}/usage", dependencies=[Depends(verify_api_key)])
-def get_org_usage(org_id: str):
+@app.get("/api/v1/orgs/{org_id}/usage")
+def get_org_usage(
+    org_id: str,
+    _rbac: RBACEnforcer = Depends(require_auditor_permission),
+):
     org = _entitlements.get_org(org_id)
     if org is None:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -542,9 +743,12 @@ def get_org_usage(org_id: str):
     }
 
 
-@app.post("/v1/entitlements/check", dependencies=[Depends(verify_api_key)])
-@app.post("/api/v1/entitlements/check", dependencies=[Depends(verify_api_key)])
-def check_entitlement(req: EntitlementCheckRequest):
+@app.post("/v1/entitlements/check")
+@app.post("/api/v1/entitlements/check")
+def check_entitlement(
+    req: EntitlementCheckRequest,
+    _rbac: RBACEnforcer = Depends(require_admin_permission),
+):
     org_id = req.org_id or _default_org.id
     try:
         feature_key = FeatureKey(req.feature_key)
@@ -559,7 +763,7 @@ def check_entitlement(req: EntitlementCheckRequest):
 
 
 def require_entitlement(feature_key: FeatureKey):
-    def dependency(org_id: str = _default_org.id):
+    def dependency(org_id: str = Depends(resolve_org_id)):
         result = _entitlements.check(org_id, feature_key)
         if not result.allowed:
             raise HTTPException(
@@ -571,6 +775,210 @@ def require_entitlement(feature_key: FeatureKey):
     return dependency
 
 
-def get_rbac(org_id: str = _default_org.id, user_id: str = "dev_user") -> RBACEnforcer:
-    role = _entitlements.get_role(org_id, user_id)
-    return RBACEnforcer(role)
+class GitHubWebhookRequest(BaseModel):
+    action: str = ""
+    issue: Optional[Dict[str, Any]] = None
+    pull_request: Optional[Dict[str, Any]] = None
+    repository: Optional[Dict[str, Any]] = None
+    sender: Optional[Dict[str, Any]] = None
+
+
+class GitLabWebhookRequest(BaseModel):
+    object_kind: str = ""
+    object_attributes: Optional[Dict[str, Any]] = None
+    project: Optional[Dict[str, Any]] = None
+    user: Optional[Dict[str, Any]] = None
+
+
+class SlackNotifyRequest(BaseModel):
+    webhook_url: str
+    title: str
+    body: str
+    level: str = "info"
+    template: str = "custom"
+    run_id: str = ""
+
+
+class PreparePRRequest(BaseModel):
+    run_id: str
+    issue_title: str
+    issue_number: int
+    patch_diff: str = ""
+    confidence_score: float = 0.0
+    verification_passed: bool = False
+    cost_usd: float = 0.0
+    files_touched: int = 0
+    model_used: str = "unknown"
+    template: str = "standard"
+
+
+@app.post("/api/v1/integrations/github/webhook")
+@app.post("/api/integrations/github/webhook")
+def handle_github_webhook(
+    req: GitHubWebhookRequest,
+    x_api_key: str = Depends(verify_api_key),
+):
+    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
+
+    repo_name = ""
+    if req.repository:
+        repo_name = req.repository.get("full_name", "")
+    issue_title = ""
+    issue_labels: List[str] = []
+    issue_number = 0
+    if req.issue:
+        issue_title = req.issue.get("title", "")
+        issue_labels = [lbl.get("name", "") for lbl in req.issue.get("labels", [])]
+        issue_number = req.issue.get("number", 0)
+
+    config = CIBotConfig(
+        provider=CIBotProvider.GITHUB,
+        org_id="from_webhook",
+        repo_full_name=repo_name,
+        api_base_url="",
+    )
+    bot = CIBot(config)
+
+    should_triage = bot.should_triage_issue(issue_title, issue_labels)
+    return {
+        "action": req.action,
+        "should_triage": should_triage,
+        "repo": repo_name,
+        "issue_number": issue_number,
+    }
+
+
+@app.post("/api/v1/integrations/gitlab/webhook")
+@app.post("/api/integrations/gitlab/webhook")
+def handle_gitlab_webhook(
+    req: GitLabWebhookRequest,
+    x_api_key: str = Depends(verify_api_key),
+):
+    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
+
+    project_name = ""
+    if req.project:
+        project_name = req.project.get("path_with_namespace", "")
+    issue_title = ""
+    issue_labels: List[str] = []
+    issue_number = 0
+    if req.object_attributes:
+        issue_title = req.object_attributes.get("title", "")
+        issue_labels = [lbl.get("title", "") for lbl in req.object_attributes.get("labels", [])]
+        issue_number = req.object_attributes.get("iid", 0)
+
+    config = CIBotConfig(
+        provider=CIBotProvider.GITLAB,
+        org_id="from_webhook",
+        repo_full_name=project_name,
+        api_base_url="",
+    )
+    bot = CIBot(config)
+
+    should_triage = bot.should_triage_issue(issue_title, issue_labels)
+    return {
+        "object_kind": req.object_kind,
+        "should_triage": should_triage,
+        "repo": project_name,
+        "issue_number": issue_number,
+    }
+
+
+@app.post("/api/v1/integrations/slack/notify")
+@app.post("/api/integrations/slack/notify")
+async def send_slack_notification(
+    req: SlackNotifyRequest,
+    x_api_key: str = Depends(verify_api_key),
+):
+    from loom.integrations.slack import (
+        SlackNotification,
+        SlackNotificationLevel,
+        SlackNotificationTemplate,
+        SlackNotifier,
+    )
+
+    level = SlackNotificationLevel.INFO
+    template = SlackNotificationTemplate.CUSTOM
+    try:
+        level = SlackNotificationLevel(req.level)
+    except ValueError:
+        pass
+    try:
+        template = SlackNotificationTemplate(req.template)
+    except ValueError:
+        pass
+
+    notification = SlackNotification(
+        title=req.title,
+        body=req.body,
+        level=level,
+        template=template,
+        run_id=req.run_id,
+    )
+
+    notifier = SlackNotifier(webhook_url=req.webhook_url)
+    try:
+        success = await notifier.send(notification)
+        await notifier.close()
+        return {"sent": success, "level": level.value, "template": template.value}
+    except Exception as exc:
+        logger.error("Slack notify failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Slack delivery failed: {exc}")
+
+
+@app.get("/api/v1/integrations/bot/{org_id}/status")
+@app.get("/api/integrations/bot/{org_id}/status")
+def get_bot_status(
+    org_id: str,
+    x_api_key: str = Depends(verify_api_key),
+    _rbac: RBACEnforcer = Depends(require_admin_permission),
+):
+    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
+
+    config = CIBotConfig(
+        provider=CIBotProvider.GITHUB,
+        org_id=org_id,
+        repo_full_name="",
+        api_base_url="",
+    )
+    bot = CIBot(config)
+    return bot.serialize()
+
+
+@app.post("/api/v1/integrations/bot/{org_id}/prepare-pr")
+@app.post("/api/integrations/bot/{org_id}/prepare-pr")
+def prepare_pr(
+    org_id: str,
+    req: PreparePRRequest,
+    x_api_key: str = Depends(verify_api_key),
+    _rbac: RBACEnforcer = Depends(require_run_permission),
+):
+    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider, PullRequestTemplate
+
+    config = CIBotConfig(
+        provider=CIBotProvider.GITHUB,
+        org_id=org_id,
+        repo_full_name="",
+        api_base_url="",
+    )
+    bot = CIBot(config)
+
+    template = PullRequestTemplate.STANDARD
+    try:
+        template = PullRequestTemplate(req.template)
+    except ValueError:
+        pass
+
+    data = bot.generate_pr_template_data(
+        run_id=req.run_id,
+        issue_title=req.issue_title,
+        issue_number=req.issue_number,
+        patch_diff=req.patch_diff,
+        confidence_score=req.confidence_score,
+        verification_passed=req.verification_passed,
+        cost_usd=req.cost_usd,
+        files_touched=req.files_touched,
+        model_used=req.model_used,
+    )
+    pr = bot.prepare_pr(data, template)
+    return pr

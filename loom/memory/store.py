@@ -3,6 +3,7 @@ import logging
 import os
 import sqlite3
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, List, Optional
@@ -88,6 +89,7 @@ class TieredMemoryStore:
                         text("""
                         CREATE TABLE IF NOT EXISTS memory_items (
                             id VARCHAR PRIMARY KEY,
+                            org_id VARCHAR NOT NULL DEFAULT 'default',
                             tier VARCHAR NOT NULL,
                             content TEXT NOT NULL,
                             source VARCHAR,
@@ -100,6 +102,9 @@ class TieredMemoryStore:
                         )
                     """)
                     )
+                    conn.execute(
+                        text("CREATE INDEX IF NOT EXISTS idx_org_id ON memory_items(org_id)")
+                    )
                     conn.commit()
         except Exception as err:
             logger.error("Failed to initialize PostgreSQL memory DB: %s", err)
@@ -107,7 +112,7 @@ class TieredMemoryStore:
 
     def get_schema_version(self) -> int:
         if self.is_postgres:
-            return 2
+            return 3
         with self.connect() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT MAX(version) FROM schema_migrations")
@@ -121,6 +126,7 @@ class TieredMemoryStore:
         migrations = [
             (1, self._migration_v1),
             (2, self._migration_v2),
+            (3, self._migration_v3),
         ]
         for version, migration_fn in migrations:
             if current_version < version:
@@ -152,6 +158,10 @@ class TieredMemoryStore:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scope ON memory_items(scope)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON memory_items(created_at)")
 
+    def _migration_v3(self, conn: sqlite3.Connection):
+        conn.execute("ALTER TABLE memory_items ADD COLUMN org_id TEXT NOT NULL DEFAULT 'default'")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_org_id ON memory_items(org_id)")
+
     def backup(self, backup_path: str) -> str:
         """Create live online backup of memory database."""
         dest_path = Path(backup_path).resolve()
@@ -164,7 +174,36 @@ class TieredMemoryStore:
             dst.close()
         return str(dest_path)
 
+    @staticmethod
+    def _is_append_only_tier(tier: Any) -> bool:
+        """Tier 3 (EPISODIC) and Tier 5 (VERIFIED_EVIDENCE) are append-only (spec §3.3)."""
+        tier_val = tier.value if isinstance(tier, MemoryTier) else tier
+        return tier_val in (MemoryTier.EPISODIC.value, MemoryTier.VERIFIED_EVIDENCE.value)
+
+    def _exists(self, item_id: str) -> bool:
+        if self.is_postgres:
+            from sqlalchemy import text
+
+            engine = self._get_pg_engine()
+            if engine:
+                with engine.connect() as conn:
+                    res = conn.execute(text("SELECT 1 FROM memory_items WHERE id = :id"), {"id": item_id})
+                    return res.fetchone() is not None
+            return False
+
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM memory_items WHERE id = ?", (item_id,))
+            return cursor.fetchone() is not None
+
     def add(self, item: MemoryItem) -> MemoryItem:
+        if self._is_append_only_tier(item.tier) and self._exists(item.id):
+            logger.info(
+                "Append-only tier %s: preserving existing row %s, writing new row with fresh id",
+                item.tier,
+                item.id,
+            )
+            item.id = str(uuid.uuid4())
         if self.is_postgres:
             from sqlalchemy import text
 
@@ -173,9 +212,10 @@ class TieredMemoryStore:
                 with engine.connect() as conn:
                     conn.execute(
                         text("""
-                            INSERT INTO memory_items (id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata)
-                            VALUES (:id, :tier, :content, :source, :confidence, :scope, :created_at, :last_used_at, :invalidation, :metadata)
+                            INSERT INTO memory_items (id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata)
+                            VALUES (:id, :org_id, :tier, :content, :source, :confidence, :scope, :created_at, :last_used_at, :invalidation, :metadata)
                             ON CONFLICT (id) DO UPDATE SET
+                                org_id = EXCLUDED.org_id,
                                 tier = EXCLUDED.tier,
                                 content = EXCLUDED.content,
                                 source = EXCLUDED.source,
@@ -188,6 +228,7 @@ class TieredMemoryStore:
                         """),
                         {
                             "id": item.id,
+                            "org_id": item.org_id,
                             "tier": item.tier.value if isinstance(item.tier, MemoryTier) else item.tier,
                             "content": item.content,
                             "source": item.source,
@@ -206,11 +247,12 @@ class TieredMemoryStore:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO memory_items
-                (id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.id,
+                    item.org_id,
                     item.tier.value if isinstance(item.tier, MemoryTier) else item.tier,
                     item.content,
                     item.source,
@@ -225,7 +267,7 @@ class TieredMemoryStore:
             conn.commit()
         return item
 
-    def get_by_tier(self, tier: MemoryTier) -> List[MemoryItem]:
+    def get_by_tier(self, tier: MemoryTier, org_id: Optional[str] = None) -> List[MemoryItem]:
         tier_val = tier.value if isinstance(tier, MemoryTier) else tier
         items = []
         if self.is_postgres:
@@ -234,25 +276,42 @@ class TieredMemoryStore:
             engine = self._get_pg_engine()
             if engine:
                 with engine.connect() as conn:
-                    res = conn.execute(
-                        text(
-                            "SELECT id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = :tier"
-                        ),
-                        {"tier": tier_val},
-                    )
+                    if org_id is not None:
+                        res = conn.execute(
+                            text(
+                                "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = :tier AND org_id = :org_id"
+                            ),
+                            {"tier": tier_val, "org_id": org_id},
+                        )
+                    else:
+                        res = conn.execute(
+                            text(
+                                "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = :tier"
+                            ),
+                            {"tier": tier_val},
+                        )
                     for r in res.fetchall():
                         items.append(self._row_to_item(r))
             return items
 
         with self.connect() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM memory_items WHERE tier = ?", (tier_val,))
+            if org_id is not None:
+                cursor.execute("SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = ? AND org_id = ? ORDER BY last_used_at DESC", (tier_val, org_id))
+            else:
+                cursor.execute("SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = ? ORDER BY last_used_at DESC", (tier_val,))
             rows = cursor.fetchall()
             for r in rows:
                 items.append(self._row_to_item(r))
         return items
 
-    def search(self, query: str, tier: Optional[MemoryTier] = None, limit: int = 10) -> List[MemoryItem]:
+    def search(
+        self,
+        query: str,
+        tier: Optional[MemoryTier] = None,
+        limit: int = 10,
+        org_id: Optional[str] = None,
+    ) -> List[MemoryItem]:
         items = []
         query_str = f"%{query.lower()}%"
         if self.is_postgres:
@@ -261,18 +320,33 @@ class TieredMemoryStore:
             engine = self._get_pg_engine()
             if engine:
                 with engine.connect() as conn:
-                    if tier:
+                    if tier and org_id is not None:
                         tier_val = tier.value if isinstance(tier, MemoryTier) else tier
                         res = conn.execute(
                             text(
-                                "SELECT id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = :tier AND LOWER(content) LIKE :q ORDER BY last_used_at DESC LIMIT :lim"
+                                "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = :tier AND org_id = :org_id AND LOWER(content) LIKE :q ORDER BY last_used_at DESC LIMIT :lim"
+                            ),
+                            {"tier": tier_val, "org_id": org_id, "q": query_str, "lim": limit},
+                        )
+                    elif tier:
+                        tier_val = tier.value if isinstance(tier, MemoryTier) else tier
+                        res = conn.execute(
+                            text(
+                                "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = :tier AND LOWER(content) LIKE :q ORDER BY last_used_at DESC LIMIT :lim"
                             ),
                             {"tier": tier_val, "q": query_str, "lim": limit},
+                        )
+                    elif org_id is not None:
+                        res = conn.execute(
+                            text(
+                                "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE org_id = :org_id AND LOWER(content) LIKE :q ORDER BY last_used_at DESC LIMIT :lim"
+                            ),
+                            {"org_id": org_id, "q": query_str, "lim": limit},
                         )
                     else:
                         res = conn.execute(
                             text(
-                                "SELECT id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE LOWER(content) LIKE :q ORDER BY last_used_at DESC LIMIT :lim"
+                                "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE LOWER(content) LIKE :q ORDER BY last_used_at DESC LIMIT :lim"
                             ),
                             {"q": query_str, "lim": limit},
                         )
@@ -284,15 +358,26 @@ class TieredMemoryStore:
 
         with self.connect() as conn:
             cursor = conn.cursor()
-            if tier:
+            if tier and org_id is not None:
                 tier_val = tier.value if isinstance(tier, MemoryTier) else tier
                 cursor.execute(
-                    "SELECT * FROM memory_items WHERE tier = ? AND LOWER(content) LIKE ? ORDER BY last_used_at DESC LIMIT ?",
+                    "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = ? AND org_id = ? AND LOWER(content) LIKE ? ORDER BY last_used_at DESC LIMIT ?",
+                    (tier_val, org_id, query_str, limit),
+                )
+            elif tier:
+                tier_val = tier.value if isinstance(tier, MemoryTier) else tier
+                cursor.execute(
+                    "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE tier = ? AND LOWER(content) LIKE ? ORDER BY last_used_at DESC LIMIT ?",
                     (tier_val, query_str, limit),
+                )
+            elif org_id is not None:
+                cursor.execute(
+                    "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE org_id = ? AND LOWER(content) LIKE ? ORDER BY last_used_at DESC LIMIT ?",
+                    (org_id, query_str, limit),
                 )
             else:
                 cursor.execute(
-                    "SELECT * FROM memory_items WHERE LOWER(content) LIKE ? ORDER BY last_used_at DESC LIMIT ?",
+                    "SELECT id, org_id, tier, content, source, confidence, scope, created_at, last_used_at, invalidation, metadata FROM memory_items WHERE LOWER(content) LIKE ? ORDER BY last_used_at DESC LIMIT ?",
                     (query_str, limit),
                 )
             rows = cursor.fetchall()
@@ -343,7 +428,7 @@ class TieredMemoryStore:
                     conn.executemany("DELETE FROM memory_items WHERE id = ?", [(i,) for i in to_delete])
                     conn.commit()
 
-    def clear_tier(self, tier: MemoryTier):
+    def clear_tier(self, tier: MemoryTier, org_id: Optional[str] = None):
         tier_val = tier.value if isinstance(tier, MemoryTier) else tier
         if self.is_postgres:
             from sqlalchemy import text
@@ -351,24 +436,34 @@ class TieredMemoryStore:
             engine = self._get_pg_engine()
             if engine:
                 with engine.connect() as conn:
-                    conn.execute(text("DELETE FROM memory_items WHERE tier = :tier"), {"tier": tier_val})
+                    if org_id is not None:
+                        conn.execute(
+                            text("DELETE FROM memory_items WHERE tier = :tier AND org_id = :org_id"),
+                            {"tier": tier_val, "org_id": org_id},
+                        )
+                    else:
+                        conn.execute(text("DELETE FROM memory_items WHERE tier = :tier"), {"tier": tier_val})
                     conn.commit()
             return
 
         with self.connect() as conn:
-            conn.execute("DELETE FROM memory_items WHERE tier = ?", (tier_val,))
+            if org_id is not None:
+                conn.execute("DELETE FROM memory_items WHERE tier = ? AND org_id = ?", (tier_val, org_id))
+            else:
+                conn.execute("DELETE FROM memory_items WHERE tier = ?", (tier_val,))
             conn.commit()
 
     def _row_to_item(self, row: Any) -> MemoryItem:
         return MemoryItem(
             id=row[0],
-            tier=MemoryTier(row[1]),
-            content=row[2],
-            source=row[3],
-            confidence=row[4],
-            scope=row[5],
-            created_at=row[6],
-            last_used_at=row[7],
-            invalidation=InvalidationRule(**json.loads(row[8])),
-            metadata=json.loads(row[9]),
+            org_id=row[1],
+            tier=MemoryTier(row[2]),
+            content=row[3],
+            source=row[4],
+            confidence=row[5],
+            scope=row[6],
+            created_at=row[7],
+            last_used_at=row[8],
+            invalidation=InvalidationRule(**json.loads(row[9])),
+            metadata=json.loads(row[10]),
         )

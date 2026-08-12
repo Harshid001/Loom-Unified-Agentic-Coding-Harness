@@ -29,6 +29,7 @@ class EvidenceBundle(BaseModel):
     cost_report: Dict[str, Any]
     trace_events: List[Dict[str, Any]] = Field(default_factory=list)
     rollback_snapshot_id: Optional[str] = None
+    merge_decision: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ChainIntegrityError(Exception):
@@ -67,6 +68,7 @@ class EvidenceBundler:
                 "test_summary": bundle.test_summary,
                 "cost_report": bundle.cost_report,
                 "rollback_snapshot_id": bundle.rollback_snapshot_id,
+                "merge_decision": bundle.merge_decision,
             },
             sort_keys=True,
             ensure_ascii=False,
@@ -113,6 +115,7 @@ class EvidenceBundler:
         cost_report: Dict[str, Any],
         trace_events: List[Dict[str, Any]],
         rollback_snapshot_id: Optional[str] = None,
+        merge_decision: Optional[Dict[str, Any]] = None,
     ) -> EvidenceBundle:
         return EvidenceBundle(
             run_id=run_id,
@@ -122,6 +125,7 @@ class EvidenceBundler:
             cost_report=cost_report,
             trace_events=trace_events,
             rollback_snapshot_id=rollback_snapshot_id,
+            merge_decision=merge_decision or {},
         )
 
     def export_bundle(

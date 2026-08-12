@@ -10,14 +10,20 @@ class MemoryRetriever:
     def __init__(self, store: TieredMemoryStore):
         self.store = store
 
-    def retrieve(self, query: str, tiers: Optional[List[MemoryTier]] = None, limit: int = 5) -> List[MemoryItem]:
+    def retrieve(
+        self,
+        query: str,
+        tiers: Optional[List[MemoryTier]] = None,
+        limit: int = 5,
+        org_id: Optional[str] = None,
+    ) -> List[MemoryItem]:
         results: List[MemoryItem] = []
 
         if not tiers:
             tiers = list(MemoryTier)
 
         for tier in tiers:
-            items = self.store.search(query, tier=tier, limit=limit)
+            items = self.store.search(query, tier=tier, limit=limit, org_id=org_id)
             results.extend(items)
 
         # Sort by confidence * recency score

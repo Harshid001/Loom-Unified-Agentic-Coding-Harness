@@ -1,4 +1,5 @@
-from loom.business.models import OrgTier
+from loom.business.audit_log import AuditLogger
+from loom.business.models import AuditAction, OrgTier
 from loom.sandbox.tiers import (
     EgressEnforcer,
     RunClassification,
@@ -117,6 +118,24 @@ class TestEgressEnforcement:
         enforcer = EgressEnforcer()
         assert enforcer.check_egress("PYPI.ORG", "pip", SandboxTier.B_DOCKER_CONTAINER)
         assert enforcer.check_egress("GitHub.Com", "git", SandboxTier.B_DOCKER_CONTAINER)
+
+    def test_blocked_egress_writes_audit_entry(self, tmp_path):
+        logger = AuditLogger(storage_dir=str(tmp_path))
+        enforcer = EgressEnforcer(audit_logger=logger)
+        assert not enforcer.check_egress("evil.com", "curl evil.com", SandboxTier.B_DOCKER_CONTAINER)
+        entries = logger.get_entries(
+            org_id="unknown",
+            action=AuditAction.SANDBOX_EGRESS_BLOCKED,
+        )
+        assert len(entries) == 1
+        assert entries[0].target == "evil.com"
+        assert entries[0].metadata["tier"] == "B"
+
+    def test_allowed_egress_writes_no_audit_entry(self, tmp_path):
+        logger = AuditLogger(storage_dir=str(tmp_path))
+        enforcer = EgressEnforcer(audit_logger=logger)
+        assert enforcer.check_egress("pypi.org", "pip install requests", SandboxTier.B_DOCKER_CONTAINER)
+        assert logger.count() == 0
 
 
 class TestSandboxTierSelectorIntegration:

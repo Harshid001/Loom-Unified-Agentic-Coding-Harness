@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 
 from loom.business.entitlements import EntitlementService
 from loom.business.models import (
@@ -128,8 +129,9 @@ class TestRBAC:
 
     def test_developer_authorize_raises_permission_error(self):
         enforcer = RBACEnforcer(MembershipRole.DEVELOPER)
-        with pytest.raises(PermissionError):
+        with pytest.raises(HTTPException) as exc_info:
             enforcer.authorize(Action.MODIFY_ENTITLEMENTS)
+        assert exc_info.value.status_code == 403
 
     def test_billing_admin_permissions(self):
         enforcer = RBACEnforcer(MembershipRole.BILLING_ADMIN)
@@ -246,13 +248,9 @@ class TestUsageLedger:
 
 class TestFeatureKeyEnum:
     def test_all_feature_keys_have_matrix_entries(self):
+        expected_tiers = {OrgTier.SOLO, OrgTier.TEAM, OrgTier.ENTERPRISE, OrgTier.SELF_HOSTED}
         for tier in OrgTier:
-            matrix = {
-                OrgTier.SOLO: True,
-                OrgTier.TEAM: True,
-                OrgTier.ENTERPRISE: True,
-            }
-            assert tier in matrix
+            assert tier in expected_tiers, f"Unexpected tier: {tier}"
 
     def test_feature_key_from_string(self):
         assert FeatureKey("sandbox.tier_b_container") == FeatureKey.SANDBOX_TIER_B_CONTAINER

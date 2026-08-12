@@ -1,4 +1,3 @@
-import time
 from enum import Enum
 from typing import List, Optional, Tuple
 
@@ -322,8 +321,6 @@ class VerificationRunner:
         ci_failure_detected: bool,
         monitor_timeout_seconds: int = 3600,
     ) -> bool:
-        if not ci_failure_detected:
-            return False
+        from loom.business.post_merge import auto_rollback_triggered
 
-        elapsed = time.time() - merge_time
-        return elapsed <= monitor_timeout_seconds
+        return auto_rollback_triggered(merge_time, ci_failure_detected, monitor_timeout_seconds)

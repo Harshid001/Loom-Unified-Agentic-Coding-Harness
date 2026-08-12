@@ -2,7 +2,7 @@ import hashlib
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,7 @@ class OrgTier(str, Enum):
     SOLO = "solo"
     TEAM = "team"
     ENTERPRISE = "enterprise"
+    SELF_HOSTED = "self_hosted"
 
 
 class HardStopPolicy(str, Enum):
@@ -34,10 +35,12 @@ class Organization(BaseModel):
     tier: OrgTier = OrgTier.SOLO
     hard_stop_policy: HardStopPolicy = HardStopPolicy.BLOCK
     data_residency_region: str = "us-east-1"
-    auto_merge_threshold: float = 0.95
+    auto_merge_threshold: float = Field(default=0.95, ge=0.85, le=1.0)
     burst_grace_pct: float = 20.0
     burst_grace_hours: int = 48
     post_merge_monitor_timeout_seconds: int = 3600
+    overage_run_cap_multiplier: float = 2.0
+    last_payment_failed_at: Optional[float] = None
     router_weights: Dict[str, float] = Field(
         default_factory=lambda: {
             "w1_cost": 0.25,
@@ -61,6 +64,28 @@ class Membership(BaseModel):
     org_id: str
     role: MembershipRole = MembershipRole.DEVELOPER
     joined_at: float = Field(default_factory=time.time)
+
+
+class RepoProvider(str, Enum):
+    GITHUB = "github"
+    GITLAB = "gitlab"
+    LOCAL = "local"
+
+
+class RepoConnection(BaseModel):
+    id: str = Field(default_factory=lambda: f"repo_{uuid.uuid4().hex[:12]}")
+    org_id: str
+    provider: RepoProvider = RepoProvider.LOCAL
+    install_token_ref: str = ""
+    repo_path: str = ""
+    remote_url: str = ""
+    connected_at: float = Field(default_factory=time.time)
+
+    @classmethod
+    def create(cls, org_id: str, provider: RepoProvider, install_token_ref: str, **kwargs: Any) -> "RepoConnection":
+        if not install_token_ref.startswith("vault:"):
+            raise ValueError("install_token_ref must reference the secrets vault (vault:<ref>), never a raw token")
+        return cls(org_id=org_id, provider=provider, install_token_ref=install_token_ref, **kwargs)
 
 
 class Quota(BaseModel):
@@ -125,12 +150,23 @@ TIER_FEATURE_MATRIX: Dict[OrgTier, Dict[FeatureKey, bool]] = {
         FeatureKey.INTEGRATIONS_CI_BOT: True,
         FeatureKey.INTEGRATIONS_IDE_PLUGINS: True,
     },
+    OrgTier.SELF_HOSTED: {
+        FeatureKey.SANDBOX_TIER_B_CONTAINER: True,
+        FeatureKey.SANDBOX_TIER_C_MICROVM: True,
+        FeatureKey.MEMORY_TEAM_SYNC: True,
+        FeatureKey.ROUTER_CONSENSUS_VERIFICATION: True,
+        FeatureKey.GOVERNANCE_SSO_SCIM: True,
+        FeatureKey.GOVERNANCE_SOC2_AUDIT_EXPORT: True,
+        FeatureKey.INTEGRATIONS_CI_BOT: True,
+        FeatureKey.INTEGRATIONS_IDE_PLUGINS: True,
+    },
 }
 
 TIER_QUOTA_MAP: Dict[OrgTier, Quota] = {
     OrgTier.SOLO: Quota(org_id="", runs_per_month=50, repos_connected=1, seats=1),
     OrgTier.TEAM: Quota(org_id="", runs_per_month=500, repos_connected=20, seats=15),
     OrgTier.ENTERPRISE: Quota(org_id="", runs_per_month=10_000, repos_connected=100, seats=500),
+    OrgTier.SELF_HOSTED: Quota(org_id="", runs_per_month=10_000, repos_connected=100, seats=500),
 }
 
 
@@ -182,6 +218,7 @@ class AuditAction(str, Enum):
     MEMBER_INVITED = "member.invited"
     MEMBER_REMOVED = "member.removed"
     MEMBER_DEPROVISIONED = "member.deprovisioned"
+    PATCH_SENSITIVE_BLOCKED = "patch.sensitive_path_blocked"
     EVIDENCE_EXPORTED = "evidence.exported"
     SANDBOX_EGRESS_BLOCKED = "sandbox.egress_blocked"
     CONFIG_CHANGED = "config.changed"
@@ -196,3 +233,64 @@ class AuditLogEntry(BaseModel):
     ip: str = ""
     metadata: Dict[str, Any] = Field(default_factory=dict)
     timestamp: float = Field(default_factory=time.time)
+
+
+class RunRecord(BaseModel):
+    """Central execution record (spec §2); status mirrors the DAG state machine (§3.5)."""
+
+    run_id: str
+    org_id: str = "default"
+    repo_id: str = ""
+    issue_text: str = ""
+    status: str = "queued"
+    sandbox_tier: str = "A"
+    model_sequence: List[str] = Field(default_factory=list)
+    verification_passed: bool = False
+    confidence_score: float = 0.0
+    merge_decision: Dict[str, Any] = Field(default_factory=dict)
+    cost_usd: float = 0.0
+    started_at: float = Field(default_factory=time.time)
+    completed_at: Optional[float] = None
+
+
+class AgentStepRecord(BaseModel):
+    """One row per DAG node execution (spec §2)."""
+
+    id: str = Field(default_factory=lambda: f"step_{uuid.uuid4().hex[:16]}")
+    run_id: str
+    agent_name: str
+    input_context_ref: str = ""
+    output_ref: str = ""
+    tokens_in: int = 0
+    tokens_out: int = 0
+    model_id: str = "unknown"
+    duration_ms: int = 0
+    retry_count: int = 0
+    context_truncated: bool = False
+    status: str = "completed"
+    recorded_at: float = Field(default_factory=time.time)
+
+
+class PatchRecord(BaseModel):
+    """Diff-level patch record; risk_flags drive the consensus requirement (§3.1)."""
+
+    id: str = Field(default_factory=lambda: f"patch_{uuid.uuid4().hex[:16]}")
+    run_id: str
+    diff_hash: str = ""
+    diff_ref: str = ""
+    files_touched: int = 0
+    risk_flags: List[str] = Field(default_factory=list)
+    apply_status: str = "applied"
+    recorded_at: float = Field(default_factory=time.time)
+
+
+class VerificationResultRecord(BaseModel):
+    """One row per verification stage: build/test/repro/lint/sast (§3.6)."""
+
+    id: str = Field(default_factory=lambda: f"verify_{uuid.uuid4().hex[:16]}")
+    run_id: str
+    stage: str  # build | test | repro | lint | sast
+    status: str  # passed | failed | skipped
+    evidence_ref: str = ""
+    details: Dict[str, Any] = Field(default_factory=dict)
+    recorded_at: float = Field(default_factory=time.time)

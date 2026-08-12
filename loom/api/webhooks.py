@@ -15,14 +15,19 @@ logger = logging.getLogger("loom.api.webhooks")
 
 
 class WebhookEventType(str, Enum):
+    RUN_QUEUED = "run.queued"
     RUN_STARTED = "run.started"
     RUN_STEP_PROGRESS = "run.step_progress"
     RUN_COMPLETED = "run.completed"
     RUN_FAILED = "run.failed"
+    RUN_SECURITY_HOLD = "run.security_hold"
     RUN_ROLLED_BACK = "run.rolled_back"
     PATCH_PROPOSED = "patch.proposed"
     PATCH_AUTO_MERGED = "patch.auto_merged"
     EVIDENCE_READY = "evidence.ready"
+    EVIDENCE_EXPORTED = "evidence.exported"
+    USAGE_QUOTA_WARNING = "usage.quota_warning"
+    USAGE_QUOTA_EXCEEDED = "usage.quota_exceeded"
     QUOTA_WARNING = "quota.warning"
     QUOTA_EXCEEDED = "quota.exceeded"
     SANDBOX_EGRESS_BLOCKED = "sandbox.egress_blocked"
@@ -83,14 +88,14 @@ class WebhookEngine:
     def __init__(
         self,
         storage_dir: Optional[str] = None,
-        http_client: Optional[httpx.AsyncClient] = None,
+        http_client: Optional[Any] = None,
     ):
         base = Path(storage_dir or str(Path.home() / ".loom" / "webhooks"))
         self._dir = base
         self._dir.mkdir(parents=True, exist_ok=True)
         self._subscriptions: Dict[str, WebhookSubscription] = {}
         self._deliveries: Dict[str, WebhookDelivery] = {}
-        self._http = http_client
+        self._http: Optional[Any] = http_client
         self._load_subscriptions()
 
     async def _ensure_client(self):
@@ -354,3 +359,18 @@ class WebhookEngine:
             except Exception as exc:
                 logger.warning("Dead letter replay failed for %s: %s", d.id, exc)
         return results
+
+
+_webhook_engine_instance: Optional[WebhookEngine] = None
+
+
+def get_webhook_engine(storage_dir: Optional[str] = None) -> WebhookEngine:
+    global _webhook_engine_instance
+    if _webhook_engine_instance is None:
+        _webhook_engine_instance = WebhookEngine(storage_dir=storage_dir)
+    return _webhook_engine_instance
+
+
+def reset_webhook_engine() -> None:
+    global _webhook_engine_instance
+    _webhook_engine_instance = None

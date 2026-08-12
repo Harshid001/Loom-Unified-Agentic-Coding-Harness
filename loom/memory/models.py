@@ -35,6 +35,7 @@ class InvalidationRule(BaseModel):
 
 class MemoryItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    org_id: str = "default"  # tenant scope (spec §2: memory is tenant-scoped)
     tier: MemoryTier
     content: str
     source: str = "system"
@@ -44,3 +45,10 @@ class MemoryItem(BaseModel):
     last_used_at: float = Field(default_factory=time.time)
     invalidation: InvalidationRule = Field(default_factory=InvalidationRule)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def ttl_expires_at(self) -> Optional[float]:
+        """Absolute expiry timestamp for time_to_live invalidation rules (spec §2)."""
+        if self.invalidation.rule_type == "time_to_live" and self.invalidation.ttl_seconds:
+            return self.created_at + self.invalidation.ttl_seconds
+        return None

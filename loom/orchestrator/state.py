@@ -73,7 +73,20 @@ class OrchestratorState(BaseModel):
         path = Path(checkpoint_dir)
         path.mkdir(parents=True, exist_ok=True)
         file_path = path / f"checkpoint_{self.run_id}.json"
-        file_path.write_text(json.dumps(self.model_dump(), indent=2), encoding="utf-8")
+        def _sanitize(obj):
+            if isinstance(obj, dict):
+                return {k: _sanitize(v) for k, v in obj.items()
+                        if not k.startswith("__")}
+            if isinstance(obj, list):
+                return [_sanitize(v) for v in obj]
+            try:
+                json.dumps(obj)
+                return obj
+            except (TypeError, ValueError):
+                return str(obj)
+
+        data = _sanitize(self.model_dump())
+        file_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     @classmethod
     def load_checkpoint(cls, run_id: str, checkpoint_dir: Optional[str] = None) -> Optional["OrchestratorState"]:

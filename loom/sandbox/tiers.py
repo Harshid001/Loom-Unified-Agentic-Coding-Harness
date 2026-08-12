@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict, List, Optional, Set
 
-from loom.business.models import OrgTier
+from loom.business.audit_log import AuditLogger
+from loom.business.models import AuditAction, OrgTier
 from loom.sandbox.base import BaseSandbox
 from loom.sandbox.local_process import LocalProcessSandbox
 
@@ -79,9 +80,10 @@ class EgressViolation:
 
 
 class EgressEnforcer:
-    def __init__(self, allowlist: Optional[Set[str]] = None):
+    def __init__(self, allowlist: Optional[Set[str]] = None, audit_logger: Optional[AuditLogger] = None):
         self.allowlist = allowlist or DEFAULT_EGRESS_ALLOWLIST.copy()
         self.violations: List[EgressViolation] = []
+        self.audit_logger = audit_logger
 
     def check_egress(self, target: str, command: str, tier: SandboxTier) -> bool:
         target_normalized = target.lower().strip()
@@ -91,6 +93,14 @@ class EgressEnforcer:
 
         violation = EgressViolation(target=target, command=command, tier=tier)
         self.violations.append(violation)
+        if self.audit_logger is not None:
+            self.audit_logger.record(
+                org_id="unknown",
+                action=AuditAction.SANDBOX_EGRESS_BLOCKED,
+                actor_id="sandbox_egress_enforcer",
+                target=target,
+                metadata={"command": command, "tier": tier.value},
+            )
         return False
 
     def check_command_egress(self, command: str, tier: SandboxTier) -> List[str]:

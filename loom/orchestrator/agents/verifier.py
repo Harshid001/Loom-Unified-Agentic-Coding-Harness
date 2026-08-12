@@ -7,11 +7,13 @@ from loom.verification.runner import VerificationRunner
 
 
 class VerifierAgent(BaseAgent):
-    """Runs build and test verification suites to validate patch correctness."""
+    """Runs the §3.6 verification-first pipeline: build/tests, repro flip check,
+    SAST scan, confidence score, and decision matrix."""
 
     async def execute(self, state: OrchestratorState) -> Dict[str, Any]:
         sandbox = LocalProcessSandbox(state.repo_path)
-        runner = VerificationRunner(sandbox)
+        threshold = float(state.shared_data.get("auto_merge_threshold", 0.95))
+        runner = VerificationRunner(sandbox, auto_merge_threshold=threshold)
 
         test_frameworks = state.shared_data.get("repo_map", {}).get("test_frameworks", ["pytest"])
         test_cmds = []
@@ -34,8 +36,19 @@ class VerifierAgent(BaseAgent):
         if not test_cmds:
             test_cmds = ["pytest"]
 
-        res = runner.run_verification(test_commands=test_cmds)
+        res, _repro = runner.full_verification_pipeline(
+            test_commands=test_cmds,
+            repro_script=state.reproduction_test or "",
+            pre_patch_test_commands=[],
+            post_patch_test_commands=test_cmds,
+            diff_text=state.patch_diff or "",
+        )
         state.verification_passed = res.overall_success
+
+        state.shared_data["confidence_score"] = res.confidence_score
+        state.shared_data["verification_decision"] = res.decision.value
+        state.shared_data["sast_findings"] = [f.model_dump() for f in res.sast_findings]
+        state.shared_data["sast_severity"] = res.sast_severity.value
 
         verifier_output = {
             "overall_success": res.overall_success,
@@ -43,6 +56,11 @@ class VerifierAgent(BaseAgent):
             "tests_passed": res.tests_passed,
             "failure_reason": res.failure_reason,
             "test_count": len(res.test_results),
+            "sast_severity": res.sast_severity.value,
+            "sast_findings": [f.model_dump() for f in res.sast_findings],
+            "repro_flip_confirmed": res.repro_flip_confirmed,
+            "confidence_score": res.confidence_score,
+            "decision": res.decision.value,
         }
         state.shared_data["verification_output"] = verifier_output
         return verifier_output

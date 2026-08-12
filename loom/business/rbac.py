@@ -1,6 +1,9 @@
 from enum import Enum
 from typing import Dict, Set
 
+from fastapi import HTTPException
+from fastapi import status as http_status
+
 from loom.business.models import MembershipRole
 
 
@@ -55,7 +58,7 @@ RBAC_MATRIX: Dict[MembershipRole, Set[Action]] = {
     MembershipRole.BILLING_ADMIN: {
         Action.VIEW_BILLING,
         Action.MODIFY_BILLING,
-        Action.MODIFY_ENTITLEMENTS,
+        Action.MODIFY_QUOTA_POLICY,
     },
     MembershipRole.AUDITOR: {
         Action.EXPORT_EVIDENCE,
@@ -74,9 +77,12 @@ class RBACEnforcer:
 
     def authorize(self, action: Action, resource: str = "") -> None:
         if not self.can(action):
-            raise PermissionError(
-                f"Role '{self._role.value}' lacks permission '{action.value}'"
-                + (f" on '{resource}'" if resource else "")
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Role '{self._role.value}' lacks permission '{action.value}'"
+                    + (f" on '{resource}'" if resource else "")
+                ),
             )
 
     @property

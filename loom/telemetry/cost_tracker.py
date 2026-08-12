@@ -9,6 +9,8 @@ from loom.business.usage_ledger import get_usage_ledger
 
 class NodeCost(BaseModel):
     node_name: str
+    model_id: str = "unknown"
+    sandbox_tier: str = "A"
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -29,9 +31,10 @@ class CostTracker:
         self.node_costs: Dict[str, NodeCost] = {}
         self._node_attempts: Dict[str, int] = {}
 
-    def add_usage(self, node_name: str, prompt_tokens: int, completion_tokens: int, cost_usd: float):
+    def add_usage(self, node_name: str, prompt_tokens: int, completion_tokens: int, cost_usd: float,
+                  model_id: str = "unknown", sandbox_tier: str = "A"):
         if node_name not in self.node_costs:
-            self.node_costs[node_name] = NodeCost(node_name=node_name)
+            self.node_costs[node_name] = NodeCost(node_name=node_name, model_id=model_id, sandbox_tier=sandbox_tier)
             self._node_attempts[node_name] = 0
 
         self._node_attempts[node_name] += 1
@@ -41,6 +44,8 @@ class CostTracker:
         nc.completion_tokens += completion_tokens
         nc.total_tokens += prompt_tokens + completion_tokens
         nc.cost_usd += cost_usd
+        nc.model_id = model_id
+        nc.sandbox_tier = sandbox_tier
 
     def add_usage_with_context(
         self,

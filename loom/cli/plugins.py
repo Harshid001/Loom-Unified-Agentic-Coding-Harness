@@ -3,23 +3,24 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger("loom.cli.plugins")
 
 
 class HookContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     run_id: str
     node_name: str
     repo_path: str
     issue_description: str
     state_data: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        arbitrary_types_allowed = True
-
 
 class PluginManifest(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     name: str
     version: str
     description: str = ""
