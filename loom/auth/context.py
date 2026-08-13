@@ -23,6 +23,7 @@ class AuthenticatedPrincipal:
 _principal: ContextVar[Optional[AuthenticatedPrincipal]] = ContextVar(
     "loom_authenticated_principal", default=None
 )
+_request_auth_context: ContextVar[bool] = ContextVar("loom_request_auth_context", default=False)
 
 
 def set_principal(principal: AuthenticatedPrincipal) -> AuthenticatedPrincipal:
@@ -38,6 +39,19 @@ def clear_principal() -> None:
     _principal.set(None)
 
 
+def begin_request_auth_context() -> None:
+    _request_auth_context.set(True)
+
+
+def end_request_auth_context() -> None:
+    _request_auth_context.set(False)
+    clear_principal()
+
+
+def in_request_auth_context() -> bool:
+    return _request_auth_context.get()
+
+
 def get_service_principal() -> AuthenticatedPrincipal:
     """Resolve the fixed identity represented by the shared API key."""
     return AuthenticatedPrincipal(
@@ -49,19 +63,11 @@ def get_service_principal() -> AuthenticatedPrincipal:
 
 
 def _is_secure_runtime() -> bool:
-    """Return whether client-supplied identity headers must be ignored.
-
-    Production is always secure, even when a stale/global DEV_MODE environment
-    variable is present. Header-based identity compatibility is available only
-    when development mode is explicitly selected *and* the development bypass
-    is explicitly enabled.
-    """
+    """Return whether client-supplied identity headers must be ignored."""
     env = os.getenv("LOOM_ENV", "").lower()
     dev_flag = os.getenv("DEV_MODE", "").lower()
-
     if env in {"prod", "production"}:
         return True
-
     return not (env == "development" and dev_flag in {"true", "1", "yes", "on"})
 
 
@@ -71,10 +77,7 @@ def get_effective_principal(
 ) -> AuthenticatedPrincipal:
     """Return credential-bound identity, never forged client headers in secure runtime."""
     current = get_principal()
-    # API-token identities are request-bound and authoritative.
-    # Shared API-key identity is derived from current environment so an old
-    # API-key principal cannot leak across requests or tests.
-    principal = current if current is not None and current.auth_method == "api_token" else get_service_principal()
+    principal = current if in_request_auth_context() and current is not None else get_service_principal()
 
     if _is_secure_runtime():
         return principal
