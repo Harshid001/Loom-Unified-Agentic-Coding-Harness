@@ -109,5 +109,5 @@ def test_production_factory_fails_closed_for_fake_firecracker(tmp_path, monkeypa
     state = OrchestratorState(run_id="run_test", repo_path=str(tmp_path), issue_description="test")
     state.shared_data["sandbox_tier"] = "C"
 
-    with pytest.raises(RuntimeError, match="real Firecracker"):
+    with pytest.raises(RuntimeError, match="requires a configured Firecracker worker"):
         sandbox_for_state(state)
