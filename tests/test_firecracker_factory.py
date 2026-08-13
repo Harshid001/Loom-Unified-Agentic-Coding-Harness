@@ -1,13 +1,8 @@
 import pytest
 
-from loom.business.models import OrgTier
 from loom.orchestrator.state import OrchestratorState
-from loom.sandbox.docker_sandbox import DockerSandbox
 from loom.sandbox.factory import sandbox_for_state
 from loom.sandbox.firecracker_sandbox import FirecrackerSandbox
-from loom.sandbox.local_process import LocalProcessSandbox
-from loom.sandbox.remote import RemoteDockerSandbox
-from loom.sandbox.tiers import SandboxContext, SandboxTier, SandboxTierSelector
 
 
 def test_production_factory_uses_firecracker_worker(tmp_path, monkeypatch):

@@ -9,11 +9,11 @@ import secrets
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
-from pydantic import BaseModel, Field
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from pydantic import BaseModel, Field
 from starlette.middleware.wsgi import WSGIMiddleware
 
 from loom.sandbox.base import CommandResult

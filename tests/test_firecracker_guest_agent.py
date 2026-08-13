@@ -20,7 +20,6 @@ def test_guest_agent_extract_blocks_absolute_and_parent_paths(tmp_path: Path):
 
 
 def test_guest_agent_extract_blocks_symlink_members(tmp_path: Path):
-    import io
     import tarfile
 
     archive = tmp_path / "symlink.tar"
