@@ -105,18 +105,29 @@ class JobQueue:
         except Exception:
             pass
 
-        result = await self.coordinator.client.xreadgroup(
-            self.GROUP,
-            self.consumer,
-            {self.STREAM: ">"},
-            count=1,
-            block=block_ms,
+        result = cast(
+            Any,
+            await self.coordinator.client.xreadgroup(
+                self.GROUP,
+                self.consumer,
+                {self.STREAM: ">"},
+                count=1,
+                block=block_ms,
+            ),
         )
         if not result:
             return None
-        _, messages = result[0]
-        message_id, values = messages[0]
-        raw = values.get("job")
+        stream_messages = result[0]
+        if not isinstance(stream_messages, (list, tuple)) or len(stream_messages) < 2:
+            return None
+        messages = stream_messages[1]
+        if not isinstance(messages, (list, tuple)) or not messages:
+            return None
+        first_message = messages[0]
+        if not isinstance(first_message, (list, tuple)) or len(first_message) < 2:
+            return None
+        message_id, values = first_message[0], first_message[1]
+        raw = values.get("job") if isinstance(values, dict) else None
         if not raw:
             await self.ack(str(message_id))
             return None
