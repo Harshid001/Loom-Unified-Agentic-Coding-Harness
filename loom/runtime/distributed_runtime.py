@@ -11,7 +11,7 @@ import json
 import time
 from typing import Any, Awaitable, Callable
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from loom.infra.distributed import RedisCoordinator, RedisRateLimiter, RunMetadata
@@ -153,6 +153,7 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
         )
         return result
 
+    # Mutate the existing class so server_module.TaskGraph references remain valid.
     task_graph_module.TaskGraph.__init__ = wrapped_init
     task_graph_module.TaskGraph.run = wrapped_run
 
@@ -189,7 +190,7 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
             return await original_control_run(req)
         run = await coordinator.get_run(req.run_id)
         if not run:
-            raise server_module.HTTPException(status_code=404, detail=f"Run {req.run_id} not found")
+            raise HTTPException(status_code=404, detail=f"Run {req.run_id} not found")
         await coordinator.publish_control(
             req.run_id,
             req.action,
@@ -197,15 +198,26 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
         )
         return {"status": "accepted", "action": req.action.lower(), "run_id": req.run_id, "remote": True}
 
+    def token_admin_block(*args: Any, **kwargs: Any):
+        raise HTTPException(
+            status_code=403,
+            detail="Token administration is disabled in production; use the privileged control plane.",
+        )
+
     # APIRoute caches its dependency callable, so update both endpoint and call.
     for route in app.routes:
-        if getattr(route, "path", None) in ("/api/v1/stream/{run_id}", "/api/stream/{run_id}"):
+        path = getattr(route, "path", None)
+        if path in ("/api/v1/stream/{run_id}", "/api/stream/{run_id}"):
             route.endpoint = wrapped_stream
             if hasattr(route, "dependant"):
                 route.dependant.call = wrapped_stream
-        elif getattr(route, "path", None) in ("/api/v1/run/control", "/api/run/control"):
+        elif path in ("/api/v1/run/control", "/api/run/control"):
             route.endpoint = wrapped_control
             if hasattr(route, "dependant"):
                 route.dependant.call = wrapped_control
+        elif path in ("/api/v1/auth/tokens", "/api/auth/tokens", "/api/v1/auth/tokens/{token_id}", "/api/auth/tokens/{token_id}"):
+            route.endpoint = token_admin_block
+            if hasattr(route, "dependant"):
+                route.dependant.call = token_admin_block
 
     app.state.distributed_installed = True
