@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       run_load_test:
-        description: "Run the load test against the supplied deployment"
+        description: "Run the load/SLO gate against the supplied deployment"
         required: true
         default: true
         type: boolean
@@ -47,7 +47,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools
           pip install -e .
-          pip install pytest pytest-timeout
+          pip install pytest pytest-timeout httpx
 
       - name: Production preflight
         env:
@@ -64,33 +64,30 @@ jobs:
           RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
         run: python scripts/production_preflight.py
 
-      - name: API liveness
+      - name: Repository production gate tests
+        run: python -m pytest tests/test_production_preflight.py tests/test_production_gate_tools.py --timeout=60 --timeout_method=thread
+
+      - name: API liveness/readiness evidence
         env:
           BASE_URL: ${{ inputs.base_url }}
-        run: |
-          curl --fail --silent --show-error "${BASE_URL%/}/healthz" >/dev/null
+        run: python scripts/release_probe.py --base-url "${BASE_URL}" --evidence release-health-evidence.json
 
-      - name: API readiness
-        env:
-          BASE_URL: ${{ inputs.base_url }}
-          API_KEY: ${{ secrets.LOOM_PROD_API_KEY }}
-        run: |
-          curl --fail --silent --show-error \
-            -H "X-API-Key: ${API_KEY}" \
-            "${BASE_URL%/}/api/v1/health/readiness" >/dev/null
-
-      - name: Load/concurrency gate
+      - name: Load/concurrency SLO gate
         if: ${{ inputs.run_load_test }}
         env:
           BASE_URL: ${{ inputs.base_url }}
           API_KEY: ${{ secrets.LOOM_PROD_API_KEY }}
         run: |
-          python scripts/load_test.py \
+          python scripts/load_slo_gate.py \
             --base-url "${BASE_URL}" \
             --api-key "${API_KEY}" \
             --repo-path "${{ inputs.repo_path }}" \
             --concurrency 20 \
-            --requests 100
+            --requests 100 \
+            --max-error-rate 0.01 \
+            --max-p95 0.50 \
+            --max-p99 1.00 \
+            --min-throughput 10
 
       - name: Firecracker worker gate
         if: ${{ inputs.run_firecracker_e2e }}
@@ -118,5 +115,6 @@ jobs:
         with:
           name: production-release-gates-${{ github.run_id }}
           path: |
+            release-health-evidence.json
             ${{ runner.temp }}/restore-drill-report.json
           if-no-files-found: ignore
