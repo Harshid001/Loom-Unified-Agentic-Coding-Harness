@@ -149,7 +149,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
         {generatedKey && (
           <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-xl p-3.5 space-y-2">
             <div className="flex items-center justify-between text-xs text-emerald-400 font-semibold">
-              <span>API Key Generated! Copy now (won't be shown again)</span>
+              <span>API Key Generated! Copy now (won&apos;t be shown again)</span>
             </div>
             <div className="flex items-center gap-2 bg-gray-950 border border-emerald-900/50 rounded-lg p-2 font-mono text-xs text-emerald-300 overflow-x-auto">
               <span className="flex-1 truncate">{generatedKey}</span>
