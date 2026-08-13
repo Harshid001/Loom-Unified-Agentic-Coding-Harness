@@ -102,6 +102,19 @@ jobs:
           export DOCKER_GID=$(getent group docker | cut -d: -f3 || echo 999)
           docker compose config --quiet
 
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository with Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   native-smoke:
     name: Native Server & CLI Smoke Test
     runs-on: ubuntu-latest
