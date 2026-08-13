@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/dom';
 import { Header } from '../src/components/Header';
 import { Sidebar } from '../src/components/Sidebar';
 import { NewRunModal } from '../src/components/NewRunModal';
