@@ -1,5 +1,3 @@
-import subprocess
-
 import pytest
 
 from scripts.recovery_probe import execute, probe_until_healthy, validate_guard
