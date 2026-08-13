@@ -1,0 +1,2 @@
+# REQUIRED: replace with the SHA-256 of the exact deployed Firecracker v1.16.1 x86_64 binary.
+# The production host validator rejects this placeholder.
