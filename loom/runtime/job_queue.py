@@ -7,7 +7,7 @@ import os
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Any, Optional, cast
 
 from loom.infra.distributed import RedisCoordinator
 
@@ -72,20 +72,20 @@ class JobQueue:
     async def claim(self, block_ms: int = 5000) -> Optional[ClaimedJob]:
         await self.ensure_group()
         try:
-            claimed = await self.coordinator.client.xautoclaim(
+            claimed = cast(Any, await self.coordinator.client.xautoclaim(
                 self.STREAM,
                 self.GROUP,
                 self.consumer,
                 min_idle_time=self.visibility_timeout * 1000,
                 start_id="0-0",
                 count=1,
-            )
+            ))
             messages = claimed[1] if isinstance(claimed, (list, tuple)) and len(claimed) > 1 else []
             if messages:
                 message_id, values = messages[0]
-                raw = values.get("job")
+                raw = values.get("job") if isinstance(values, dict) else None
                 if raw:
-                    return ClaimedJob(job=RunJob(**json.loads(raw)), message_id=message_id)
+                    return ClaimedJob(job=RunJob(**json.loads(str(raw))), message_id=str(message_id))
         except Exception:
             pass
 
