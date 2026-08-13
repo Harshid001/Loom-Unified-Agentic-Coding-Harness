@@ -12,11 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
 COPY README.md .
 COPY loom/ loom/
+COPY scripts/ scripts/
 
 RUN pip install --upgrade pip && \
     pip install .
