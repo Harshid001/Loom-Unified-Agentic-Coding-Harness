@@ -2,8 +2,8 @@ import json
 
 from cryptography.fernet import Fernet
 
-from loom.api.webhooks import WebhookEngine, WebhookSubscription
 from loom.api.late_hardening import apply_late_hardening
+from loom.api.webhooks import WebhookEngine, WebhookSubscription
 
 
 def test_webhook_secret_encrypted_at_rest(tmp_path, monkeypatch):
