@@ -309,11 +309,7 @@ class TaskGraph:
                 except Exception as ledger_err:
                     logger.warning("Failed to record usage event for step %s: %s", node_name, ledger_err)
 
-                ctx_truncated = (
-                    bool(out.get("context_truncated"))
-                    if isinstance(out, dict)
-                    else False
-                )
+                ctx_truncated = bool(out.get("context_truncated")) if isinstance(out, dict) else False
                 self._record_step(
                     node_name=node_name,
                     model_name=model_name,
@@ -520,9 +516,6 @@ class TaskGraph:
                 self.is_paused = True
                 self.step_mode = False
 
-        if self.run_status not in (RunStatus.FAILED, RunStatus.ROLLED_BACK, RunStatus.CONFLICT_RESOLUTION, RunStatus.SECURITY_HOLD):
-            self.run_status = RunStatus.MERGED
-
         confidence = float(self.state.shared_data.get("confidence_score", 0.0))
         try:
             threshold = float(self.state.shared_data.get("auto_merge_threshold", 0.95))
@@ -538,12 +531,22 @@ class TaskGraph:
         )
         self.state.shared_data["merge_decision"] = merge_decision
 
-        if merge_decision["security_hold"]:
+        # Final status is derived from the verification result and merge decision.
+        # MERGED is impossible unless verification passed and auto-merge was selected.
+        if self.run_status in (RunStatus.FAILED, RunStatus.ROLLED_BACK):
+            pass
+        elif merge_decision["security_hold"]:
             self.run_status = RunStatus.SECURITY_HOLD
-        elif self.state.shared_data.get("conflict_detected"):
+        elif merge_decision["conflict_detected"]:
             self.run_status = RunStatus.CONFLICT_RESOLUTION
-        elif self.run_status not in (RunStatus.FAILED, RunStatus.ROLLED_BACK, RunStatus.CONFLICT_RESOLUTION, RunStatus.SECURITY_HOLD):
+        elif not self.state.verification_passed:
+            self.run_status = RunStatus.FAILED
+        elif merge_decision["auto_merge"]:
             self.run_status = RunStatus.MERGED
+        elif merge_decision["needs_human_review"]:
+            self.run_status = RunStatus.EVIDENCE_REVIEW
+        else:
+            self.run_status = RunStatus.FAILED
 
         self._export_evidence_bundle()
 
@@ -556,8 +559,13 @@ class TaskGraph:
                 WebhookEventType.RUN_FAILED,
                 {"merge_decision": merge_decision, "reason": "merge_conflict", "conflict_detected": True},
             )
-        elif self.run_status == RunStatus.FAILED or not self.state.verification_passed:
+        elif self.run_status == RunStatus.FAILED:
             self._fire_webhook(WebhookEventType.RUN_FAILED, {"merge_decision": merge_decision})
+        elif self.run_status == RunStatus.EVIDENCE_REVIEW:
+            self._fire_webhook(
+                WebhookEventType.RUN_FAILED,
+                {"merge_decision": merge_decision, "reason": "human_review_required"},
+            )
         else:
             self._fire_webhook(WebhookEventType.RUN_COMPLETED, {"merge_decision": merge_decision})
 
