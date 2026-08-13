@@ -16,11 +16,7 @@ class FailureClass(str, Enum):
     UNKNOWN = "unknown"
 
 
-NON_RETRYABLE = {
-    FailureClass.SECURITY,
-    FailureClass.CONFIGURATION,
-    FailureClass.INVALID_INPUT,
-}
+NON_RETRYABLE = {FailureClass.SECURITY, FailureClass.CONFIGURATION, FailureClass.INVALID_INPUT}
 
 
 def classify_failure(error: BaseException) -> FailureClass:
@@ -34,7 +30,7 @@ def classify_failure(error: BaseException) -> FailureClass:
         return FailureClass.INVALID_INPUT
     if "rate limit" in message or "429" in message or "ratelimit" in name:
         return FailureClass.RATE_LIMIT
-    if "sandbox" in message or "docker" in message or "microvm" in message:
+    if "sandbox" in message or "microvm" in message or "firecracker" in message:
         return FailureClass.SANDBOX
     if "conflict" in message or ("patch" in message and "apply" in message):
         return FailureClass.PATCH_CONFLICT
@@ -44,5 +40,4 @@ def classify_failure(error: BaseException) -> FailureClass:
 
 
 def should_retry(error: BaseException) -> bool:
-    failure_class = classify_failure(error)
-    return failure_class not in NON_RETRYABLE
+    return classify_failure(error) not in NON_RETRYABLE

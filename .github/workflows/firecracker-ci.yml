@@ -1,0 +1,31 @@
+name: Firecracker CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'remove-docker-firecracker'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package and CI tools
+        run: |
+          python -m pip install --upgrade pip setuptools
+          pip install -e ".[dev]"
+          pip install "ruff==0.16.2" "mypy==2.3.0" "pytest==9.1.1" "pytest-asyncio==1.4.0" "pytest-cov==7.1.0" "pytest-timeout==2.4.0"
+      - name: Ruff
+        run: ruff check loom/ tests/
+      - name: Mypy
+        run: mypy loom/ --ignore-missing-imports
+      - name: Tests
+        run: python -m pytest --timeout=60 --timeout_method=thread
