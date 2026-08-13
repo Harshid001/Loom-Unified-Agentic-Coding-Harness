@@ -1,3 +1,5 @@
+import pytest
+
 from loom.business.models import OrgTier
 from loom.sandbox.docker_sandbox import DockerSandbox
 from loom.sandbox.local_process import LocalProcessSandbox
@@ -15,15 +17,12 @@ def test_cross_instance_rollback(tmp_path):
     test_file = tmp_path / "app.py"
     test_file.write_text("original content", encoding="utf-8")
 
-    # Instance 1: Create snapshot
     sandbox1 = LocalProcessSandbox(str(tmp_path))
     snap_id = sandbox1.create_snapshot("test_snap")
 
-    # Mutate file
     test_file.write_text("mutated content", encoding="utf-8")
     assert test_file.read_text(encoding="utf-8") == "mutated content"
 
-    # Instance 2: Restore snapshot across fresh instance/process boundary
     sandbox2 = LocalProcessSandbox(str(tmp_path))
     success = sandbox2.restore_snapshot(snap_id)
 
@@ -36,6 +35,28 @@ def test_docker_sandbox_instantiation(tmp_path):
     assert sandbox.image_name == "python:3.11-slim"
     assert sandbox.cpu_limit == 2.0
     assert sandbox.memory_mb == 4096
+
+
+def test_docker_sandbox_fails_closed_when_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "production")
+    sandbox = DockerSandbox(str(tmp_path), allow_local_fallback=False)
+    monkeypatch.setattr(sandbox, "is_docker_available", lambda: False)
+
+    result = sandbox.run_command(["python", "-c", "print('must-not-run-on-host')"])
+
+    assert result.exit_code == 125
+    assert "fail-closed" in result.stderr
+
+
+def test_docker_sandbox_allows_explicit_dev_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "development")
+    sandbox = DockerSandbox(str(tmp_path), allow_local_fallback=True)
+    monkeypatch.setattr(sandbox, "is_docker_available", lambda: False)
+
+    result = sandbox.run_command(["python", "-c", "print('dev-fallback')"])
+
+    assert result.exit_code == 0
+    assert "dev-fallback" in result.stdout
 
 
 def test_sandbox_tier_selector_creates_docker_sandbox(tmp_path):
