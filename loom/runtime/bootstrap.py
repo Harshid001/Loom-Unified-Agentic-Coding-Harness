@@ -19,9 +19,38 @@ PRODUCTION_REQUIRED = (
     "LOOM_MAX_RUN_TOKENS",
 )
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
 
 def is_production() -> bool:
-    return os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
+    """Return whether Loom is running with a production security posture.
+
+    An unset environment is intentionally treated as production-like for
+    security purposes. Development bypasses must be explicit with both
+    ``LOOM_ENV=development`` and ``DEV_MODE=true``.
+    """
+    env = os.getenv("LOOM_ENV", "").strip().lower()
+    dev_mode = os.getenv("DEV_MODE", "").strip().lower() in _TRUE_VALUES
+    return env in {"", "prod", "production"} or not (env == "development" and dev_mode)
+
+
+def validate_authentication_environment() -> None:
+    """Fail closed unless authentication or explicit development mode is configured.
+
+    This validation is intentionally narrower than the full production bootstrap
+    so local server startup can report the authentication requirement without
+    requiring every production infrastructure variable at import time.
+    """
+    env = os.getenv("LOOM_ENV", "").strip().lower()
+    dev_mode = os.getenv("DEV_MODE", "").strip().lower() in _TRUE_VALUES
+
+    if env == "development" and dev_mode:
+        return
+
+    if not os.getenv("API_KEY"):
+        raise RuntimeError(
+            "Loom startup blocked: API_KEY is required unless LOOM_ENV=development and DEV_MODE=true."
+        )
 
 
 def validate_production_environment() -> None:
@@ -46,7 +75,7 @@ def validate_production_environment() -> None:
         except ValueError as exc:
             raise RuntimeError(f"Production startup blocked: {name} must be a positive number") from exc
 
-    if os.getenv("LOOM_TOKEN_ADMIN_ENABLED", "false").lower() in {"1", "true", "yes"}:
+    if os.getenv("LOOM_TOKEN_ADMIN_ENABLED", "false").lower() in _TRUE_VALUES:
         raise RuntimeError(
             "Production startup blocked: LOOM_TOKEN_ADMIN_ENABLED requires an explicit privileged control-plane deployment"
         )
