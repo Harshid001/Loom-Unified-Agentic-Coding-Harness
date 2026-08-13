@@ -15,10 +15,12 @@ services:
       LOOM_SANDBOX_WORKER_URL: http://sandbox-worker:8100
       SANDBOX_WORKER_TOKEN: ${SANDBOX_WORKER_TOKEN:?SANDBOX_WORKER_TOKEN is required}
       LOOM_BACKUP_ENCRYPTION_KEY: ${LOOM_BACKUP_ENCRYPTION_KEY:?LOOM_BACKUP_ENCRYPTION_KEY is required}
+      LOOM_EVIDENCE_DIR: /app/.loom/evidence
       LOOM_TOKEN_ADMIN_ENABLED: "false"
     volumes:
       - /var/repos:/workspace:rw
       - evidence_data:/app/.loom/evidence
+      - loom_runtime:/home/loomuser/.loom
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,3 +73,4 @@ services:
 volumes:
   postgres_data:
   evidence_data:
+  loom_runtime:
