@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.routing import APIRoute
 
 from loom.infra.distributed import RedisCoordinator, RedisRateLimiter, RunMetadata
 
@@ -40,8 +41,6 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
     original_control_run = server_module.control_run
     original_stream_run_events = server_module.stream_run_events
 
-    # Wrap TaskGraph before any request creates a graph. The wrapper publishes
-    # lifecycle events and listens for control commands on the Redis channel.
     import loom.orchestrator.task_graph as task_graph_module
 
     original_init = task_graph_module.TaskGraph.__init__
@@ -49,6 +48,8 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
 
     def wrapped_init(self: Any, *args: Any, **kwargs: Any) -> None:
         state = args[0] if args else kwargs.get("state")
+        if state is None:
+            raise RuntimeError("TaskGraph requires orchestration state")
 
         callback_names = (
             "on_step_start",
@@ -153,9 +154,8 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
         )
         return result
 
-    # Mutate the existing class so server_module.TaskGraph references remain valid.
-    task_graph_module.TaskGraph.__init__ = wrapped_init
-    task_graph_module.TaskGraph.run = wrapped_run
+    setattr(task_graph_module.TaskGraph, "__init__", wrapped_init)
+    setattr(task_graph_module.TaskGraph, "run", wrapped_run)
 
     async def wrapped_stream(run_id: str):
         local_entry = server_module.ACTIVE_RUNS.get(run_id)
@@ -204,20 +204,18 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
             detail="Token administration is disabled in production; use the privileged control plane.",
         )
 
-    # APIRoute caches its dependency callable, so update both endpoint and call.
     for route in app.routes:
-        path = getattr(route, "path", None)
+        if not isinstance(route, APIRoute):
+            continue
+        path = route.path
         if path in ("/api/v1/stream/{run_id}", "/api/stream/{run_id}"):
             route.endpoint = wrapped_stream
-            if hasattr(route, "dependant"):
-                route.dependant.call = wrapped_stream
+            route.dependant.call = wrapped_stream
         elif path in ("/api/v1/run/control", "/api/run/control"):
             route.endpoint = wrapped_control
-            if hasattr(route, "dependant"):
-                route.dependant.call = wrapped_control
+            route.dependant.call = wrapped_control
         elif path in ("/api/v1/auth/tokens", "/api/auth/tokens", "/api/v1/auth/tokens/{token_id}", "/api/auth/tokens/{token_id}"):
             route.endpoint = token_admin_block
-            if hasattr(route, "dependant"):
-                route.dependant.call = token_admin_block
+            route.dependant.call = token_admin_block
 
     app.state.distributed_installed = True
