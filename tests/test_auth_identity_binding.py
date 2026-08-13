@@ -47,7 +47,6 @@ def test_forged_identity_headers_cannot_change_production_role(tmp_path, monkeyp
     svc.add_membership(Membership(user_id="alice", org_id="org_a", role=MembershipRole.DEVELOPER))
     svc.add_membership(Membership(user_id="victim-owner", org_id="org_b", role=MembershipRole.OWNER))
 
-    # This models a request carrying forged X-User-Id/X-Org-Id values.
     role = svc.get_role("org_b", "victim-owner")
     assert role == MembershipRole.DEVELOPER
 
@@ -90,6 +89,7 @@ def test_production_token_mint_requires_authentication(monkeypatch):
     monkeypatch.setenv("API_KEY", "server-secret")
 
     from fastapi.testclient import TestClient
+
     from loom.api.server import app
 
     response = TestClient(app).post("/api/v1/auth/tokens", json={"user_id": "attacker", "org_id": "default"})
@@ -103,6 +103,7 @@ def test_stream_requires_authentication_and_org_scope(monkeypatch):
     monkeypatch.setenv("API_KEY_USER_ID", "alice")
 
     from fastapi.testclient import TestClient
+
     from loom.api.server import ACTIVE_RUNS, app
     from loom.orchestrator.state import OrchestratorState
 
