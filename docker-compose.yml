@@ -42,6 +42,8 @@ services:
       SANDBOX_CONTAINER_REPO_ROOT: /workspace
       SANDBOX_ALLOW_NETWORK: "false"
       PORT: "8100"
+    group_add:
+      - ${DOCKER_GID:?DOCKER_GID is required}
     expose:
       - "8100"
     volumes:
