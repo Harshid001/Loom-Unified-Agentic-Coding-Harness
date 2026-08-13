@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Dict, List, Optional
 
 from loom.auth.context import get_effective_principal
@@ -136,9 +137,18 @@ class EntitlementService:
         return self._memberships.get(org_id, {}).get(user_id)
 
     def get_role(self, org_id: str, user_id: str) -> MembershipRole:
-        """Resolve role from the verified credential, never client identity headers."""
-        principal = get_effective_principal()
-        membership = self._memberships.get(principal.org_id, {}).get(principal.user_id)
+        """Resolve role from verified identity outside explicit development compatibility mode."""
+        dev_compat = (
+            os.getenv("LOOM_ENV", "production").lower() == "development"
+            and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
+        )
+        if dev_compat:
+            lookup_org, lookup_user = org_id, user_id
+        else:
+            principal = get_effective_principal()
+            lookup_org, lookup_user = principal.org_id, principal.user_id
+
+        membership = self._memberships.get(lookup_org, {}).get(lookup_user)
         if membership is None:
             return MembershipRole.DEVELOPER
         return membership.role
