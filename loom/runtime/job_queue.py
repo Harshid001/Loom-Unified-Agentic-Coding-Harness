@@ -72,39 +72,71 @@ class JobQueue:
     async def claim(self, block_ms: int = 5000) -> Optional[ClaimedJob]:
         await self.ensure_group()
         try:
-            claimed = cast(Any, await self.coordinator.client.xautoclaim(
-                self.STREAM,
-                self.GROUP,
-                self.consumer,
-                min_idle_time=self.visibility_timeout * 1000,
-                start_id="0-0",
-                count=1,
-            ))
+            claimed = cast(
+                Any,
+                await self.coordinator.client.xautoclaim(
+                    self.STREAM,
+                    self.GROUP,
+                    self.consumer,
+                    min_idle_time=self.visibility_timeout * 1000,
+                    start_id="0-0",
+                    count=1,
+                ),
+            )
             messages = claimed[1] if isinstance(claimed, (list, tuple)) and len(claimed) > 1 else []
-            if messages:
-                message_id, values = messages[0]
-                raw = values.get("job") if isinstance(values, dict) else None
-                if raw:
-                    return ClaimedJob(job=RunJob(**json.loads(str(raw))), message_id=str(message_id))
+            if isinstance(messages, (list, tuple)) and messages:
+                first_message = messages[0]
+                if isinstance(first_message, (list, tuple)) and len(first_message) >= 2:
+                    message_id, values = first_message[0], first_message[1]
+                    if isinstance(values, dict):
+                        raw = values.get("job")
+                        if raw:
+                            return ClaimedJob(
+                                job=RunJob(**json.loads(str(raw))),
+                                message_id=str(message_id),
+                            )
         except Exception:
             pass
 
-        result = await self.coordinator.client.xreadgroup(
-            self.GROUP,
-            self.consumer,
-            {self.STREAM: ">"},
-            count=1,
-            block=block_ms,
+        result = cast(
+            Any,
+            await self.coordinator.client.xreadgroup(
+                self.GROUP,
+                self.consumer,
+                {self.STREAM: ">"},
+                count=1,
+                block=block_ms,
+            ),
         )
-        if not result:
+        if not isinstance(result, (list, tuple)) or not result:
             return None
-        _, messages = result[0]
-        message_id, values = messages[0]
+
+        stream = result[0]
+        if not isinstance(stream, (list, tuple)) or len(stream) < 2:
+            return None
+
+        messages = stream[1]
+        if not isinstance(messages, (list, tuple)) or not messages:
+            return None
+
+        first_message = messages[0]
+        if not isinstance(first_message, (list, tuple)) or len(first_message) < 2:
+            return None
+
+        message_id, values = first_message[0], first_message[1]
+        if not isinstance(values, dict):
+            await self.ack(str(message_id))
+            return None
+
         raw = values.get("job")
         if not raw:
-            await self.ack(message_id)
+            await self.ack(str(message_id))
             return None
-        return ClaimedJob(job=RunJob(**json.loads(raw)), message_id=message_id)
+
+        return ClaimedJob(
+            job=RunJob(**json.loads(str(raw))),
+            message_id=str(message_id),
+        )
 
     async def ack(self, message_id: str) -> None:
         await self.coordinator.client.xack(self.STREAM, self.GROUP, message_id)
