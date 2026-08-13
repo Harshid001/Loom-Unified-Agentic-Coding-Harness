@@ -101,12 +101,61 @@ def _install_identity_and_stream_hardening(module: Any) -> None:
         if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
             raise
 
-    source = '''\nasync def _hardened_stream_run(run_id: str):\n    """Authenticated SSE stream scoped to the run's owning organization."""\n    run_entry = ACTIVE_RUNS.get(run_id)\n    if not run_entry:\n        raise HTTPException(status_code=404, detail="Run not found")\n\n    principal = get_effective_principal()\n    run_state = run_entry.get("state")\n    run_org = run_state.shared_data.get("org_id") if run_state else None\n    if run_org != principal.org_id:\n        raise HTTPException(status_code=404, detail="Run not found")\n\n    async def event_generator():\n        queue: asyncio.Queue = asyncio.Queue()\n        run_entry["queues"].append(queue)\n        terminal = False\n        try:\n            for event in list(run_entry.get("events", [])):\n                yield f"data: {json.dumps(event)}\\n\\n"\n                if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):\n                    terminal = True\n                    break\n\n            if not terminal:\n                while True:\n                    try:\n                        event = await asyncio.wait_for(queue.get(), timeout=2.0)\n                        yield f"data: {json.dumps(event)}\\n\\n"\n                        if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):\n                            break\n                    except asyncio.TimeoutError:\n                        ping_event = {\n                            "type": "ping",\n                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),\n                            "run_id": run_id,\n                        }\n                        yield f"data: {json.dumps(ping_event)}\\n\\n"\n        except asyncio.CancelledError:\n            pass\n        finally:\n            if queue in run_entry.get("queues", []):\n                run_entry["queues"].remove(queue)\n\n    return StreamingResponse(event_generator(), media_type="text/event-stream")\n'''
+    source = '''
+async def _hardened_stream_run(run_id: str):
+    """Authenticated SSE stream scoped to the run's owning organization."""
+    run_entry = ACTIVE_RUNS.get(run_id)
+    if not run_entry:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    principal = get_effective_principal()
+    run_state = run_entry.get("state")
+    run_org = run_state.shared_data.get("org_id") if run_state else None
+    if run_org != principal.org_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    async def event_generator():
+        queue: asyncio.Queue = asyncio.Queue()
+        run_entry["queues"].append(queue)
+        terminal = False
+        try:
+            for event in list(run_entry.get("events", [])):
+                yield "data: " + json.dumps(event) + chr(10) + chr(10)
+                if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
+                    terminal = True
+                    break
+
+            if not terminal:
+                while True:
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=2.0)
+                        yield "data: " + json.dumps(event) + chr(10) + chr(10)
+                        if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
+                            break
+                    except asyncio.TimeoutError:
+                        ping_event = {
+                            "type": "ping",
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "run_id": run_id,
+                        }
+                        yield "data: " + json.dumps(ping_event) + chr(10) + chr(10)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if queue in run_entry.get("queues", []):
+                run_entry["queues"].remove(queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+'''
     try:
         exec(source, module.__dict__)
         legacy_stream = getattr(module, "stream_run", None)
         hardened_stream = getattr(module, "_hardened_stream_run")
-        if legacy_stream is not None:\n            legacy_stream.__code__ = hardened_stream.__code__\n            legacy_stream.__defaults__ = hardened_stream.__defaults__\n            legacy_stream.__kwdefaults__ = hardened_stream.__kwdefaults__\n    except Exception:
+        if legacy_stream is not None:
+            legacy_stream.__code__ = hardened_stream.__code__
+            legacy_stream.__defaults__ = hardened_stream.__defaults__
+            legacy_stream.__kwdefaults__ = hardened_stream.__kwdefaults__
+    except Exception:
         if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
             raise
 
