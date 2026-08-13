@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from loom.runtime.budget import RunBudget
 from loom.runtime.job_queue import RunJob
-from loom.runtime.production_queue import _production_create_run
 
 
 def test_run_budget_reads_explicit_environment(monkeypatch):
