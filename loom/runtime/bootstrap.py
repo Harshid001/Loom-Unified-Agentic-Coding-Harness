@@ -1,7 +1,7 @@
 """Fail-closed production configuration validation."""
 
-import os
 from pathlib import Path
+import os
 
 
 PRODUCTION_REQUIRED = (
