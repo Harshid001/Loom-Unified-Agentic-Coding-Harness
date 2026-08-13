@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
 from loom.api import server as server_module
-from loom.db.records_store import get_run_record_store
 from loom.business.models import RunRecord
+from loom.db.records_store import get_run_record_store
 from loom.runtime.job_queue import JobQueue, RunJob
 
 
-def _production_create_run(
+async def _production_create_run(
     req: server_module.RunRequest,
     _rbac: server_module.RBACEnforcer,
     org_id: str,
 ) -> dict[str, Any]:
-    """Validate the production run request and enqueue it without executing in API memory."""
+    """Validate the production request and enqueue it without executing in API memory."""
     org = server_module._entitlements.get_org(org_id) or server_module._default_org
     sandbox_tier = (req.sandbox_tier or "A").upper()
     if sandbox_tier not in {"A", "B", "C"}:
@@ -52,9 +54,6 @@ def _production_create_run(
     if not any(root == raw_path or root in raw_path.parents for root in roots):
         raise HTTPException(status_code=403, detail="repo_path is not within allowed repository roots")
 
-    import uuid
-    import time
-
     run_id = f"run_{uuid.uuid4().hex[:8]}"
     job = RunJob(
         job_id=f"job_{uuid.uuid4().hex[:12]}",
@@ -69,8 +68,7 @@ def _production_create_run(
         created_at=time.time(),
     )
 
-    records_store = get_run_record_store()
-    records_store.record_run(
+    get_run_record_store().record_run(
         RunRecord(
             run_id=run_id,
             org_id=org_id,
@@ -81,10 +79,7 @@ def _production_create_run(
         )
     )
 
-    queue = JobQueue()
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(queue.enqueue(job))
+    await JobQueue().enqueue(job)
     return {
         "run_id": run_id,
         "job_id": job.job_id,
