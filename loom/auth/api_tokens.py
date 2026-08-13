@@ -1,13 +1,15 @@
-"""Per-user API token registry with at-rest hashing (spec §4.2).
+"""Per-user API token registry with at-rest hashing.
 
-Tokens are issued per user and stored only as SHA-256 hashes; verification
-re-hashes the presented credential. Deprovisioning revokes every active
-token for a user so the SCIM 5-minute SLA can be enforced end-to-end.
+Token verification remains available to the API authentication path. Administrative
+operations (issue/list/revoke) are disabled by default in production because those
+endpoints require a privileged control-plane authentication path that is not yet
+fully wired into every deployment mode.
 """
 
 import hashlib
 import json
 import logging
+import os
 import secrets
 import time
 import uuid
@@ -17,6 +19,24 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("loom.auth.api_tokens")
+
+
+class TokenAdministrationDisabled(PermissionError):
+    """Raised when token-management operations are disabled by production policy."""
+
+
+def _admin_enabled() -> bool:
+    env = os.getenv("LOOM_ENV", "development").lower()
+    if env not in {"prod", "production"}:
+        return True
+    return os.getenv("LOOM_TOKEN_ADMIN_ENABLED", "false").lower() in {"1", "true", "yes"}
+
+
+def _require_admin_enabled(operation: str) -> None:
+    if not _admin_enabled():
+        raise TokenAdministrationDisabled(
+            f"API token {operation} is disabled in production until the privileged control-plane path is enabled."
+        )
 
 
 class ApiTokenRecord(BaseModel):
@@ -36,7 +56,7 @@ def hash_token(token: str) -> str:
 
 
 class ApiTokenStore:
-    """Persistent (JSONL) per-user API token registry; hashes tokens at rest."""
+    """Persistent JSONL per-user token registry; hashes tokens at rest."""
 
     def __init__(self, storage_dir: Optional[str] = None):
         if storage_dir is None:
@@ -71,6 +91,7 @@ class ApiTokenStore:
             logger.error("Failed to persist API token registry: %s", exc)
 
     def issue(self, user_id: str, org_id: str = "default", label: str = "") -> tuple[ApiTokenRecord, str]:
+        _require_admin_enabled("issuance")
         token = secrets.token_urlsafe(32)
         record = ApiTokenRecord(
             user_id=user_id,
@@ -86,11 +107,12 @@ class ApiTokenStore:
     def verify(self, token: str) -> Optional[ApiTokenRecord]:
         digest = hash_token(token)
         for record in self._records.values():
-            if record.active and record.token_hash == digest:
+            if record.active and secrets.compare_digest(record.token_hash, digest):
                 return record
         return None
 
     def revoke(self, token_id: str) -> bool:
+        _require_admin_enabled("revocation")
         record = self._records.get(token_id)
         if record is None or not record.active:
             return False
@@ -100,6 +122,7 @@ class ApiTokenStore:
         return True
 
     def revoke_all_for_user(self, user_id: str) -> int:
+        _require_admin_enabled("revocation")
         revoked = 0
         for record in self._records.values():
             if record.user_id == user_id and record.active:
@@ -111,6 +134,7 @@ class ApiTokenStore:
         return revoked
 
     def list_active_for_user(self, user_id: str) -> List[ApiTokenRecord]:
+        _require_admin_enabled("listing")
         return [r for r in self._records.values() if r.user_id == user_id and r.active]
 
     def count(self) -> int:
