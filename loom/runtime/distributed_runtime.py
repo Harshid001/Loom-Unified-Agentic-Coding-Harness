@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 
 from loom.infra.distributed import RedisCoordinator, RedisRateLimiter, RunMetadata
+from loom.runtime.budget import BudgetExceeded, RunBudget, cost_from_summary, tokens_from_summary
 
 
 async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
@@ -45,6 +46,35 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
 
     original_init = task_graph_module.TaskGraph.__init__
     original_run = task_graph_module.TaskGraph.run
+    original_execute_node = task_graph_module.TaskGraph._execute_node_with_retry
+
+    def _enforce_budget(graph: Any, started_at: float) -> None:
+        budget = RunBudget.from_env()
+        elapsed = time.time() - started_at
+        if budget.max_duration_seconds is not None and elapsed > budget.max_duration_seconds:
+            raise BudgetExceeded(
+                f"Run {graph.state.run_id} exceeded duration budget of {budget.max_duration_seconds:.1f}s"
+            )
+
+        summary = graph.cost_tracker.get_summary()
+        cost = cost_from_summary(summary)
+        tokens = tokens_from_summary(summary)
+        if budget.max_cost_usd is not None and cost > budget.max_cost_usd:
+            raise BudgetExceeded(
+                f"Run {graph.state.run_id} exceeded cost budget of ${budget.max_cost_usd:.4f}"
+            )
+        if budget.max_tokens is not None and tokens > budget.max_tokens:
+            raise BudgetExceeded(
+                f"Run {graph.state.run_id} exceeded token budget of {budget.max_tokens}"
+            )
+
+        completed_steps = sum(
+            1 for status in graph.state.nodes.values() if getattr(status, "status", "") == "completed"
+        )
+        if budget.max_agent_steps is not None and completed_steps >= budget.max_agent_steps:
+            raise BudgetExceeded(
+                f"Run {graph.state.run_id} reached agent-step budget of {budget.max_agent_steps}"
+            )
 
     def wrapped_init(self: Any, *args: Any, **kwargs: Any) -> None:
         state = args[0] if args else kwargs.get("state")
@@ -107,6 +137,8 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
         run_id = state.run_id
         org_id = str(state.shared_data.get("org_id", "default"))
         sandbox_tier = str(state.shared_data.get("sandbox_tier", "A"))
+        self._production_budget_started_at = float(state.shared_data.get("_production_budget_started_at", time.time()))
+        state.shared_data["_production_budget_started_at"] = self._production_budget_started_at
 
         async def register() -> None:
             await coordinator.register_run(
@@ -138,6 +170,13 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
         asyncio.create_task(register())
         asyncio.create_task(control_loop())
 
+    async def budgeted_execute_node(self: Any, *args: Any, **kwargs: Any) -> bool:
+        started_at = float(getattr(self, "_production_budget_started_at", time.time()))
+        _enforce_budget(self, started_at)
+        result = await original_execute_node(self, *args, **kwargs)
+        _enforce_budget(self, started_at)
+        return result
+
     async def wrapped_run(self: Any, *args: Any, **kwargs: Any):
         result = await original_run(self, *args, **kwargs)
         status = str(self.run_status.value if hasattr(self.run_status, "value") else self.run_status)
@@ -155,6 +194,7 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
         return result
 
     setattr(task_graph_module.TaskGraph, "__init__", wrapped_init)
+    setattr(task_graph_module.TaskGraph, "_execute_node_with_retry", budgeted_execute_node)
     setattr(task_graph_module.TaskGraph, "run", wrapped_run)
 
     async def wrapped_stream(run_id: str):
