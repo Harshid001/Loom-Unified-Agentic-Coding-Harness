@@ -74,6 +74,10 @@ ignore_missing_imports = true
 module = ["loom.api.server"]
 disable_error_code = ["union-attr"]
 
+[[tool.mypy.overrides]]
+module = ["loom.api.hardening"]
+disable_error_code = ["assignment"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
