@@ -1,8 +1,7 @@
 """API package bootstrap.
 
-The server module is legacy-heavy and intentionally kept stable; this package installs
-a narrow import-time hook that applies the centralized production hardening layer
-immediately after ``loom.api.server`` finishes defining its routes.
+The legacy server stays intact while a narrow import-time hook applies production
+hardening after its routes are defined.
 """
 
 from __future__ import annotations
@@ -24,8 +23,10 @@ class _ServerLoader(importlib.abc.Loader):
     def exec_module(self, module: ModuleType) -> None:
         self._wrapped.exec_module(module)
         from loom.api.hardening import harden_server_module
+        from loom.api.late_hardening import apply_late_hardening
 
         harden_server_module(module)
+        apply_late_hardening(module)
         for finder in list(sys.meta_path):
             if isinstance(finder, _ServerFinder):
                 try:
