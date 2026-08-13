@@ -100,24 +100,24 @@ jobs:
           print(json.dumps(metadata, indent=2))
           PY
 
-      - name: Production preflight
+      - name: Deployment preflight
         env:
-          LOOM_ENV: production
-          API_KEY: ${{ secrets.LOOM_PROD_API_KEY }}
-          DASHBOARD_AUTH_TOKEN: ${{ secrets.LOOM_PROD_DASHBOARD_AUTH_TOKEN }}
-          ALLOWED_REPO_ROOTS: ${{ secrets.LOOM_PROD_ALLOWED_REPO_ROOTS }}
-          DATABASE_URL: ${{ secrets.LOOM_PROD_DATABASE_URL }}
-          REDIS_URL: ${{ secrets.LOOM_PROD_REDIS_URL }}
-          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_PROD_FIRECRACKER_WORKER_URL }}
-          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_PROD_FIRECRACKER_WORKER_TOKEN }}
-          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_PROD_BACKUP_ENCRYPTION_KEY }}
+          LOOM_ENV: ${{ inputs.target_environment }}
+          API_KEY: ${{ secrets.LOOM_API_KEY || secrets.LOOM_PROD_API_KEY }}
+          DASHBOARD_AUTH_TOKEN: ${{ secrets.LOOM_DASHBOARD_AUTH_TOKEN || secrets.LOOM_PROD_DASHBOARD_AUTH_TOKEN }}
+          ALLOWED_REPO_ROOTS: ${{ secrets.LOOM_ALLOWED_REPO_ROOTS || secrets.LOOM_PROD_ALLOWED_REPO_ROOTS }}
+          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL || secrets.LOOM_PROD_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.LOOM_REDIS_URL || secrets.LOOM_PROD_REDIS_URL }}
+          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_FIRECRACKER_WORKER_URL || secrets.LOOM_PROD_FIRECRACKER_WORKER_URL }}
+          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_FIRECRACKER_WORKER_TOKEN || secrets.LOOM_PROD_FIRECRACKER_WORKER_TOKEN }}
+          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY || secrets.LOOM_PROD_BACKUP_ENCRYPTION_KEY }}
           LOOM_TOKEN_ADMIN_ENABLED: "false"
           RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
         run: python scripts/production_preflight.py
 
       - name: Verify PostgreSQL migrations
         env:
-          DATABASE_URL: ${{ secrets.LOOM_PROD_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL || secrets.LOOM_PROD_DATABASE_URL }}
         run: python scripts/postgres_migrate.py --database-url "${DATABASE_URL}"
 
       - name: Repository production gate tests
@@ -132,7 +132,7 @@ jobs:
         if: ${{ inputs.run_load_test }}
         env:
           BASE_URL: ${{ inputs.base_url }}
-          API_KEY: ${{ secrets.LOOM_PROD_API_KEY }}
+          API_KEY: ${{ secrets.LOOM_API_KEY || secrets.LOOM_PROD_API_KEY }}
         run: |
           python scripts/load_slo_gate.py \
             --base-url "${BASE_URL}" \
@@ -149,16 +149,16 @@ jobs:
       - name: Firecracker worker gate
         if: ${{ inputs.run_firecracker_e2e }}
         env:
-          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_PROD_FIRECRACKER_WORKER_URL }}
-          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_PROD_FIRECRACKER_WORKER_TOKEN }}
+          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_FIRECRACKER_WORKER_URL || secrets.LOOM_PROD_FIRECRACKER_WORKER_URL }}
+          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_FIRECRACKER_WORKER_TOKEN || secrets.LOOM_PROD_FIRECRACKER_WORKER_TOKEN }}
           LOOM_FIRECRACKER_TEST_REPO: ${{ inputs.repo_path }}
         run: bash scripts/e2e_firecracker_validation.sh
 
       - name: Backup/restore drill
         if: ${{ inputs.run_restore_drill }}
         env:
-          LOOM_ENV: production
-          DATABASE_URL: ${{ secrets.LOOM_PROD_DATABASE_URL }}
+          LOOM_ENV: ${{ inputs.target_environment }}
+          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL || secrets.LOOM_PROD_DATABASE_URL }}
           LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY || secrets.LOOM_PROD_BACKUP_ENCRYPTION_KEY }}
         run: |
           python scripts/restore_drill.py \
