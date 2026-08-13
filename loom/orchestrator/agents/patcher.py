@@ -10,7 +10,7 @@ from loom.business.models import AuditAction
 from loom.business.path_policy import evaluate_commit_gateway
 from loom.orchestrator.agents.base_agent import BaseAgent
 from loom.orchestrator.state import OrchestratorState
-from loom.sandbox.local_process import LocalProcessSandbox
+from loom.sandbox.factory import sandbox_for_state
 
 logger = logging.getLogger("loom.orchestrator.agents.patcher")
 
@@ -19,7 +19,7 @@ class PatcherAgent(BaseAgent):
     """Proposes code modifications, applies patches, and records diffs."""
 
     async def execute(self, state: OrchestratorState) -> Dict[str, Any]:
-        sandbox = LocalProcessSandbox(state.repo_path)
+        sandbox = sandbox_for_state(state)
         snapshot_id = sandbox.create_snapshot("pre_patch")
         state.snapshot_id = snapshot_id
 
@@ -35,7 +35,6 @@ class PatcherAgent(BaseAgent):
         res = await self.adapter.generate(req)
 
         raw_content = res.content or ""
-        # PRD-003 & PRD-004: Extract actual diff and validate path safety
         patch_diff = ""
         if "--- " in raw_content and "+++ " in raw_content:
             lines = raw_content.splitlines()
@@ -47,7 +46,6 @@ class PatcherAgent(BaseAgent):
                 if in_diff:
                     if line.startswith("```") and len(diff_lines) > 1:
                         break
-                    # Path traversal sanity check
                     if (
                         (".." in line and ("--- " in line or "+++ " in line))
                         or line.startswith("--- /")
@@ -61,12 +59,9 @@ class PatcherAgent(BaseAgent):
                 patch_diff = "\n".join(diff_lines)
         else:
             logger.info("Model output did not contain valid patch diff format")
-            patch_diff = ""
 
         state.patch_diff = patch_diff
 
-        # PRD §3.4: commit gateway — block patches that touch sensitive paths
-        # (auth/billing/migrations/secrets) before they can reach `git apply`.
         org = state.shared_data.get("_org")
         gateway = evaluate_commit_gateway(patch_diff, org=org)
         state.shared_data["commit_gateway"] = {
@@ -94,13 +89,10 @@ class PatcherAgent(BaseAgent):
             state.shared_data["patch_summary"] = patch_result
             return patch_result
 
-        # PRD §3.1: Consensus verification for high-risk patches.
-        # If the patch is high-risk (sensitive paths, large diff, or always-on mode),
-        # require 2-of-3 independent model agreement on patch intent before applying.
         router = state.shared_data.get("__router")
         if router is not None and patch_diff:
             touched: list[str] = list(gateway.blocked_paths) if not gateway.allowed else []
-            if not touched and patch_diff:
+            if not touched:
                 touched = [
                     line[4:].replace("\t", " ").split(" ")[0]
                     for line in patch_diff.splitlines()
@@ -182,9 +174,6 @@ class PatcherAgent(BaseAgent):
                     }
                     return patch_result
 
-        # PRD-101 & PRD-004: Apply valid patch to target repository sandbox.
-        # Track apply outcomes so the orchestrator can route to CONFLICT_RESOLUTION
-        # when neither git apply nor the patch fallback can cleanly apply (PRD §3.5).
         apply_status = "invalid_patch"
         conflict_detected = False
         if patch_diff:
@@ -245,5 +234,5 @@ class PatcherAgent(BaseAgent):
                 target=state.run_id,
                 metadata={"reason": reason, "patch_hash": state.snapshot_id or ""},
             )
-        except Exception as err:  # audit failure must not break the agent
+        except Exception as err:
             logger.warning("Failed to record commit-gateway denial for run %s: %s", state.run_id, err)
