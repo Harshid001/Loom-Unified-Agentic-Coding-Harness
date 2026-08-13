@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import fastapi.dependencies.utils as fastapi_dep_utils
 from fastapi import Depends, HTTPException, status
-from fastapi.dependencies.utils import get_dependant, get_flat_dependant, get_parameterless_sub_dependant
 
 from loom.auth.context import AuthenticatedPrincipal, require_authenticated_principal
 from loom.business.audit_log import get_audit_logger
@@ -14,6 +14,10 @@ from loom.business.entitlements import EntitlementService
 from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
 from loom.db.records_store import RunRecordStore, get_run_record_store
+
+get_dependant = fastapi_dep_utils.get_dependant
+get_parameterless_sub_dependant = fastapi_dep_utils.get_parameterless_sub_dependant
+get_flat_dependant: Any = getattr(fastapi_dep_utils, "get_flat_dependant", None)
 
 
 @dataclass(frozen=True)
@@ -137,7 +141,7 @@ def install_run_authorization(module: Any) -> None:
                 0,
                 get_parameterless_sub_dependant(depends=depends, path=path_format),
             )
-        if hasattr(route, "_flat_dependant"):
+        if hasattr(route, "_flat_dependant") and callable(get_flat_dependant):
             route._flat_dependant = get_flat_dependant(route.dependant)
         if hasattr(route, "get_route_handler"):
             from fastapi.routing import request_response
