@@ -1,87 +1,124 @@
 # Loom Agentic Harness — Production Deployment Guide
 
-This document describes the supported production controls. Production execution must fail closed when a required security boundary is unavailable.
+Production execution must fail closed when a required security boundary is unavailable.
 
----
+## 1. Containerized deployment
 
-## 1. Containerized Deployment
-
-Production deployments should use the Docker image and PostgreSQL-backed records store. The Docker sandbox must be available for Tier B/C runs; the application never silently falls back to host execution in production.
+The supported application topology uses PostgreSQL and Redis as shared infrastructure. Tier B/C execution is delegated to the authenticated Firecracker worker; it must not fall back to host execution.
 
 ```bash
 docker compose up -d --build
 docker compose logs -f api
 ```
 
-**Important:** The current Docker sandbox implementation still uses the Docker daemon from the execution host. A separate sandbox-worker control plane is the next isolation milestone; until then, keep the Docker host dedicated to Loom workloads and do not expose the daemon remotely.
-
----
-
-## 2. Native Deployment
-
-Native PM2 execution is intended for development and local testing only.
+Validate configuration before startup:
 
 ```bash
-pm2 start ecosystem.config.js
-pm2 status
+python scripts/production_preflight.py
+python scripts/postgres_migrate.py --database-url "$DATABASE_URL"
 ```
 
----
+## 2. Firecracker worker
 
-## 3. Required Production Environment
-
-| Variable | Production requirement | Purpose |
-| :--- | :--- | :--- |
-| `LOOM_ENV` | `production` | Enables fail-closed security behavior |
-| `API_KEY` | Required | Backend API authentication |
-| `DASHBOARD_AUTH_TOKEN` | Required | Web dashboard authentication |
-| `ALLOWED_REPO_ROOTS` | Required | Restricts target repository paths |
-| `DATABASE_URL` | Strongly recommended | PostgreSQL durable records store |
-| `ALLOWED_ORIGINS` | Explicit allowlist | CORS policy |
-| `LOOM_BACKUP_ENCRYPTION_KEY` | Required for encrypted backups | Fernet key for backup encryption |
-| `LOOM_TOKEN_ADMIN_ENABLED` | `false` by default | Enables token-management API only after a privileged control-plane is configured |
-
-Generate a Fernet key once and store it in a secrets manager:
+The repository pins the certified Firecracker baseline in `infra/firecracker/VERSION`. Before enabling production:
 
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+sudo bash scripts/validate_firecracker_host.sh
 ```
 
----
+Populate `infra/firecracker/SHA256SUM` with the SHA-256 of the exact deployed Firecracker binary. The worker refuses to start its healthy execution path when the approved hash is missing or mismatched.
 
-## 4. Backup & Disaster Recovery
+Then run the worker E2E validation from a Linux/KVM host:
 
-` scripts/backup_restore.py ` creates integrity-checked backups. In production, `LOOM_BACKUP_ENCRYPTION_KEY` is mandatory and backups are encrypted before storage.
+```bash
+LOOM_FIRECRACKER_WORKER_URL=http://127.0.0.1:8101 \
+LOOM_FIRECRACKER_WORKER_TOKEN="$LOOM_FIRECRACKER_WORKER_TOKEN" \
+bash scripts/e2e_firecracker_validation.sh
+```
+
+## 3. Required production environment
+
+At minimum:
+
+```env
+LOOM_ENV=production
+API_KEY=...
+DASHBOARD_AUTH_TOKEN=...
+ALLOWED_REPO_ROOTS=/var/repos
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+LOOM_FIRECRACKER_WORKER_URL=http://firecracker-worker:8101
+LOOM_FIRECRACKER_WORKER_TOKEN=...
+LOOM_BACKUP_ENCRYPTION_KEY=...
+LOOM_TOKEN_ADMIN_ENABLED=false
+RATE_LIMIT_ALLOW_LOCAL_FALLBACK=false
+```
+
+Store production secrets in a dedicated secrets manager. Never commit real credentials.
+
+## 4. PostgreSQL migrations
+
+Production schema changes are versioned under `migrations/postgres/` and applied with an advisory lock:
+
+```bash
+python scripts/postgres_migrate.py --database-url "$DATABASE_URL"
+```
+
+Each applied migration records its filename and SHA-256 checksum in `schema_migrations`. A checksum mismatch blocks startup/deployment rather than silently accepting drift.
+
+## 5. Backup and disaster recovery
+
+Create an encrypted, checksummed backup:
 
 ```bash
 python scripts/backup_restore.py create --dir ./backups
-python scripts/backup_restore.py restore ./backups/loom_backup_YYYYMMDD_HHMMSS.tar.gz.enc
 ```
 
-The restore path rejects unsafe archive members, verifies SHA-256 checksums, decrypts encrypted archives, and can restore PostgreSQL custom-format dumps when `pg_dump`/`pg_restore` and `DATABASE_URL` are available.
+Run a measured restore drill:
 
-Backups still require an external scheduler, off-host retention policy, and periodic restore drills before they can be considered a complete disaster-recovery program.
+```bash
+python scripts/restore_drill.py \
+  --backup-dir ./drill-backups \
+  --restore-home ./drill-restore \
+  --report ./restore-drill-report.json
+```
 
----
+The report records backup duration, restore duration, measured RPO and RTO. Production still requires off-site retention, scheduled execution, alerting on failures, and periodic successful drills.
 
-## 5. Health & Monitoring
+## 6. Health and monitoring
 
 - `GET /healthz` — liveness
-- `GET /api/v1/health/readiness` — storage/database readiness
+- `GET /api/v1/health/readiness` — database/Redis readiness
 - `GET /metrics` — Prometheus metrics
 - OpenTelemetry exporters can be configured through `OTEL_EXPORTER_OTLP_ENDPOINT`
 
----
+## 7. Load and failure testing
 
-## 6. Release Verification
+The load test can be run against the real staging/production topology:
 
-Every production release must pass the GitHub Actions workflow:
-
-```text
-Backend: install → dependency audit → ruff → mypy → pytest
-Frontend: npm ci → npm audit → lint → typecheck → Vitest → production build
-Container: docker build --pull
-Native: loom version + loom init
+```bash
+python scripts/load_test.py \
+  --base-url "$BASE_URL" \
+  --api-key "$API_KEY" \
+  --repo-path /var/repos/example \
+  --concurrency 20 \
+  --requests 100
 ```
 
-A green source diff without a green CI run is not a production approval.
+Release approval should record measured p95/p99 latency, throughput, success rate, Redis behavior, worker capacity, and database saturation. Do not substitute arbitrary benchmark numbers for measured deployment evidence.
+
+## 8. Release gates
+
+The repository includes a manual workflow named `Production Release Gates`. It accepts a staging/production URL and runs the strict production preflight, API liveness/readiness, load test, Firecracker E2E validation, and restore drill using GitHub Environment secrets.
+
+A release is approved only when:
+
+1. source CI is green on the exact release commit;
+2. staging passes the release suite and smoke tests;
+3. PostgreSQL/Redis are healthy;
+4. Firecracker hardware and E2E validation pass;
+5. backup/restore drills pass with measured RPO/RTO;
+6. load/concurrency tests pass on the real topology;
+7. canary and rollback procedures are successfully exercised.
+
+A green unit-test/build pipeline by itself is not production approval.
