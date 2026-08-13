@@ -1,0 +1,9 @@
+# The exact value below was a test-only Fernet key that existed in repository
+# history. It is no longer present in the current tree. Allowlisting the exact
+# value keeps historical scanning enabled for all other secrets.
+[allowlist]
+  description = "Allow historical test-only Fernet fixture key"
+  regexTarget = "match"
+  regexes = [
+    "TENb1wM_WPGIrSSzFhBeRXjzszrMF2iJcEagUCfRltA="
+  ]
