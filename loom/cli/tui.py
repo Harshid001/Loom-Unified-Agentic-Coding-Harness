@@ -6,6 +6,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import cast
 
 from loom.cli.tui_controller import ControllerEvent, TUIRunController
 from loom.repo_intel.mapper import RepoMapper
@@ -27,7 +28,6 @@ try:
         TabbedContent,
         TabPane,
     )
-
     _HAS_TEXTUAL = True
 except ImportError:
     pass
@@ -146,9 +146,9 @@ def launch_tui() -> None:
 
         def append_log(self, level: str, node: str, message: str) -> None:
             self.entries.append((level.upper(), f"{time.strftime('%H:%M:%S')} {level.upper():7s} [{node}] {message}"))
-            self._render()
+            self._render_logs()
 
-        def _render(self) -> None:
+        def _render_logs(self) -> None:
             log = self.query_one("#live-log-stream", RichLog)
             log.clear()
             for level, text in self.entries[-700:]:
@@ -158,11 +158,11 @@ def launch_tui() -> None:
 
         def clear(self) -> None:
             self.entries.clear()
-            self._render()
+            self._render_logs()
 
         def set_filter(self, level: str) -> None:
             self.level_filter = level
-            self._render()
+            self._render_logs()
 
     class DiffDrawer(Vertical):
         def compose(self) -> ComposeResult:
@@ -194,7 +194,7 @@ def launch_tui() -> None:
                 else:
                     prefix = "     "
                 log.write(prefix + line)
-            files = sum(1 for line in diff_text.splitlines() if line.startswith("+++ "))
+            files = sum(1 for diff_line in diff_text.splitlines() if diff_line.startswith("+++ "))
             self.query_one("#diff-summary", Static).update(f"Files: {files}   Added: +{added}   Removed: -{deleted}")
 
     class ASTDrawer(Vertical):
@@ -205,7 +205,7 @@ def launch_tui() -> None:
             yield ProgressBar(total=100, id="pb-tokens", show_percentage=True)
 
         def on_mount(self) -> None:
-            self.run_worker(self._scan, exclusive=True)
+            self.run_worker(self._scan, thread=True, exclusive=True)
 
         def _scan(self) -> None:
             try:
@@ -213,12 +213,12 @@ def launch_tui() -> None:
                 langs = ", ".join(f"{k} ({v})" for k, v in repo_map.languages.items()) or "Unknown"
                 builds = ", ".join(repo_map.build_system) or "Unknown"
                 tests = ", ".join(repo_map.test_frameworks) or "Unknown"
-                self.call_from_thread(
+                cast(App, self.app).call_from_thread(
                     self.query_one("#ast-info", Static).update,
                     f"Repository: {Path(repo_map.root_path).name}\nFiles: {repo_map.total_files}\nLanguages: {langs}\nBuild: {builds}\nTests: {tests}",
                 )
             except Exception as exc:
-                self.call_from_thread(self.query_one("#ast-info", Static).update, f"AST scan failed: {exc}")
+                cast(App, self.app).call_from_thread(self.query_one("#ast-info", Static).update, f"AST scan failed: {exc}")
 
         def update_tokens(self, tokens: int, context_window: int | None = None) -> None:
             self.query_one("#token-label", Static).update(f"Token usage: {tokens:,}")
@@ -313,7 +313,9 @@ def launch_tui() -> None:
             log = self.query_one(LogConsole)
             if event.kind == "run_started":
                 self.current_status = "RUNNING"
-                self.query_one("#lbl-run-id", Static).update(f"Run: {self.controller.state.run_id}")
+                state = self.controller.state
+                if state is not None:
+                    self.query_one("#lbl-run-id", Static).update(f"Run: {state.run_id}")
                 self._set_controls(running=True, paused=False)
                 self.query_one(DAGProgressPanel).reset()
             elif event.kind == "node_started":
@@ -410,13 +412,13 @@ def launch_tui() -> None:
             self.controller.cancel()
 
         def action_show_diff(self) -> None:
-            self.query_one("#main-tabs").active = "tab-diff"
+            cast(TabbedContent, self.query_one("#main-tabs")).active = "tab-diff"
 
         def action_show_evidence(self) -> None:
-            self.query_one("#main-tabs").active = "tab-evidence"
+            cast(TabbedContent, self.query_one("#main-tabs")).active = "tab-evidence"
 
         def action_show_logs(self) -> None:
-            self.query_one("#main-tabs").active = "tab-logs"
+            cast(TabbedContent, self.query_one("#main-tabs")).active = "tab-logs"
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id == "inp-issue":
