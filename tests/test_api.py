@@ -183,6 +183,7 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
     from loom.orchestrator.state import OrchestratorState
 
     monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
+    monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
     reset_audit_logger()
     get_audit_logger(str(tmp_path / "audit"))
 
@@ -259,6 +260,7 @@ def test_ci_report_no_rollback_without_ci_failure(tmp_path, monkeypatch):
     from loom.orchestrator.state import OrchestratorState
 
     monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
+    monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
 
     state = OrchestratorState(
         run_id="run_ci_ok",

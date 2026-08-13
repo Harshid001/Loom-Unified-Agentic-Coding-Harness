@@ -5,6 +5,8 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
+from loom.auth.context import get_effective_principal, in_request_auth_context
+
 
 class NodeStatus(BaseModel):
     node_name: str
@@ -96,4 +98,11 @@ class OrchestratorState(BaseModel):
         if not file_path.exists():
             return None
         data = json.loads(file_path.read_text(encoding="utf-8"))
+        if in_request_auth_context():
+            principal = get_effective_principal()
+            state_org = data.get("shared_data", {}).get("org_id")
+            if state_org is not None and state_org != principal.org_id:
+                # Hide cross-tenant resources as not-found rather than revealing
+                # whether the run exists.
+                return None
         return cls(**data)
