@@ -3,12 +3,11 @@
 from typing import Any
 
 from fastapi import Depends, HTTPException, status
-from fastapi.dependencies.utils import get_dependant
+from fastapi.dependencies.utils import get_dependant, get_flat_dependant, get_parameterless_sub_dependant
 
 from loom.auth.context import require_authenticated_principal
 from loom.business.rbac import Action, RBACEnforcer
 from loom.db.records_store import get_run_record_store
-
 
 _RUN_ACTIONS: dict[tuple[str, str], Action] = {
     ("GET", "/runs/{run_id}"): Action.VIEW_RUN,
@@ -74,5 +73,13 @@ def install_run_authorization(module: Any) -> None:
         dependencies = list(getattr(route, "dependencies", []) or [])
         dependencies.append(Depends(authorize_run_dependency))
         route.dependencies = dependencies
-        route.dependant = get_dependant(path=route.path, call=route.endpoint, dependencies=dependencies)
+        path_format = getattr(route, "path_format", route.path)
+        route.dependant = get_dependant(path=path_format, call=route.endpoint, scope="function")
+        for depends in route.dependencies[::-1]:
+            route.dependant.dependencies.insert(
+                0,
+                get_parameterless_sub_dependant(depends=depends, path=path_format),
+            )
+        if hasattr(route, "_flat_dependant"):
+            route._flat_dependant = get_flat_dependant(route.dependant)
         setattr(endpoint, marker, True)
