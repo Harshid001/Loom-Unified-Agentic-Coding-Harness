@@ -245,6 +245,16 @@ class RedisRateLimiter:
 def install_rate_limiter(app: Any) -> None:
     limiter = RedisRateLimiter(int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")))
 
+    def local_allow(key: str) -> bool:
+        now = time.time()
+        state = limiter._local[key]
+        while state.timestamps and now - state.timestamps[0] >= limiter.window:
+            state.timestamps.popleft()
+        if len(state.timestamps) >= limiter.limit:
+            return False
+        state.timestamps.append(now)
+        return True
+
     @app.middleware("http")
     async def production_rate_limit(request: Any, call_next: Callable[..., Awaitable[Any]]) -> Any:
         if not request.url.path.startswith("/api/"):
@@ -258,7 +268,7 @@ def install_rate_limiter(app: Any) -> None:
             # locally rate-limited, then passed to FastAPI so protected routes return 401/403.
             if not auth:
                 local_key = f"unauth:{ip}:{request.url.path}"
-                if not await limiter._local_allow(local_key):
+                if not local_allow(local_key):
                     return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
                 return await call_next(request)
 
@@ -373,17 +383,3 @@ def harden_server_module(module: Any) -> None:
 def _checkpoint_org(run_id: str, expected_org: str) -> bool:
     actual = run_org_id(run_id)
     return actual == expected_org
-
-
-async def _local_allow(self: RedisRateLimiter, key: str) -> bool:
-    now = time.time()
-    state = self._local[key]
-    while state.timestamps and now - state.timestamps[0] >= self.window:
-        state.timestamps.popleft()
-    if len(state.timestamps) >= self.limit:
-        return False
-    state.timestamps.append(now)
-    return True
-
-
-RedisRateLimiter._local_allow = _local_allow
