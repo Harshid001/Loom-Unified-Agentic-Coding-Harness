@@ -1,9 +1,11 @@
 from enum import Enum
+import os
 from typing import Dict, Set
 
 from fastapi import HTTPException
 from fastapi import status as http_status
 
+from loom.auth.context import get_effective_principal
 from loom.business.models import MembershipRole
 
 
@@ -84,6 +86,21 @@ class RBACEnforcer:
                     + (f" on '{resource}'" if resource else "")
                 ),
             )
+
+        # In production, the credential's organization is authoritative. Explicit
+        # development mode retains legacy resource-header compatibility for local workflows.
+        secure_runtime = not (
+            os.getenv("LOOM_ENV", "production").lower() == "development"
+            and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
+        )
+        if secure_runtime and resource.startswith("org:"):
+            resource_org = resource.split(":", 1)[1]
+            principal = get_effective_principal()
+            if resource_org != principal.org_id:
+                raise HTTPException(
+                    status_code=http_status.HTTP_403_FORBIDDEN,
+                    detail="Organization scope is not authorized for the authenticated credential",
+                )
 
     @property
     def role(self) -> MembershipRole:
