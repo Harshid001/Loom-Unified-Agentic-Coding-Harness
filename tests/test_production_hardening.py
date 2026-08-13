@@ -3,7 +3,7 @@ import hmac
 
 import pytest
 
-from loom.api.hardening import RedisRateLimiter, ProductionSecurityError, validate_webhook_url, verify_webhook_signature
+from loom.api.hardening import ProductionSecurityError, RedisRateLimiter, validate_webhook_url, verify_webhook_signature
 from loom.sandbox.worktree import _safe_snapshot_label
 
 
