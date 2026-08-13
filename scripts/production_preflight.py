@@ -1,7 +1,7 @@
-"""Production readiness preflight checks.
+"""Deployment readiness preflight checks.
 
-This command is intentionally deterministic and does not mutate infrastructure.
-It validates the configuration surface and the local artifacts required before a
+This command is deterministic and does not mutate infrastructure. It validates the
+configuration surface and the local artifacts required before a staging or
 production deployment is attempted.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-REQUIRED_PRODUCTION_VARS = (
+REQUIRED_DEPLOYMENT_VARS = (
     "LOOM_ENV",
     "API_KEY",
     "DASHBOARD_AUTH_TOKEN",
@@ -22,6 +22,8 @@ REQUIRED_PRODUCTION_VARS = (
     "LOOM_FIRECRACKER_WORKER_TOKEN",
     "LOOM_BACKUP_ENCRYPTION_KEY",
 )
+
+ALLOWED_ENVIRONMENTS = {"staging", "prod", "production"}
 
 PLACEHOLDER_MARKERS = (
     "your-",
@@ -39,11 +41,12 @@ def _is_placeholder(value: str) -> bool:
 
 def validate_environment(*, allow_placeholders: bool = False) -> list[str]:
     errors: list[str] = []
+    environment = os.getenv("LOOM_ENV", "").strip().lower()
 
-    if os.getenv("LOOM_ENV", "").strip().lower() not in {"prod", "production"}:
-        errors.append("LOOM_ENV must be 'production' for the production preflight")
+    if environment not in ALLOWED_ENVIRONMENTS:
+        errors.append("LOOM_ENV must be one of 'staging' or 'production' for deployment preflight")
 
-    for name in REQUIRED_PRODUCTION_VARS:
+    for name in REQUIRED_DEPLOYMENT_VARS:
         value = os.getenv(name)
         if not value:
             errors.append(f"{name} is not configured")
@@ -54,7 +57,7 @@ def validate_environment(*, allow_placeholders: bool = False) -> list[str]:
         errors.append("LOOM_TOKEN_ADMIN_ENABLED must remain false until the privileged control-plane is deployed")
 
     if os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").strip().lower() in {"1", "true", "yes"}:
-        errors.append("RATE_LIMIT_ALLOW_LOCAL_FALLBACK must be false in production")
+        errors.append("RATE_LIMIT_ALLOW_LOCAL_FALLBACK must be false for staging and production")
 
     return errors
 
@@ -75,7 +78,7 @@ def validate_artifacts(repo_root: Path) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate Loom production deployment prerequisites")
+    parser = argparse.ArgumentParser(description="Validate Loom staging/production deployment prerequisites")
     parser.add_argument("--repo-root", default=".", help="Repository root to inspect")
     parser.add_argument(
         "--allow-placeholders",
@@ -89,12 +92,12 @@ def main() -> int:
     errors.extend(validate_artifacts(repo_root))
 
     if errors:
-        print("PRODUCTION PREFLIGHT: FAILED")
+        print("DEPLOYMENT PREFLIGHT: FAILED")
         for error in errors:
             print(f"- {error}")
         return 1
 
-    print("PRODUCTION PREFLIGHT: PASSED")
+    print("DEPLOYMENT PREFLIGHT: PASSED")
     return 0
 
 
