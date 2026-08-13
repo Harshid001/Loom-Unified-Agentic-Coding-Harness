@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from loom.business.models import BillingStatus, OrgTier, Organization
+from loom.business.models import BillingStatus, Organization, OrgTier
 
 
 @dataclass(frozen=True)
