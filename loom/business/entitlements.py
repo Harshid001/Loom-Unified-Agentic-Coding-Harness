@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, List, Optional
 
+from loom.auth.context import get_effective_principal
 from loom.business.models import (
     TIER_FEATURE_MATRIX,
     TIER_QUOTA_MAP,
@@ -135,7 +136,9 @@ class EntitlementService:
         return self._memberships.get(org_id, {}).get(user_id)
 
     def get_role(self, org_id: str, user_id: str) -> MembershipRole:
-        membership = self._memberships.get(org_id, {}).get(user_id)
+        """Resolve role from the verified credential, never client identity headers."""
+        principal = get_effective_principal()
+        membership = self._memberships.get(principal.org_id, {}).get(principal.user_id)
         if membership is None:
             return MembershipRole.DEVELOPER
         return membership.role
