@@ -140,8 +140,18 @@ jobs:
           DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL }}
         run: python scripts/postgres_migrate.py --database-url "${DATABASE_URL}"
 
+      - name: PostgreSQL health evidence
+        env:
+          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL }}
+        run: python scripts/postgres_healthcheck.py --database-url "${DATABASE_URL}" --evidence postgres-health-evidence.json
+
+      - name: Redis health evidence
+        env:
+          REDIS_URL: ${{ secrets.LOOM_REDIS_URL }}
+        run: python scripts/redis_healthcheck.py --redis-url "${REDIS_URL}" --evidence redis-health-evidence.json
+
       - name: Repository deployment gate tests
-        run: python -m pytest tests/test_production_preflight.py tests/test_production_gate_tools.py --timeout=60 --timeout_method=thread
+        run: python -m pytest tests/test_production_preflight.py tests/test_production_gate_tools.py tests/test_deployment_health.py --timeout=60 --timeout_method=thread
 
       - name: API liveness/readiness evidence
         env:
@@ -193,6 +203,8 @@ jobs:
           name: production-release-gates-${{ github.run_id }}
           path: |
             release-metadata.json
+            postgres-health-evidence.json
+            redis-health-evidence.json
             release-health-evidence.json
             load-slo-evidence.json
             ${{ runner.temp }}/restore-drill-report.json
