@@ -1,9 +1,4 @@
-"""Central sandbox factory used by orchestration agents.
-
-Keeping sandbox construction in one place prevents individual agents from
-silently bypassing the selected sandbox tier and executing target code on the
-host process in production.
-"""
+"""Central sandbox factory used by orchestration agents."""
 
 import os
 from typing import Any
@@ -11,34 +6,53 @@ from typing import Any
 from loom.sandbox.base import BaseSandbox
 from loom.sandbox.docker_sandbox import DockerSandbox
 from loom.sandbox.local_process import LocalProcessSandbox
+from loom.sandbox.remote import RemoteDockerSandbox
 from loom.sandbox.tiers import SandboxTier
+
+
+def _remote_worker(repo_path: str) -> BaseSandbox | None:
+    worker_url = os.getenv("LOOM_SANDBOX_WORKER_URL")
+    worker_token = os.getenv("SANDBOX_WORKER_TOKEN")
+    if worker_url and worker_token:
+        return RemoteDockerSandbox(worker_url, worker_token, repo_path)
+    return None
 
 
 def sandbox_for_state(state: Any) -> BaseSandbox:
     """Construct the sandbox selected for the current run.
 
-    Tier A is intentionally host-local for development/low-risk runs. Tiers B/C
-    use Docker and fail closed in production when Docker is unavailable.
+    Tier A remains local for development/low-risk workflows. Tiers B/C use the
+    dedicated worker in production when configured, keeping the Docker daemon
+    socket out of the API process. Direct Docker remains available as a local
+    development fallback.
     """
     tier_value = str(state.shared_data.get("sandbox_tier", SandboxTier.A_GIT_WORKTREE.value)).upper()
     repo_path = state.repo_path
+    production = os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
 
-    if tier_value == SandboxTier.B_DOCKER_CONTAINER.value:
-        return DockerSandbox(repo_path, cpu_limit=2.0, memory_mb=4096)
+    if tier_value in {
+        SandboxTier.B_DOCKER_CONTAINER.value,
+        SandboxTier.C_FIRECRACKER_MICROVM.value,
+    }:
+        if production:
+            remote = _remote_worker(repo_path)
+            if remote is None:
+                raise RuntimeError(
+                    "Production Tier B/C execution requires LOOM_SANDBOX_WORKER_URL and SANDBOX_WORKER_TOKEN"
+                )
+            return remote
 
-    if tier_value == SandboxTier.C_FIRECRACKER_MICROVM.value:
-        # Tier C currently uses the hardened Docker backend as a temporary
-        # compatibility implementation. A real Firecracker backend remains a
-        # separate infrastructure milestone and must not be implied by this
-        # factory.
-        return DockerSandbox(
-            repo_path,
-            cpu_limit=4.0,
-            memory_mb=8192,
-            read_only_root=True,
-        )
+        if tier_value == SandboxTier.C_FIRECRACKER_MICROVM.value:
+            return DockerSandbox(
+                repo_path,
+                cpu_limit=4.0,
+                memory_mb=8192,
+                read_only_root=True,
+                allow_local_fallback=False,
+            )
 
-    # Explicitly preserve Tier A semantics for development and Solo workflows.
+        return DockerSandbox(repo_path, cpu_limit=2.0, memory_mb=4096, allow_local_fallback=True)
+
     return LocalProcessSandbox(repo_path)
 
 
