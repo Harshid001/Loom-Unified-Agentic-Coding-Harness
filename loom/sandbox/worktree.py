@@ -1,4 +1,5 @@
 import logging
+import re
 import shutil
 import subprocess
 import time
@@ -6,6 +7,15 @@ from pathlib import Path
 from typing import Dict
 
 logger = logging.getLogger("loom.sandbox.worktree")
+
+_LABEL_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+
+
+def _safe_snapshot_label(label: str) -> str:
+    value = str(label or "snapshot").strip()
+    if not _LABEL_RE.fullmatch(value) or value in {".", ".."}:
+        raise ValueError("Invalid snapshot label")
+    return value
 
 
 class WorktreeManager:
@@ -16,12 +26,15 @@ class WorktreeManager:
         self.snapshots: Dict[str, str] = {}
 
     def create_snapshot(self, label: str) -> str:
-        snapshot_id = f"snap_{int(time.time())}_{label}"
-        snapshot_dir = self.repo_path / ".loom_snapshots" / snapshot_id
+        safe_label = _safe_snapshot_label(label)
+        snapshot_id = f"snap_{int(time.time())}_{safe_label}"
+        snapshot_dir = (self.repo_path / ".loom_snapshots" / snapshot_id).resolve()
+        snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
+        if snapshots_root not in snapshot_dir.parents:
+            raise ValueError("Snapshot path escaped repository snapshots root")
         snapshot_dir.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Attempt git worktree add if repo is a git repo root
             if not (self.repo_path / ".git").exists():
                 raise OSError(f"{self.repo_path} is not a git repository root")
             cmd = ["git", "worktree", "add", "-b", f"loom/{snapshot_id}", str(snapshot_dir), "HEAD"]
@@ -29,7 +42,6 @@ class WorktreeManager:
             self.snapshots[snapshot_id] = str(snapshot_dir)
         except (subprocess.CalledProcessError, FileNotFoundError, OSError) as err:
             logger.info("Git worktree creation failed for %s (%s), falling back to directory copy", snapshot_id, err)
-            # Fallback copy if not git repo or worktree fails
             if snapshot_dir.exists():
                 shutil.rmtree(snapshot_dir, ignore_errors=True)
             shutil.copytree(
@@ -43,7 +55,6 @@ class WorktreeManager:
 
     def restore_snapshot(self, snapshot_id: str) -> bool:
         if snapshot_id not in self.snapshots:
-            # PRD-003: Disk lookup fallback for cross-process instance restoration
             candidate = (self.repo_path / ".loom_snapshots" / snapshot_id).resolve()
             snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
             if candidate.exists() and candidate.is_dir() and snapshots_root in candidate.parents:
@@ -51,16 +62,18 @@ class WorktreeManager:
             else:
                 return False
 
-        snapshot_path = Path(self.snapshots[snapshot_id])
-        if not snapshot_path.exists():
+        snapshot_path = Path(self.snapshots[snapshot_id]).resolve()
+        snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
+        if snapshots_root not in snapshot_path.parents or not snapshot_path.exists():
             return False
 
         try:
-            # Restore files back to repo root
             for item in snapshot_path.iterdir():
                 if item.name in [".git", ".loom_snapshots"]:
                     continue
-                dest = self.repo_path / item.name
+                dest = (self.repo_path / item.name).resolve()
+                if self.repo_path not in dest.parents and dest != self.repo_path:
+                    return False
                 if item.is_dir():
                     if dest.exists():
                         shutil.rmtree(dest, ignore_errors=True)
@@ -74,7 +87,10 @@ class WorktreeManager:
 
     def cleanup_snapshot(self, snapshot_id: str):
         if snapshot_id in self.snapshots:
-            path = Path(self.snapshots[snapshot_id])
+            path = Path(self.snapshots[snapshot_id]).resolve()
+            snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
+            if snapshots_root not in path.parents:
+                return
             if path.exists():
                 try:
                     subprocess.run(
