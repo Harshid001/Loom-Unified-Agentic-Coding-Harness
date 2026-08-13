@@ -45,6 +45,7 @@ except ImportError:
 from loom.adapters.router import ModelRouter
 from loom.api.webhooks import WebhookEventType, get_webhook_engine
 from loom.auth.api_tokens import get_api_token_store
+from loom.auth.context import get_effective_principal, get_service_principal, set_principal
 from loom.business.entitlements import EntitlementService
 from loom.business.models import (
     FeatureKey,
@@ -178,6 +179,7 @@ def get_required_api_key() -> Optional[str]:
 async def verify_api_key(x_api_key: Optional[str] = Header(None)):
     required_key = get_required_api_key()
     if required_key and x_api_key and secrets.compare_digest(x_api_key, required_key):
+        set_principal(get_service_principal())
         return x_api_key
 
     if x_api_key:
@@ -188,6 +190,7 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None)):
 
     if not required_key:
         if is_dev_mode():
+            set_principal(get_service_principal())
             return x_api_key or "dev_key"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -368,12 +371,18 @@ def get_rbac(org_id: str = "org_placeholder", user_id: str = "dev_user") -> RBAC
     return RBACEnforcer(role)
 
 
+def _request_org_id(client_org_id: str) -> str:
+    if is_dev_mode():
+        return client_org_id or _default_org.id
+    return get_effective_principal().org_id
+
+
 async def require_run_permission(
     x_api_key: str = Depends(verify_api_key),
     x_org_id: str = Header(default="", alias="X-Org-Id"),
     x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
 ) -> RBACEnforcer:
-    org_id = x_org_id or _default_org.id
+    org_id = _request_org_id(x_org_id)
     enforcer = get_rbac(org_id, x_user_id)
     enforcer.authorize(Action.TRIGGER_RUN, resource=f"org:{org_id}")
     return enforcer
@@ -384,7 +393,7 @@ async def require_admin_permission(
     x_org_id: str = Header(default="", alias="X-Org-Id"),
     x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
 ) -> RBACEnforcer:
-    org_id = x_org_id or _default_org.id
+    org_id = _request_org_id(x_org_id)
     enforcer = get_rbac(org_id, x_user_id)
     enforcer.authorize(Action.MODIFY_ENTITLEMENTS, resource=f"org:{org_id}")
     return enforcer
@@ -395,7 +404,7 @@ async def require_auditor_permission(
     x_org_id: str = Header(default="", alias="X-Org-Id"),
     x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
 ) -> RBACEnforcer:
-    org_id = x_org_id or _default_org.id
+    org_id = _request_org_id(x_org_id)
     enforcer = get_rbac(org_id, x_user_id)
     enforcer.authorize(Action.EXPORT_EVIDENCE, resource=f"org:{org_id}")
     return enforcer
@@ -404,7 +413,7 @@ async def require_auditor_permission(
 async def resolve_org_id(
     x_org_id: str = Header(default="", alias="X-Org-Id"),
 ) -> str:
-    return x_org_id or _default_org.id
+    return _request_org_id(x_org_id)
 
 
 _entitlements = EntitlementService()
