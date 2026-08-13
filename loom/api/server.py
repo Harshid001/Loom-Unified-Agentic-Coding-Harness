@@ -232,13 +232,31 @@ class ControlRequest(BaseModel):
     snapshot_id: Optional[str] = None
 
 
-@app.post("/api/v1/auth/tokens")
-@app.post("/api/auth/tokens")
+async def require_token_admin(x_api_key: str = Depends(verify_api_key)):
+    """Require an authenticated principal with token-management RBAC permission."""
+    principal = get_effective_principal()
+    role = _entitlements.get_role(principal.org_id, principal.user_id)
+    RBACEnforcer(role).authorize(Action.MODIFY_ENTITLEMENTS, resource=f"org:{principal.org_id}")
+    return principal
+
+
+@app.post("/api/v1/auth/tokens", dependencies=[Depends(require_token_admin)])
+@app.post("/api/auth/tokens", dependencies=[Depends(require_token_admin)])
 def issue_api_token(req: TokenCreateRequest):
     token_store = get_api_token_store()
+    principal = get_effective_principal()
+    requested_user = req.user_id or principal.user_id
+    requested_org = req.org_id or principal.org_id
+
+    # Prevent an administrator from creating a token in another organization from
+    # a client-supplied org_id. Cross-organization administration is a separate
+    # control-plane concern and is not exposed by this endpoint.
+    if requested_org != principal.org_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot issue a token for another organization")
+
     record, raw_token = token_store.issue(
-        user_id=req.user_id or "dev_user",
-        org_id=req.org_id or "default",
+        user_id=requested_user,
+        org_id=principal.org_id,
         label=req.label or "cli",
     )
     return {
@@ -259,6 +277,7 @@ def list_api_tokens(
     x_api_key: str = Depends(verify_api_key),
 ):
     token_store = get_api_token_store()
+    principal = get_effective_principal()
     records = [
         {
             "id": r.id,
@@ -270,7 +289,9 @@ def list_api_tokens(
             "created_at": r.created_at,
         }
         for r in token_store._records.values()
-        if r.active and (user_id is None or r.user_id == user_id)
+        if r.active
+        and r.org_id == principal.org_id
+        and (user_id is None or r.user_id == user_id)
     ]
     return records
 
@@ -281,7 +302,11 @@ def revoke_api_token(
     token_id: str,
     x_api_key: str = Depends(verify_api_key),
 ):
+    principal = get_effective_principal()
     token_store = get_api_token_store()
+    record = token_store._records.get(token_id)
+    if record is None or record.org_id != principal.org_id:
+        raise HTTPException(status_code=404, detail="Token not found")
     success = token_store.revoke(token_id)
     if not success:
         raise HTTPException(status_code=404, detail="Token not found or already revoked")
@@ -579,18 +604,24 @@ async def create_run(
     }
 
 
-@app.get("/api/v1/stream/{run_id}")
-@app.get("/api/stream/{run_id}")
+@app.get("/api/v1/stream/{run_id}", dependencies=[Depends(verify_api_key)])
+@app.get("/api/stream/{run_id}", dependencies=[Depends(verify_api_key)])
 async def stream_run_events(run_id: str):
-    """Server-Sent Events (SSE) streaming endpoint for live execution logs and progress."""
+    """Authenticated SSE stream scoped to the run's owning organization."""
+    run_entry = ACTIVE_RUNS.get(run_id)
+    if not run_entry:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    principal = get_effective_principal()
+    run_org = run_entry.get("state").shared_data.get("org_id") if run_entry.get("state") else None
+    if run_org != principal.org_id:
+        raise HTTPException(status_code=404, detail="Run not found")
 
     async def event_generator():
         queue: asyncio.Queue = asyncio.Queue()
-        run_entry = ACTIVE_RUNS.get(run_id)
-        if run_entry:
-            run_entry["queues"].append(queue)
-            for event in list(run_entry.get("events", [])):
-                yield f"data: {json.dumps(event)}\n\n"
+        run_entry["queues"].append(queue)
+        for event in list(run_entry.get("events", [])):
+            yield f"data: {json.dumps(event)}\n\n"
 
         try:
             while True:
@@ -612,7 +643,7 @@ async def stream_run_events(run_id: str):
         except asyncio.CancelledError:
             pass
         finally:
-            if run_entry and queue in run_entry.get("queues", []):
+            if queue in run_entry.get("queues", []):
                 run_entry["queues"].remove(queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
