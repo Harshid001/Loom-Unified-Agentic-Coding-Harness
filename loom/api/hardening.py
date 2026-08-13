@@ -57,7 +57,7 @@ class APIHardeningMiddleware:
         scope: dict[str, Any],
         receive: Callable[..., Awaitable[dict[str, Any]]],
         send: Callable[..., Awaitable[None]],
-    ):
+    ) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
@@ -122,7 +122,13 @@ class APIHardeningMiddleware:
     @staticmethod
     async def _reject(send: Callable[..., Awaitable[None]], status_code: int, detail: str) -> None:
         body = ("{\"detail\":\"" + detail.replace('"', "'") + "\"}").encode()
-        await send({"type": "http.response.start", "status": status_code, "headers": [(b"content-type", b"application/json")]})
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status_code,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
 
@@ -140,7 +146,7 @@ def valid_api_credential(headers: dict[str, str]) -> bool:
     if not token:
         return False
     configured = os.getenv("API_KEY")
-    if configured and token == configured:
+    if configured and hmac.compare_digest(token, configured):
         return True
     try:
         from loom.auth.api_tokens import get_api_token_store
@@ -152,7 +158,7 @@ def valid_api_credential(headers: dict[str, str]) -> bool:
 
 
 def verify_webhook_signature(path: str, headers: dict[str, str], body: bytes) -> bool:
-    """Verify inbound GitHub or GitLab webhook signatures with constant-time comparison."""
+    """Verify an inbound GitHub or GitLab webhook signature using constant-time comparison."""
     normalized_path = path.lower()
     normalized_headers = {str(key).lower(): str(value) for key, value in headers.items()}
 
@@ -175,12 +181,14 @@ def verify_webhook_signature(path: str, headers: dict[str, str], body: bytes) ->
 
 
 def trusted_client_ip(scope: dict[str, Any]) -> str:
-    peer = (scope.get("client") or ("127.0.0.1", 0))[0]
+    client = scope.get("client")
+    peer = str(client[0]) if isinstance(client, (tuple, list)) and client else "127.0.0.1"
     trusted_proxy = os.getenv("TRUST_PROXY", "false").lower() in {"1", "true", "yes"}
     if trusted_proxy:
         for key, value in scope.get("headers", []):
             if key.lower() == b"x-forwarded-for" and value:
-                return value.decode().split(",", 1)[0].strip()
+                decoded = value.decode("latin-1") if isinstance(value, (bytes, bytearray)) else str(value)
+                return decoded.split(",", 1)[0].strip()
     return peer
 
 
@@ -191,7 +199,7 @@ class RedisRateLimiter:
         self._local: dict[str, RateLimitState] = defaultdict(lambda: RateLimitState(deque()))
         self._redis = None
 
-    async def _client(self):
+    async def _client(self) -> Any:
         if self._redis is not None:
             return self._redis
         url = os.getenv("REDIS_URL")
@@ -238,15 +246,22 @@ def install_rate_limiter(app: Any) -> None:
     limiter = RedisRateLimiter(int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")))
 
     @app.middleware("http")
-    async def production_rate_limit(request: Any, call_next: Callable[..., Awaitable[Any]]):
+    async def production_rate_limit(request: Any, call_next: Callable[..., Awaitable[Any]]) -> Any:
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
         try:
             ip = trusted_client_ip(request.scope)
-            principal = "anonymous"
-            auth = request.headers.get("authorization") or request.headers.get("x-api-key")
-            if auth:
-                principal = auth[-16:]
+            auth = request.headers.get("authorization") or request.headers.get("x-api-key") or request.headers.get("x-dashboard-auth")
+            principal = auth[-16:] if auth else "anonymous"
+
+            # Authentication must remain authoritative: unauthenticated requests are
+            # locally rate-limited, then passed to FastAPI so protected routes return 401/403.
+            if not auth:
+                local_key = f"unauth:{ip}:{request.url.path}"
+                if not await limiter._local_allow(local_key):
+                    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+                return await call_next(request)
+
             key = f"{ip}:{principal}:{request.url.path}"
             if not await limiter.allow(key):
                 return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
@@ -358,3 +373,17 @@ def harden_server_module(module: Any) -> None:
 def _checkpoint_org(run_id: str, expected_org: str) -> bool:
     actual = run_org_id(run_id)
     return actual == expected_org
+
+
+async def _local_allow(self: RedisRateLimiter, key: str) -> bool:
+    now = time.time()
+    state = self._local[key]
+    while state.timestamps and now - state.timestamps[0] >= self.window:
+        state.timestamps.popleft()
+    if len(state.timestamps) >= self.limit:
+        return False
+    state.timestamps.append(now)
+    return True
+
+
+RedisRateLimiter._local_allow = _local_allow
