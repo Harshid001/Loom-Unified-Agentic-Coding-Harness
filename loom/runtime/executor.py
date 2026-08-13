@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
-from typing import Any
+from typing import Any, Optional
 
 from loom.adapters.router import ModelRouter
 from loom.api.webhooks import get_webhook_engine
@@ -17,12 +18,36 @@ from loom.telemetry.tracer import TelemetryTracer
 from loom.verification.bundle import EvidenceBundler
 
 
+def _resume_node(state: OrchestratorState, sequence: list[tuple[str, Any]]) -> Optional[str]:
+    """Return the first node that is not durably completed in a checkpoint."""
+    for name, _ in sequence:
+        node = state.nodes.get(name)
+        if node is None or node.status != "completed":
+            return name
+    return None
+
+
 async def execute_run_job(job: Any) -> OrchestratorState:
-    """Reconstruct and execute a queued run without importing FastAPI request state."""
-    state = OrchestratorState(run_id=job.run_id, repo_path=job.repo_path, issue_description=job.issue)
+    """Reconstruct and execute a queued run, resuming from the latest checkpoint."""
+    checkpoint = OrchestratorState.load_checkpoint(job.run_id)
+    if checkpoint is not None:
+        state = checkpoint
+        state.repo_path = job.repo_path
+        state.issue_description = job.issue
+    else:
+        state = OrchestratorState(run_id=job.run_id, repo_path=job.repo_path, issue_description=job.issue)
+
     state.shared_data["org_id"] = job.org_id
     state.shared_data["sandbox_tier"] = job.sandbox_tier
     state.shared_data["auto_merge_threshold"] = job.auto_merge_threshold
+
+    try:
+        from loom.api import server as server_module
+
+        org = server_module._entitlements.get_org(job.org_id) or server_module._default_org
+        state.shared_data["_org"] = org
+    except Exception:
+        state.shared_data["_org"] = None
 
     router = ModelRouter(default_model=job.model, mock_mode=job.mock)
     tracer = TelemetryTracer(run_id=job.run_id)
@@ -46,21 +71,15 @@ async def execute_run_job(job: Any) -> OrchestratorState:
 
     def on_step_start(step_name: str, model_name: str) -> None:
         if coordinator.enabled:
-            import asyncio
-
             asyncio.create_task(publish("step_progress", step_name, {"status": "running", "model": model_name}))
 
     def on_step_complete(step_name: str, output: Any) -> None:
         if coordinator.enabled:
-            import asyncio
-
             metrics = output.get("_usage", {}) if isinstance(output, dict) else {}
             asyncio.create_task(publish("step_progress", step_name, {"status": "completed", "metrics": metrics}))
 
     def on_step_fail(step_name: str, error: str) -> None:
         if coordinator.enabled:
-            import asyncio
-
             asyncio.create_task(publish("step_progress", step_name, {"status": "failed", "error": error}))
 
     graph = TaskGraph(
@@ -85,12 +104,14 @@ async def execute_run_job(job: Any) -> OrchestratorState:
             sandbox_tier=job.sandbox_tier,
         )
     )
+
+    resume_from = _resume_node(state, graph.NODE_SEQUENCE) if checkpoint is not None else None
     started = time.time()
     try:
         if coordinator.enabled:
             await coordinator.update_run_status(job.run_id, "running")
-        final_state = await graph.run()
-        state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
+        final_state = await graph.run(resume_from=resume_from)
+        final_state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
         if coordinator.enabled:
             status = "completed" if final_state.verification_passed else "failed"
             await coordinator.update_run_status(job.run_id, status)
@@ -98,6 +119,7 @@ async def execute_run_job(job: Any) -> OrchestratorState:
     except Exception as exc:
         state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
         state.shared_data["worker_error"] = str(exc)
+        state.save_checkpoint()
         if coordinator.enabled:
             await coordinator.update_run_status(job.run_id, "failed")
         raise
