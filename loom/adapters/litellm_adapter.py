@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Any, Dict, List
 
 from loom.adapters.base import BaseModelAdapter, ModelRequest, ModelResponse, TokenUsage, ToolCall
@@ -14,12 +15,24 @@ MODEL_COSTS = {
 }
 
 
+def _production() -> bool:
+    return os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
+
+
 class LiteLLMAdapter(BaseModelAdapter):
     def __init__(self, mock_mode: bool = False):
+        if _production() and mock_mode:
+            raise RuntimeError("Mock model execution is disabled in production")
         self.mock_mode = mock_mode
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
-        if self.mock_mode or request.model.startswith("mock"):
+        if request.model.startswith("mock"):
+            if _production():
+                raise RuntimeError("Mock model requests are disabled in production")
+            return self._mock_generate(request)
+        if self.mock_mode:
+            if _production():
+                raise RuntimeError("Mock model execution is disabled in production")
             return self._mock_generate(request)
 
         try:
@@ -41,8 +54,6 @@ class LiteLLMAdapter(BaseModelAdapter):
                     target_model = "deepseek/deepseek-chat"
                 else:
                     target_model = f"deepseek/{target_model}"
-
-            import os
 
             api_base = os.getenv("API_BASE") or os.getenv("OPENAI_API_BASE")
             kwargs: Dict[str, Any] = {
@@ -98,18 +109,14 @@ class LiteLLMAdapter(BaseModelAdapter):
                 raw_response=res.model_dump() if hasattr(res, "model_dump") else None,
             )
         except Exception as e:
-            if not self.mock_mode:
-                logger.error(f"LiteLLM completion failed in production mode: {e}")
-                raise e
-            logger.warning(f"LiteLLM completion failed, falling back to mock: {e}")
-            return self._mock_generate(request)
+            logger.error("LiteLLM completion failed: %s", e)
+            raise
 
     def _mock_generate(self, request: ModelRequest) -> ModelResponse:
-        """Fallback mock generator for offline mode or test validation."""
+        """Deterministic mock generator for explicit offline/test execution."""
         content = "Mock response: Operation completed successfully."
         tool_calls: List[ToolCall] = []
 
-        # Check system/user messages for specific agent intents
         user_msg = ""
         for m in request.messages:
             if m.get("role") == "user":

@@ -1,9 +1,4 @@
-"""Per-user API token registry with at-rest hashing.
-
-Verification remains available to API authentication. Administrative operations are
-explicitly disabled in production unless the privileged control-plane feature flag is
-enabled; direct enumeration of the internal registry is guarded as well.
-"""
+"""Per-user API token registry with at-rest hashing and expiry enforcement."""
 
 import hashlib
 import json
@@ -16,6 +11,8 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from pydantic import BaseModel, Field
+
+from loom.auth.context import AuthenticatedPrincipal, clear_principal, set_principal
 
 logger = logging.getLogger("loom.auth.api_tokens")
 
@@ -38,9 +35,18 @@ def _require_admin_enabled(operation: str) -> None:
         )
 
 
-class _GuardedTokenRegistry(dict[str, "ApiTokenRecord"]):
-    """Guard public enumeration while preserving normal internal dictionary operations."""
+def _ttl_seconds() -> int:
+    raw = os.getenv("LOOM_TOKEN_TTL_SECONDS", "86400")
+    try:
+        ttl = int(raw)
+    except ValueError as exc:
+        raise RuntimeError("LOOM_TOKEN_TTL_SECONDS must be an integer") from exc
+    if ttl < 0:
+        raise RuntimeError("LOOM_TOKEN_TTL_SECONDS cannot be negative")
+    return ttl
 
+
+class _GuardedTokenRegistry(dict[str, "ApiTokenRecord"]):
     def values(self) -> Iterable["ApiTokenRecord"]:  # type: ignore[override]
         _require_admin_enabled("listing")
         return super().values()
@@ -60,6 +66,10 @@ class ApiTokenRecord(BaseModel):
     active: bool = True
     revoked_at: Optional[float] = None
     created_at: float = Field(default_factory=time.time)
+    expires_at: Optional[float] = None
+
+    def is_expired(self, now: Optional[float] = None) -> bool:
+        return self.expires_at is not None and (now if now is not None else time.time()) >= self.expires_at
 
 
 def hash_token(token: str) -> str:
@@ -84,14 +94,21 @@ class ApiTokenStore:
         path = self._file()
         if not path.exists():
             return
+        changed = False
         for line in path.read_text(encoding="utf-8").strip().split("\n"):
             if not line.strip():
                 continue
             try:
                 record = ApiTokenRecord(**json.loads(line))
+                if record.active and record.is_expired():
+                    record.active = False
+                    record.revoked_at = time.time()
+                    changed = True
                 self._records[record.id] = record
             except (json.JSONDecodeError, TypeError, ValueError):
                 continue
+        if changed:
+            self._persist()
 
     def _persist(self) -> None:
         try:
@@ -104,21 +121,35 @@ class ApiTokenStore:
     def issue(self, user_id: str, org_id: str = "default", label: str = "") -> tuple[ApiTokenRecord, str]:
         _require_admin_enabled("issuance")
         token = secrets.token_urlsafe(32)
+        created_at = time.time()
+        ttl = _ttl_seconds()
         record = ApiTokenRecord(
             user_id=user_id,
             org_id=org_id,
             label=label,
             token_hash=hash_token(token),
             prefix=token[:8],
+            created_at=created_at,
+            expires_at=(created_at + ttl) if ttl else None,
         )
         self._records[record.id] = record
         self._persist()
         return record, token
 
     def verify(self, token: str) -> Optional[ApiTokenRecord]:
+        clear_principal()
         digest = hash_token(token)
+        now = time.time()
         for record in dict.values(self._records):
-            if record.active and secrets.compare_digest(record.token_hash, digest):
+            if record.active and not record.is_expired(now) and secrets.compare_digest(record.token_hash, digest):
+                set_principal(
+                    AuthenticatedPrincipal(
+                        user_id=record.user_id,
+                        org_id=record.org_id,
+                        token_id=record.id,
+                        auth_method="api_token",
+                    )
+                )
                 return record
         return None
 
@@ -146,10 +177,10 @@ class ApiTokenStore:
 
     def list_active_for_user(self, user_id: str) -> List[ApiTokenRecord]:
         _require_admin_enabled("listing")
-        return [r for r in dict.values(self._records) if r.user_id == user_id and r.active]
+        return [r for r in dict.values(self._records) if r.user_id == user_id and r.active and not r.is_expired()]
 
     def count(self) -> int:
-        return len(self._records)
+        return sum(1 for r in dict.values(self._records) if r.active and not r.is_expired())
 
 
 _api_token_store_instance: Optional[ApiTokenStore] = None

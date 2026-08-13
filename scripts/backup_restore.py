@@ -12,7 +12,6 @@ import os
 import shutil
 import sqlite3
 import subprocess
-import sys
 import tarfile
 import time
 from pathlib import Path
@@ -31,6 +30,35 @@ def compute_sha256(filepath: Path) -> str:
 
 def _production() -> bool:
     return os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
+
+
+def _loom_home() -> Path:
+    override = os.getenv("LOOM_HOME")
+    return Path(override).expanduser() if override else Path.home() / ".loom"
+
+
+def _database_args(env_url: str) -> tuple[list[str], dict[str, str]]:
+    """Return pg_dump/pg_restore args without exposing a DB password via argv."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(env_url)
+    if parsed.scheme not in {"postgresql", "postgres"} or not parsed.hostname:
+        raise RuntimeError("DATABASE_URL must be a PostgreSQL URL for PostgreSQL backup operations")
+
+    env = os.environ.copy()
+    if parsed.password is not None:
+        env["PGPASSWORD"] = parsed.password
+
+    host_args = ["--host", parsed.hostname]
+    if parsed.port:
+        host_args += ["--port", str(parsed.port)]
+    if parsed.username:
+        host_args += ["--username", parsed.username]
+    database = parsed.path.lstrip("/")
+    if not database:
+        raise RuntimeError("DATABASE_URL must include a PostgreSQL database name")
+    host_args += ["--dbname", database]
+    return host_args, env
 
 
 def _fernet() -> Optional[Fernet]:
@@ -59,7 +87,6 @@ def _safe_extract(tar: tarfile.TarFile, destination: Path) -> None:
 
 
 def _sqlite_consistent_copy(source: Path, destination: Path) -> None:
-    """Copy a SQLite database consistently; preserve compatibility with file-like test fixtures."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     source_conn = sqlite3.connect(source)
     destination_conn = sqlite3.connect(destination)
@@ -67,8 +94,6 @@ def _sqlite_consistent_copy(source: Path, destination: Path) -> None:
         try:
             source_conn.backup(destination_conn)
         except sqlite3.DatabaseError:
-            # Some compatibility fixtures use a database path containing opaque bytes.
-            # Real SQLite databases still use the consistent backup API above.
             destination_conn.close()
             source_conn.close()
             shutil.copy2(source, destination)
@@ -89,7 +114,7 @@ def create_backup(backup_dir: Path) -> Path:
     target_dir = backup_dir / f"loom_backup_{timestamp}"
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    loom_home = Path.home() / ".loom"
+    loom_home = _loom_home()
     records_db = loom_home / "records.db"
     memory_db = loom_home / "memory.db"
     evidence_path = Path(os.getenv("LOOM_EVIDENCE_DIR") or (loom_home / "evidence"))
@@ -110,10 +135,12 @@ def create_backup(backup_dir: Path) -> Path:
 
     if os.getenv("DATABASE_URL", "").startswith(("postgresql://", "postgres://")):
         dump_path = target_dir / "postgres.dump"
+        args, env = _database_args(os.environ["DATABASE_URL"])
         result = subprocess.run(
-            ["pg_dump", "--format=custom", "--file", str(dump_path), os.environ["DATABASE_URL"]],
+            ["pg_dump", "--format=custom", "--file", str(dump_path), *args],
             capture_output=True,
             text=True,
+            env=env,
         )
         if result.returncode != 0:
             raise RuntimeError(f"pg_dump failed: {result.stderr.strip()}")
@@ -168,7 +195,7 @@ def restore_backup(archive_path: Path, target_loom_home: Optional[Path] = None) 
             print("[ERROR] Backup decryption failed; refusing restore")
             return False
 
-    dest_home = target_loom_home or (Path.home() / ".loom")
+    dest_home = target_loom_home or _loom_home()
     dest_home.mkdir(parents=True, exist_ok=True)
     temp_extract = dest_home / "_restore_temp"
     temp_extract.mkdir(parents=True, exist_ok=True)
@@ -199,10 +226,12 @@ def restore_backup(archive_path: Path, target_loom_home: Optional[Path] = None) 
             database_url = os.getenv("DATABASE_URL")
             if not database_url:
                 raise RuntimeError("DATABASE_URL is required to restore postgres.dump")
+            args, env = _database_args(database_url)
             result = subprocess.run(
-                ["pg_restore", "--clean", "--if-exists", "--dbname", database_url, str(backup_root / "postgres.dump")],
+                ["pg_restore", "--clean", "--if-exists", *args, str(backup_root / "postgres.dump")],
                 capture_output=True,
                 text=True,
+                env=env,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"pg_restore failed: {result.stderr.strip()}")
@@ -228,10 +257,7 @@ def main() -> None:
     if args.command == "create":
         create_backup(Path(args.dir).resolve())
     else:
-        archive = Path(args.archive).resolve()
-        loom_home = Path(args.loom_home).resolve() if args.loom_home else None
-        if not restore_backup(archive, loom_home):
-            sys.exit(1)
+        restore_backup(Path(args.archive).resolve(), target_loom_home=Path(args.loom_home).resolve() if args.loom_home else None)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import logging
 import os
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ class DockerSandbox(BaseSandbox):
         cpu_limit: float = 2.0,
         memory_mb: int = 4096,
         read_only_root: bool = False,
-        allow_network: bool = True,
+        allow_network: bool = False,
         allow_local_fallback: Optional[bool] = None,
     ):
         self.repo_path = Path(repo_path).resolve()
@@ -100,13 +101,28 @@ class DockerSandbox(BaseSandbox):
         rel_cwd = exec_cwd.relative_to(self.repo_path)
         container_workdir = f"/workspace/{rel_cwd}" if str(rel_cwd) != "." else "/workspace"
 
-        if isinstance(cmd, str):
-            cmd_str = cmd
-            cmd_args = ["sh", "-c", cmd]
-        else:
-            cmd_str = " ".join(cmd)
-            cmd_args = cmd
+        try:
+            cmd_args = shlex.split(cmd, posix=True) if isinstance(cmd, str) else list(cmd)
+        except ValueError as exc:
+            return CommandResult(
+                command=str(cmd),
+                exit_code=2,
+                stdout="",
+                stderr=f"Invalid command syntax: {exc}",
+                duration_seconds=0.0,
+                timed_out=False,
+            )
+        if not cmd_args or any(arg in {"sh", "bash", "zsh", "cmd", "powershell", "pwsh"} for arg in cmd_args[:1]):
+            return CommandResult(
+                command=str(cmd),
+                exit_code=126,
+                stdout="",
+                stderr="Shell interpreters are not permitted as sandbox commands.",
+                duration_seconds=0.0,
+                timed_out=False,
+            )
 
+        cmd_str = " ".join(cmd_args)
         docker_cmd = [
             "docker",
             "run",

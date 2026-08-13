@@ -29,7 +29,7 @@ dependencies = [
     "starlette>=0.40.0",
     "pyjwt>=2.9.0",
     "urllib3>=2.2.2",
-    "werkzeug>=3.0.6",
+    "werkzeug>=3.1.6",
     "questionary>=2.0.0",
     "textual>=0.52.0",
     "redis>=5.0.0",
@@ -40,7 +40,9 @@ dependencies = [
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0"
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.3.1",
+    "redis>=5.0.0"
 ]
 
 [project.scripts]

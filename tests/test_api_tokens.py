@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from loom.auth.api_tokens import ApiTokenStore, TokenAdministrationDisabled
@@ -66,6 +68,25 @@ def test_reload_from_disk_preserves_hashes(tmp_path, monkeypatch):
     reloaded = ApiTokenStore(storage_dir=str(tmp_path / "tokens"))
     assert reloaded.verify(token).user_id == "user_a"
     assert reloaded.verify(f"{token}x") is None
+
+
+def test_token_ttl_expires(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "development")
+    monkeypatch.setenv("LOOM_TOKEN_TTL_SECONDS", "1")
+    store = _store(tmp_path)
+    record, token = store.issue("user_a", org_id="org_1")
+    assert record.expires_at is not None
+    assert record.expires_at > time.time()
+    monkeypatch.setattr(time, "time", lambda: record.expires_at + 1)
+    assert store.verify(token) is None
+
+
+def test_zero_ttl_means_nonexpiring_compatibility_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "development")
+    monkeypatch.setenv("LOOM_TOKEN_TTL_SECONDS", "0")
+    store = _store(tmp_path)
+    _, token = store.issue("user_a", org_id="org_1")
+    assert store.verify(token) is not None
 
 
 def test_production_disables_token_admin_by_default(tmp_path, monkeypatch):
