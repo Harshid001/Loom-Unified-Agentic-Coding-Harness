@@ -1,15 +1,18 @@
 """Runtime adapter for the terminal UI."""
 from __future__ import annotations
+
 import asyncio
 import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
+
 from loom.adapters.router import ModelRouter
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
 from loom.telemetry.cost_tracker import CostTracker
 from loom.telemetry.tracer import TelemetryTracer
+
 
 @dataclass
 class RuntimeEvent:

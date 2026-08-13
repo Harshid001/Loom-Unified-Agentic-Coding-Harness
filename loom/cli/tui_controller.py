@@ -67,6 +67,7 @@ class TUIRunController:
             return
         self.create(issue.strip(), repo_path, model.strip() or "claude-3-5-sonnet-20241022")
         assert self.graph is not None
+        assert self.state is not None
         self.started_at = time.time()
         self.emit(ControllerEvent("run_started", message=f"Started run {self.state.run_id}"))
         self.task = asyncio.create_task(self._run())
@@ -125,7 +126,7 @@ class TUIRunController:
 
     def metrics(self) -> dict[str, Any]:
         if not self.cost_tracker:
-            return {"tokens": 0, "cost": 0.0}
+            return {"tokens": 0, "cost": 0.0, "elapsed": 0.0}
         summary = self.cost_tracker.get_summary()
         elapsed = (time.time() - self.started_at) if self.started_at else 0.0
         return {
