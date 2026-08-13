@@ -2,12 +2,14 @@
 
 This module is intentionally isolated from business logic. It protects the existing
 API surface with tenant guards, production-only policy checks, request limits,
-rate limiting, SSRF validation, and removal of fabricated telemetry.
+rate limiting, SSRF validation, webhook signature validation, and removal of fabricated telemetry.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import ipaddress
 import os
 import socket
@@ -50,7 +52,12 @@ class APIHardeningMiddleware:
         self.app = app
         self.max_body_bytes = max_body_bytes
 
-    async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]):
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[..., Awaitable[dict[str, Any]]],
+        send: Callable[..., Awaitable[None]],
+    ) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
@@ -115,7 +122,13 @@ class APIHardeningMiddleware:
     @staticmethod
     async def _reject(send: Callable[..., Awaitable[None]], status_code: int, detail: str) -> None:
         body = ("{\"detail\":\"" + detail.replace('"', "'") + "\"}").encode()
-        await send({"type": "http.response.start", "status": status_code, "headers": [(b"content-type", b"application/json")]})
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status_code,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
 
@@ -133,16 +146,38 @@ def valid_api_credential(headers: dict[str, str]) -> bool:
     if not token:
         return False
     configured = os.getenv("API_KEY")
-    if configured and token == configured:
+    if configured and hmac.compare_digest(token, configured):
         return True
     try:
-        from secrets import compare_digest
         from loom.auth.api_tokens import get_api_token_store
 
         record = get_api_token_store().verify(token)
-        return record is not None and compare_digest(record.token_hash, record.token_hash)
+        return record is not None
     except Exception:
         return False
+
+
+def verify_webhook_signature(path: str, headers: dict[str, str], body: bytes) -> bool:
+    """Verify an inbound GitHub or GitLab webhook signature using constant-time comparison."""
+    normalized_path = path.lower()
+    normalized_headers = {str(key).lower(): str(value) for key, value in headers.items()}
+
+    if "/github/" in normalized_path and normalized_path.endswith("/webhook"):
+        secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+        signature = normalized_headers.get("x-hub-signature-256", "")
+        if not secret or not signature.startswith("sha256="):
+            return False
+        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(signature, expected)
+
+    if "/gitlab/" in normalized_path and normalized_path.endswith("/webhook"):
+        secret = os.getenv("GITLAB_WEBHOOK_SECRET")
+        token = normalized_headers.get("x-gitlab-token", "")
+        if not secret:
+            return False
+        return hmac.compare_digest(token, secret)
+
+    return False
 
 
 def trusted_client_ip(scope: dict[str, Any]) -> str:
@@ -164,7 +199,7 @@ class RedisRateLimiter:
         self._local: dict[str, RateLimitState] = defaultdict(lambda: RateLimitState(deque()))
         self._redis = None
 
-    async def _client(self):
+    async def _client(self) -> Any:
         if self._redis is not None:
             return self._redis
         url = os.getenv("REDIS_URL")
@@ -172,6 +207,7 @@ class RedisRateLimiter:
             return None
         try:
             from redis.asyncio import from_url
+
             self._redis = from_url(url, decode_responses=True)
             return self._redis
         except Exception:
@@ -190,7 +226,10 @@ class RedisRateLimiter:
                 if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
                     raise ProductionSecurityError("Rate-limit Redis is unavailable in production")
 
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"} and os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() not in {"1", "true", "yes"}:
+        if (
+            os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
+            and os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() not in {"1", "true", "yes"}
+        ):
             raise ProductionSecurityError("REDIS_URL is required for production rate limiting")
 
         now = time.time()
@@ -207,7 +246,7 @@ def install_rate_limiter(app: Any) -> None:
     limiter = RedisRateLimiter(int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")))
 
     @app.middleware("http")
-    async def production_rate_limit(request: Any, call_next: Callable[..., Awaitable[Any]]):
+    async def production_rate_limit(request: Any, call_next: Callable[..., Awaitable[Any]]) -> Any:
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
         try:
@@ -247,6 +286,7 @@ def validate_webhook_url(url: str, allow_hosts: set[str] | None = None) -> None:
 def run_org_id(run_id: str) -> str | None:
     try:
         from loom.orchestrator.state import OrchestratorState
+
         state = OrchestratorState.load_checkpoint(run_id)
         if state is None:
             return None
