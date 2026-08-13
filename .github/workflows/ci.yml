@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, prod-hardening-90plus ]
   pull_request:
     branches: [ main, master ]
 
@@ -10,7 +10,7 @@ jobs:
   backend-tests:
     name: Python Backend Build & Test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -25,11 +25,11 @@ jobs:
           python -m pip install --upgrade pip setuptools
           pip install ruff mypy pytest pytest-asyncio pytest-cov pytest-timeout pip-audit
 
-      - name: Dependency Vulnerability Audit (pip-audit)
-        run: pip-audit --skip-editable
-
       - name: Install Local Package
         run: pip install -e .
+
+      - name: Dependency Vulnerability Audit (pip-audit)
+        run: pip-audit --skip-editable
 
       - name: Run Python Linter (Ruff)
         run: ruff check loom/
@@ -41,8 +41,9 @@ jobs:
         run: pytest --timeout=60 --timeout_method=thread
 
   frontend-checks:
-    name: Next.js Frontend Lint & Build
+    name: Next.js Frontend Lint, Test & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ./web
@@ -74,6 +75,16 @@ jobs:
       - name: Build Web Application
         run: npm run build
 
+  container-build:
+    name: Production Container Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build production container
+        run: docker build --pull --tag loom-ci:${{ github.sha }} .
+
   native-smoke:
     name: Native Server & CLI Smoke Test
     runs-on: ubuntu-latest
@@ -90,5 +101,3 @@ jobs:
           pip install -e .
           loom version
           loom init --path .
-
-
