@@ -39,10 +39,7 @@ def clear_principal() -> None:
 
 
 def get_service_principal() -> AuthenticatedPrincipal:
-    """Resolve the fixed identity represented by the shared API key.
-
-    Client-supplied X-User-Id/X-Org-Id headers are never consulted here.
-    """
+    """Resolve the fixed identity represented by the shared API key."""
     return AuthenticatedPrincipal(
         user_id=os.getenv("API_KEY_USER_ID", "dev_user"),
         org_id=os.getenv("API_KEY_ORG_ID", "default"),
@@ -52,25 +49,21 @@ def get_service_principal() -> AuthenticatedPrincipal:
 
 
 def _is_secure_runtime() -> bool:
-    return not (
-        os.getenv("LOOM_ENV", "production").lower() == "development"
-        and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
-    )
+    env = os.getenv("LOOM_ENV", "development").lower()
+    dev_flag = os.getenv("DEV_MODE", "").lower()
+    return not (env == "development" or dev_flag in {"true", "1", "yes"})
 
 
 def get_effective_principal(
     user_id_header: Optional[str] = None,
     org_id_header: Optional[str] = None,
 ) -> AuthenticatedPrincipal:
-    """Return the credential-bound identity, never forged client headers in production.
-
-    The optional header arguments exist only for compatibility with older callers.
-    In secure runtime they are intentionally ignored. In explicit development
-    compatibility mode they may override the service identity for local workflows.
-    """
-    principal = get_principal()
-    if principal is None:
-        principal = get_service_principal()
+    """Return credential-bound identity, never forged client headers in production."""
+    current = get_principal()
+    # API-token identities are request-bound and authoritative while active.
+    # Shared API-key identities are always derived from current environment so
+    # an old API-key principal cannot leak across requests or tests.
+    principal = current if current is not None and current.auth_method == "api_token" else get_service_principal()
 
     if _is_secure_runtime():
         return principal
@@ -84,13 +77,10 @@ def get_effective_principal(
 
 
 def resolve_request_org(client_org_id: Optional[str] = None) -> str:
-    """Resolve request organization from authenticated identity in secure runtime."""
-    principal = get_effective_principal(org_id_header=client_org_id)
-    return principal.org_id
+    return get_effective_principal(org_id_header=client_org_id).org_id
 
 
 def require_authenticated_principal() -> AuthenticatedPrincipal:
-    """Require a credential-bound principal rather than relying on a default identity."""
     principal = get_principal()
     if principal is None:
         raise HTTPException(
