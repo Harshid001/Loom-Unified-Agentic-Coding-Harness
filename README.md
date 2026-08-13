@@ -1,78 +1,235 @@
-# Loom — Unified Agentic Coding Harness 🧶
+# Loom — Unified Agentic Coding Harness
 
-> **Enterprise-Grade, Model-Independent Autonomous Coding Agent Harness**  
-> Takes any repository and issue description through the complete engineering loop — onboarding, reproduction, planning, patching, build/test verification, evidence bundling, and instant rollback.
+> **Verification-first autonomous software engineering infrastructure.**
 
----
+Loom takes a repository and an engineering task through a structured coding workflow: repository onboarding, reproduction, planning, patching, verification, evidence collection, review, and rollback.
 
-## 🌟 Key Highlights
+The core design principle is simple:
 
-- **Model-Independent Architecture**: Seamlessly route sub-agent tasks across Anthropic (Claude 3.5 Sonnet), OpenAI (GPT-4o), Google Gemini, Ollama, or local LLM endpoints.
-- **Verification-First Execution**: Requires empirical, verifiable proof (passing test runs and clean build logs) before declaring success.
-- **Sandboxed Execution & Instant Rollback**: Isolated execution environments using Git worktree process sandboxes with 1-click snapshot restoration.
-- **7-Tiered Memory System with Provenance**: Persistent SQLite (WAL mode) / PostgreSQL store tracking project conventions, architectural decisions, and invalidation rules.
-- **Dynamic Context Budgeting & Security**: AST symbol relevance ranking, prompt injection sanitization (`PromptSanitizer`), and model token window budgeting.
-- **Visual Web Dashboard & Terminal CLI**: Unified experience with a Next.js (App Router) interactive DAG trace viewer and a terminal-first Typer CLI.
-- **Enterprise Observability**: Native Prometheus metrics (`/metrics`), OpenTelemetry tracing, cost tracking reports, and controlled ablation benchmarking.
+> **An agent should not declare a fix successful without evidence.**
 
 ---
 
-## 📐 System Architecture
+## Why Loom exists
+
+Traditional coding agents often optimize for generating a plausible patch. Loom is designed around the harder problem: producing a patch that can be **reproduced, verified, reviewed, explained, and safely rolled back**.
 
 ```text
-                                  +-----------------------+
-                                  |    User Request /     |
-                                  |  Web Dashboard / CLI  |
-                                  +-----------+-----------+
-                                              |
-                                              v
-                                  +-----------------------+
-                                  |     Model Router      |
-                                  | (Claude / GPT / Local)|
-                                  +-----------+-----------+
-                                              |
-                                              v
-+-----------------------------------------------------------------------------------+
-|                           DAG Task Graph Execution Engine                         |
-|                                                                                   |
-|  [Onboarding Agent] -> [Reproduction Agent] -> [Patcher Agent] -> [Verifier Agent] |
-|         |                     |                     |                  |          |
-|         v                     v                     v                  v          |
-|  Repo Mapper / AST     Reproduction Test      Code Patch      Verification Bundle |
-+-----------------------------------------------------------------------------------+
-                                              |
-                                              v
-                                  +-----------------------+
-                                  | Evidence Review Agent |
-                                  |  (Final Verification) |
-                                  +-----------+-----------+
-                                              |
-                                              v
-                                  +-----------------------+
-                                  | Local Sandbox & Git   |
-                                  | Snapshot Rollback Store|
-                                  +-----------------------+
+Issue / Task
+     │
+     ▼
+Repository Intelligence
+     │
+     ▼
+Reproduction
+     │
+     ▼
+Planning
+     │
+     ▼
+Patching
+     │
+     ▼
+Verification
+     │
+     ▼
+Evidence + Risk Decision
+     │
+     ├── Human review
+     ├── Auto-merge when policy allows
+     └── Rollback when required
 ```
 
 ---
 
-## 🚀 Quick Start Guide
+## Core architecture
 
-### Prerequisites
-- **Python**: `>= 3.10`
-- **Node.js**: `>= 20.0` (for Web Dashboard)
+```text
+                         ┌─────────────────────────┐
+                         │      User / Developer   │
+                         │       CLI / Dashboard   │
+                         └────────────┬────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────┐
+                         │       FastAPI API       │
+                         │  Auth / RBAC / Policies │
+                         └────────────┬────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────┐
+                         │     Agent Orchestrator  │
+                         │        TaskGraph        │
+                         └────────────┬────────────┘
+                                      │
+             ┌────────────────────────┼────────────────────────┐
+             ▼                        ▼                        ▼
+      Repository Intel            Model Router             Memory
+             │                        │                        │
+             └────────────────────────┼────────────────────────┘
+                                      ▼
+                         ┌─────────────────────────┐
+                         │     Specialist Agents   │
+                         │                         │
+                         │ Onboarding              │
+                         │ Reproduction            │
+                         │ Planning                │
+                         │ Patching                │
+                         │ Verification            │
+                         │ Review                  │
+                         └────────────┬────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────┐
+                         │ Sandbox / Git Worktree  │
+                         │ Snapshot + Rollback     │
+                         └────────────┬────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────┐
+                         │ Evidence / Telemetry    │
+                         │ Tests / Builds / SAST   │
+                         └─────────────────────────┘
+```
+
+### Execution stages
+
+| Stage | Purpose |
+|---|---|
+| **Onboarding** | Map the repository, relevant symbols, conventions, and project context. |
+| **Reproduction** | Establish a reproducible failure or concrete acceptance condition. |
+| **Planning** | Produce an implementation strategy based on repository evidence. |
+| **Patching** | Generate, validate, policy-check, and apply a patch. |
+| **Verification** | Run build/test/lint/security/reproduction checks. |
+| **Review** | Calculate confidence and determine merge, review, hold, or rollback. |
 
 ---
 
-### 1. Direct Terminal Installation (1 Command)
+# Key capabilities
 
-Install Loom directly from GitHub into any terminal without cloning manually:
+## Verification-first execution
 
-```bash
-pip install git+https://github.com/Harshid001/Loom-Unified-Agentic-Coding-Harness.git
-```
+Loom records evidence instead of trusting an LLM's claim that a fix worked.
 
-Or install locally from a cloned repository:
+Verification can include:
+
+- build checks
+- unit/integration tests
+- reproduction testing
+- linting
+- type checking
+- security-pattern analysis
+- confidence scoring
+- merge-decision policies
+- evidence bundles
+- rollback support
+
+## Model-independent architecture
+
+The agent layer is separated from individual model providers. Providers can be routed through the adapter layer without rewriting the orchestration engine.
+
+Model selection can consider:
+
+- task type
+- model capability
+- cost
+- latency
+- provider health
+- context requirements
+- quota headroom
+
+## Repository intelligence
+
+Loom includes repository-analysis components for:
+
+- AST and symbol extraction
+- repository mapping
+- call-graph information
+- dependency relationships
+- git history analysis
+- relevance scoring
+- context budgeting
+- repository-intelligence caching
+
+This allows agents to retrieve targeted context instead of blindly consuming an entire repository.
+
+## Context and prompt safety
+
+The context layer provides:
+
+- token-budget management
+- relevance ranking
+- truncation under budget pressure
+- prompt-injection sanitization
+- context summarization
+
+Repository content is treated as **untrusted input**.
+
+## Memory and provenance
+
+Loom provides persistent memory infrastructure for repository/project context and execution information, with tenant-aware storage and provenance-oriented records.
+
+## Security and policy controls
+
+The platform contains controls for:
+
+- API authentication
+- RBAC
+- organization memberships
+- entitlements and feature gates
+- quota evaluation
+- usage accounting
+- audit records
+- path policy for sensitive patches
+- evidence integrity
+- rollback
+
+## Observability
+
+The project includes:
+
+- Prometheus metrics
+- OpenTelemetry-oriented tracing
+- token and cost tracking
+- execution telemetry
+- benchmark/ablation tooling
+- structured execution records
+
+---
+
+# Sandbox model
+
+Loom separates coding operations from the user's main workspace using sandbox/worktree abstractions.
+
+| Capability | Purpose |
+|---|---|
+| Local process sandbox | Fast local development/testing |
+| Docker sandbox | Isolated container execution |
+| Remote sandbox | Separate execution service for stronger deployment isolation |
+| Worktree snapshots | Safe patch application and rollback |
+| Resource limits | CPU/memory/timeout controls |
+| Egress policy | Restrict outbound domains where enforced |
+
+### Important production rule
+
+Production deployments should **fail closed** when the required isolation layer is unavailable. A security boundary should never silently degrade into unrestricted host execution.
+
+The repository also contains production-hardening work for a worker-separated container architecture. Real microVM/Firecracker isolation remains a separate deployment milestone and should not be claimed as implemented until the required infrastructure exists.
+
+---
+
+# Quick start
+
+## Requirements
+
+- Python **3.10+**
+- Node.js **20+** for the web dashboard
+- Git
+- An LLM provider/API for live execution
+
+Docker, PostgreSQL, and Redis are used by the distributed production architecture and are not required for the simplest local CLI workflow.
+
+## Install from source
 
 ```bash
 git clone https://github.com/Harshid001/Loom-Unified-Agentic-Coding-Harness.git
@@ -80,165 +237,333 @@ cd Loom-Unified-Agentic-Coding-Harness
 pip install -e .
 ```
 
----
-
-### 2. Environment Configuration
-
-Copy `.env.example` to `.env` and set your API keys:
+## Environment configuration
 
 ```bash
 cp .env.example .env
 ```
 
-Example `.env` configuration:
-```env
-API_KEY=your-secret-backend-api-key
-DASHBOARD_AUTH_TOKEN=your-web-dashboard-auth-token
-MODEL_DEFAULT=claude-3-5-sonnet-20241022
-ANTHROPIC_API_KEY=sk-ant-api03-...
-OPENAI_API_KEY=sk-proj-...
-```
+Set the provider credentials and local configuration required by your selected model/provider.
+
+**Never commit real credentials to the repository.**
 
 ---
 
-## 💡 Running Loom on Any Project
+# Run Loom against a project
 
-Loom supports three flexible execution modes for any target codebase on your machine.
-
-### Method A: Single-Command Execution (`loom fix`) — *Recommended*
-
-Navigate to **any project directory** on your system and run:
+## Option A — one-command workflow
 
 ```bash
-# Navigate to target codebase
-cd /path/to/your-target-project
-
-# Run Loom harness in 1 command (Offline Mock Mode)
-loom fix "Fix calculation error in total_price calculation"
-
-# Run with live LLM (e.g. Claude 3.5 Sonnet)
-loom fix "Fix calculation error in total_price calculation" --no-mock --model claude-3-5-sonnet-20241022
+cd /path/to/target-project
+loom fix "Fix the total_price calculation error"
 ```
 
----
-
-### Method B: Step-by-Step CLI Execution
+Run with a real provider:
 
 ```bash
-# 1. Intake and map the repository
-loom init --path /path/to/your-target-project
+loom fix "Fix the total_price calculation error" --no-mock --model <model-name>
+```
 
-# 2. Set the active issue
-loom issue "Add validation for duplicate email addresses on registration"
+## Option B — explicit workflow
 
-# 3. Execute the DAG Task Graph
-loom run --no-mock --model gpt-4o
+```bash
+loom init --path /path/to/target-project
+loom issue "Add validation for duplicate email addresses"
+loom run --mock
+```
 
-# 4. View execution trace & DAG events
+Inspect the result:
+
+```bash
 loom trace <run_id>
+```
 
-# 5. Rollback changes if needed
+Rollback a run when required:
+
+```bash
 loom rollback <run_id>
 ```
 
----
+## Option C — web dashboard
 
-### Method C: Visual Web Dashboard
-
-1. **Launch the FastAPI Server**:
-   ```bash
-   loom server --port 8000
-   ```
-
-2. **Launch the Next.js Dashboard**:
-   ```bash
-   cd web
-   npm run dev
-   ```
-
-3. **Open Dashboard**: Navigate to [http://localhost:3000](http://localhost:3000), click **"Start Execution Run"**, enter your target project path and issue description!
-
----
-
-## ⚡ Native Process Deployment (No Docker Required)
-
-Loom runs 100% natively on Python and Node.js without requiring Docker or container runtime engines.
-
-### Method 1: PM2 Ecosystem (One-Command Startup)
-Launch both backend FastAPI server and Next.js Web Dashboard in background processes using the provided `ecosystem.config.js`:
+Backend:
 
 ```bash
-# 1. Install PM2 globally
-npm install -g pm2
-
-# 2. Launch all Loom services in 1 command
-pm2 start ecosystem.config.js
-
-# 3. Check status & logs
-pm2 status
-pm2 logs
+loom server --port 8000
 ```
 
----
-
-### Method 2: Direct Terminal Startup
-Run backend API and web frontend directly in separate terminals:
+Frontend:
 
 ```bash
-# Terminal 1: Launch FastAPI Backend Server
-loom server --port 8000
-
-# Terminal 2: Launch Next.js Web Dashboard
 cd web
+npm install
 npm run dev
 ```
 
----
+Then open:
 
-## 🛠️ CLI Reference
-
-| Command | Usage | Description |
-|---|---|---|
-| `loom version` | `loom version` | Display Loom CLI version. |
-| `loom init` | `loom init [--path <dir>]` | Intake codebase, build AST symbol index and memory store. |
-| `loom issue` | `loom issue "<prompt>" [--path <dir>]` | Set active issue description for execution. |
-| `loom run` | `loom run [--mock / --no-mock] [--model <name>] [--api-key <key>] [--api-base <url>]` | Execute the DAG task graph through all specialist agents. |
-| `loom fix` | `loom fix "<prompt>" [--mock / --no-mock] [--model <name>] [--api-key <key>] [--api-base <url>]` | Single-command shortcut to intake, set issue, and run harness. |
-| `loom trace` | `loom trace <run_id>` | Display interactive tree view of execution trace events and costs. |
-| `loom rollback` | `loom rollback <run_id>` | Restore target workspace to pre-patch snapshot state. |
-| `loom bench` | `loom bench` | Execute controlled same-model ablation matrix benchmarks. |
-| `loom server` | `loom server [--port 8000]` | Start Uvicorn FastAPI backend server. |
-
----
-
-## 🧪 Testing & Code Quality Verification
-
-Loom enforces strict quality and security standards across Python backend and Next.js frontend codebases:
-
-```bash
-# Python Backend Verification
-pytest                  # Unit & integration tests with coverage report (34 tests)
-mypy loom               # Static type checker (0 errors)
-ruff check loom         # Code linter (0 issues)
-
-# Next.js Frontend Verification (in ./web)
-npx tsc --noEmit        # TypeScript typecheck (0 errors)
-npm test                # Vitest component & auth tests (8 tests)
-npm run lint            # ESLint rules check
-npm run build           # Production build verification
+```text
+http://localhost:3000
 ```
 
 ---
 
-## 🛡️ Security & OWASP Protection
+# CLI reference
 
-- **Prompt Injection Defense**: Sanitizes raw repository file inputs via `PromptSanitizer`, stripping instructions like `ignore previous instructions`, `system:`, or `<|im_start|>`.
-- **Constant-Time Authentication**: Authenticates backend API requests via `secrets.compare_digest` against `X-API-Key`.
-- **Hardened HTTP Headers**: Sets `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Content-Security-Policy`, and `Strict-Transport-Security`.
-- **Bounded Request Limits**: Enforces 10MB payload size limits and sliding-window IP rate limiting.
+| Command | Purpose |
+|---|---|
+| `loom version` | Display the Loom CLI version. |
+| `loom init` | Initialize a repository and build repository context. |
+| `loom issue` | Set the active engineering task. |
+| `loom run` | Execute the agent TaskGraph. |
+| `loom fix` | Initialize, set the issue, and execute in one command. |
+| `loom trace <run_id>` | Inspect execution events, stages, and costs. |
+| `loom rollback <run_id>` | Restore the pre-patch snapshot. |
+| `loom bench` | Run controlled benchmark/ablation workflows. |
+| `loom server` | Start the FastAPI backend. |
 
 ---
 
-## 📜 License
+# Web dashboard
 
-This project is licensed under the MIT License — see the [LICENSE](file:///d:/NewVolumeE/Unified%20agentic%20coding%20harness/LICENSE) file for details.
+The dashboard provides a visual view of the agent execution lifecycle and run state.
+
+Typical flow:
+
+```text
+Create run
+   ↓
+Monitor TaskGraph
+   ↓
+Inspect agent output
+   ↓
+Review verification evidence
+   ↓
+Inspect merge decision
+   ↓
+Approve / reject / rollback
+```
+
+---
+
+# Production architecture
+
+The repository contains a production-hardening path built around shared infrastructure and isolated workers.
+
+```text
+Client
+  │
+  ▼
+FastAPI
+  │
+  ▼
+Redis coordination
+  │
+  ├── rate limiting
+  ├── queue/control state
+  ├── run events
+  └── worker heartbeats
+  │
+  ▼
+Run Worker(s)
+  │
+  ▼
+TaskGraph
+  │
+  ▼
+Sandbox Worker
+  │
+  ├── PostgreSQL / records
+  ├── evidence storage
+  └── telemetry
+```
+
+The production-hardening work includes durable worker execution, checkpoint/resume infrastructure, retry classification, run budgets, worker health reporting, fail-closed production configuration, sandbox-worker separation, and backup/recovery tooling.
+
+Treat this section as the target/implemented hardening architecture rather than a claim that every deployment concern is solved by the repository alone.
+
+---
+
+# Production configuration
+
+Production deployments should explicitly configure security-sensitive settings such as:
+
+```env
+API_KEY=...
+DASHBOARD_AUTH_TOKEN=...
+ALLOWED_REPO_ROOTS=/var/repos
+REDIS_URL=redis://...
+LOOM_SANDBOX_WORKER_URL=http://sandbox-worker:8100
+SANDBOX_WORKER_TOKEN=...
+LOOM_BACKUP_ENCRYPTION_KEY=...
+LOOM_BACKUP_S3_BUCKET=...
+LOOM_MAX_RUN_COST_USD=...
+LOOM_MAX_RUN_DURATION_SECONDS=...
+LOOM_MAX_RUN_TOKENS=...
+```
+
+Production startup is intended to fail when required security configuration is missing.
+
+Do not enable privileged token-administration functionality in production without the corresponding control-plane security model.
+
+---
+
+# Testing and quality gates
+
+## Backend
+
+```bash
+pytest --timeout=60 --timeout_method=thread
+mypy loom/ --ignore-missing-imports
+ruff check loom/
+pip-audit --skip-editable
+```
+
+## Frontend
+
+From `web/`:
+
+```bash
+npm ci --legacy-peer-deps
+npm audit --audit-level=high
+npm run lint
+npx tsc --noEmit
+npm test
+npm run build
+```
+
+## Container and Compose validation
+
+```bash
+docker build --pull -t loom-ci .
+docker compose config --quiet
+```
+
+The repository's CI also includes secret scanning and a native CLI smoke test.
+
+### Current test expectation
+
+The test suite is substantial and covers business logic, orchestration, verification, memory, routing, sandbox policy, integrations, telemetry, SCIM, webhooks, and runtime hardening.
+
+Coverage should be interpreted by **risk area**, not only by the global percentage. Production-critical worker, sandbox, distributed-runtime, backup, and API paths should receive the highest coverage priority.
+
+---
+
+# Backup and recovery
+
+The repository includes operational backup/restore tooling supporting:
+
+- SQLite backup handling
+- PostgreSQL dump/restore paths
+- encrypted archives
+- SHA-256 integrity verification
+- safe archive extraction
+- evidence backup
+
+Example:
+
+```bash
+python scripts/backup_restore.py create --dir ./backups
+```
+
+Restore:
+
+```bash
+python scripts/backup_restore.py restore ./backups/<backup>.enc --loom-home ./restored-loom
+```
+
+For real production use, pair this with off-host storage, retention policies, encryption-key management, scheduled backups, and tested restore procedures.
+
+---
+
+# Security model
+
+Loom treats the repository and model-generated code as potentially untrusted.
+
+Security mechanisms include:
+
+- prompt-injection sanitization
+- API authentication
+- RBAC and entitlement enforcement
+- production repository path restrictions
+- request-size and rate-limit controls
+- sensitive-path patch policies
+- secret scanning in CI
+- sandbox/resource controls
+- evidence integrity verification
+- rollback support
+- encrypted/checksummed backup handling
+
+Security features do **not** by themselves constitute SOC 2, GDPR, HIPAA, PCI DSS, or other compliance certification.
+
+---
+
+# Current limitations
+
+Loom is an active engineering project. The following items still require deployment-level work or additional verification before making a blanket enterprise-production claim:
+
+- real Firecracker/microVM Tier C execution
+- full load/concurrency testing under realistic infrastructure
+- complete managed Redis/PostgreSQL integration testing
+- scheduled off-site backup and restore drills
+- production deployment/canary/rollback drills
+- deeper coverage for lower-level workers, browser verification, TUI, and some persistence paths
+
+These limitations are documented intentionally so the README does not overstate the system's maturity.
+
+---
+
+# Project structure
+
+```text
+loom/
+├── adapters/           # Model/provider adapters and routing
+├── api/                # FastAPI API and webhooks
+├── auth/               # Authentication and API tokens
+├── business/           # RBAC, entitlements, usage, policy
+├── cli/                # CLI, recovery, streaming, TUI
+├── context/            # Context budgeting and sanitization
+├── db/                 # Run and step persistence
+├── infra/              # Distributed infrastructure helpers
+├── integrations/       # GitHub/Slack/CI integrations
+├── memory/             # Persistent memory and retrieval
+├── orchestrator/       # Agents, TaskGraph, execution state
+├── repo_intel/         # Repository mapping and analysis
+├── runtime/            # Queues, workers, budgets, health, recovery
+├── sandbox/            # Local/Docker/remote sandbox layers
+├── scim/               # SCIM provisioning
+├── telemetry/          # Cost and execution telemetry
+└── verification/       # Build/test/security/evidence verification
+
+web/                     # Next.js dashboard
+tests/                   # Automated test suite
+scripts/                 # Operational tooling
+docs/                    # Architecture, deployment, runbooks, security
+```
+
+---
+
+# Design principles
+
+1. **Evidence over assertions** — successful model output is not proof.
+2. **Fail closed around security boundaries** — dangerous fallbacks are rejected.
+3. **Provider-independent orchestration** — models remain replaceable adapters.
+4. **Recoverable execution** — checkpoints, retries, heartbeats, and rollback matter.
+5. **Explicit policy** — sandbox tiers, quotas, budgets, merge rules, and risk controls are visible.
+6. **Backward-compatible evolution** — infrastructure improvements should preserve the core TaskGraph and agent interfaces.
+
+---
+
+# Contributing
+
+1. Create a feature branch.
+2. Keep changes scoped and backward-compatible.
+3. Add or update tests for behavioral changes.
+4. Run the backend and frontend quality gates before opening a pull request.
+5. Document security-sensitive or operational changes.
+
+---
+
+# License
+
+MIT — see [LICENSE](LICENSE).
