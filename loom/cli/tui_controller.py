@@ -65,11 +65,10 @@ class TUIRunController:
         if not issue.strip():
             self.emit(ControllerEvent("error", message="Issue description is required.", level="warn"))
             return
-        self.create(issue.strip(), repo_path, model.strip() or "claude-3-5-sonnet-20241022")
+        state = self.create(issue.strip(), repo_path, model.strip() or "claude-3-5-sonnet-20241022")
         assert self.graph is not None
-        assert self.state is not None
         self.started_at = time.time()
-        self.emit(ControllerEvent("run_started", message=f"Started run {self.state.run_id}"))
+        self.emit(ControllerEvent("run_started", message=f"Started run {state.run_id}"))
         self.task = asyncio.create_task(self._run())
 
     async def _run(self) -> None:

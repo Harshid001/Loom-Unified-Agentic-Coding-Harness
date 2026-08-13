@@ -412,13 +412,13 @@ def launch_tui() -> None:
             self.controller.cancel()
 
         def action_show_diff(self) -> None:
-            self.query_one("#main-tabs", TabbedContent).active = "tab-diff"
+            cast(TabbedContent, self.query_one("#main-tabs")).active = "tab-diff"
 
         def action_show_evidence(self) -> None:
-            self.query_one("#main-tabs", TabbedContent).active = "tab-evidence"
+            cast(TabbedContent, self.query_one("#main-tabs")).active = "tab-evidence"
 
         def action_show_logs(self) -> None:
-            self.query_one("#main-tabs", TabbedContent).active = "tab-logs"
+            cast(TabbedContent, self.query_one("#main-tabs")).active = "tab-logs"
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id == "inp-issue":
