@@ -90,6 +90,7 @@ def test_production_token_mint_requires_authentication(monkeypatch):
     monkeypatch.setenv("API_KEY", "server-secret")
 
     from fastapi.testclient import TestClient
+
     from loom.api.server import app
 
     response = TestClient(app).post("/api/v1/auth/tokens", json={"user_id": "attacker", "org_id": "default"})
@@ -103,6 +104,7 @@ def test_stream_requires_authentication_and_org_scope(monkeypatch):
     monkeypatch.setenv("API_KEY_USER_ID", "alice")
 
     from fastapi.testclient import TestClient
+
     from loom.api.server import ACTIVE_RUNS, app
     from loom.orchestrator.state import OrchestratorState
 
