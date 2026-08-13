@@ -1,415 +1,287 @@
-"""
-Textual TUI Terminal LiveBox Dashboard for Loom.
-Launch with: loom tui
-Requires: textual>=0.52.0
-"""
+"""Production Textual terminal operator console for Loom."""
 
-import asyncio
+from __future__ import annotations
+
 import json
+import os
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
+from loom.cli.tui_controller import ControllerEvent, TUIRunController
 from loom.repo_intel.mapper import RepoMapper
 
 _HAS_TEXTUAL = False
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Container, Horizontal, Vertical
-    from textual.widget import Widget
-    from textual.widgets import (
-        Button,
-        DataTable,
-        Footer,
-        Header,
-        Input,
-        Label,
-        ProgressBar,
-        RichLog,
-        Static,
-        TabbedContent,
-        TabPane,
-    )
-
+    from textual.widgets import Button, DataTable, Footer, Header, Input, Label, ProgressBar, RichLog, Static, TabbedContent, TabPane
     _HAS_TEXTUAL = True
 except ImportError:
     pass
 
 
 def launch_tui() -> None:
-    """Entry point for `loom tui` command."""
+    """Launch ``loom tui``."""
     if not _HAS_TEXTUAL:
         print("Error: textual package not installed. Run: pip install textual")
         return
 
-    class RunList(Widget):
-        """Widget displaying active and historical runs with click-to-inspect interactivity."""
-
+    class RunList(Vertical):
         def compose(self) -> ComposeResult:
-            yield Label("Run History (Click to inspect)", classes="section-title")
+            yield Label("Run History", classes="section-title")
             yield DataTable(id="runs-table")
 
         def on_mount(self) -> None:
-            table = self.query_one(DataTable)
+            table = self.query_one("#runs-table", DataTable)
             table.cursor_type = "row"
-            table.add_columns("Run ID", "Issue Description", "Status", "Cost")
-            self._refresh_runs()
+            table.add_columns("Run ID", "Status", "Issue", "Cost")
+            self.refresh_runs()
 
-        def _refresh_runs(self) -> None:
-            table = self.query_one(DataTable)
+        def refresh_runs(self) -> None:
+            table = self.query_one("#runs-table", DataTable)
             table.clear()
-            checkpoint_dir = Path.home() / ".loom" / "checkpoints"
-            if checkpoint_dir.exists():
-                for f in sorted(checkpoint_dir.glob("checkpoint_*.json"), reverse=True)[:30]:
-                    try:
-                        data = json.loads(f.read_text(encoding="utf-8"))
-                        run_id = data.get("run_id", f.stem)
-                        issue = (data.get("issue_description", "") or "")[:35]
-                        status = "✅ PASS" if data.get("verification_passed") else "🔄 EXEC"
-                        cost = data.get("shared_data", {}).get("cost_report", {}).get("total_cost_usd", 0.0)
-                        table.add_row(run_id, issue, status, f"${cost:.4f}", key=run_id)
-                    except Exception:
-                        pass
+            directory = Path.home() / ".loom" / "checkpoints"
+            if not directory.exists():
+                return
+            for path in sorted(directory.glob("checkpoint_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]:
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    run_id = data.get("run_id", path.stem)
+                    status = str(data.get("shared_data", {}).get("run_status", "unknown")).split(".")[-1].upper()
+                    if data.get("verification_passed") and status in {"UNKNOWN", "EVIDENCE_REVIEW"}:
+                        status = "VERIFIED"
+                    elif status == "UNKNOWN":
+                        nodes = data.get("nodes", {})
+                        status = "FAILED" if any(n.get("status") == "failed" for n in nodes.values()) else "EXECUTED"
+                    issue = (data.get("issue_description") or "")[:28]
+                    cost = data.get("shared_data", {}).get("cost_report", {}).get("total_cost_usd", 0.0)
+                    table.add_row(run_id, status, issue, f"${float(cost):.4f}", key=run_id)
+                except (OSError, ValueError, json.JSONDecodeError):
+                    continue
 
-    class LiveBoxHeader(Widget):
-        """Top Toolbar & LLM Model Routing Selector."""
-
+    class LiveBoxHeader(Vertical):
         def compose(self) -> ComposeResult:
             yield Horizontal(
-                Static("⚡ [bold cyan]LOOM LIVEBOX[/bold cyan]", id="livebox-brand"),
-                Static("Run: [yellow]--[/yellow]", id="lbl-run-id"),
-                Static("Model: ", id="lbl-model-prefix"),
-                Input(placeholder="Model name", id="inp-model", value="claude-3-5-sonnet-20241022"),
-                Static("Time: [blue]0.0s[/blue]", id="lbl-time"),
-                Static("Cost: [emerald]$0.0000[/emerald]", id="lbl-cost"),
+                Static("⚡ LOOM LIVEBOX", id="brand"),
+                Static("Run: --", id="lbl-run-id"),
+                Static("Status: IDLE", id="lbl-status"),
+                Static("Node: --", id="lbl-node"),
+                Static("Time: 0.0s", id="lbl-time"),
+                Static("Tokens: 0", id="lbl-tokens"),
+                Static("Cost: $0.0000", id="lbl-cost"),
                 id="metrics-row",
             )
             yield Horizontal(
                 Button("▶ Start", id="btn-start", variant="success"),
-                Button("⏸ Pause", id="btn-pause", variant="warning"),
-                Button("⏭ Step-Over", id="btn-step", variant="primary"),
-                Button("🔄 Rollback", id="btn-rollback", variant="default"),
-                Button("📜 History (Hide/Show)", id="btn-toggle-history", variant="default"),
-                Button("⏹ Stop", id="btn-stop", variant="error"),
+                Button("⏸ Pause", id="btn-pause", variant="warning", disabled=True),
+                Button("⏭ Step", id="btn-step", variant="primary", disabled=True),
+                Button("↩ Rollback", id="btn-rollback", disabled=True),
+                Button("⏹ Stop", id="btn-stop", variant="error", disabled=True),
+                Button("History", id="btn-toggle-history"),
                 id="controls-row",
             )
 
-    class DAGProgressPanel(Widget):
-        """DAG Step Flow visualization panel."""
-
+    class DAGProgressPanel(Vertical):
         STEPS = [
-            ("onboarding", "Repo Mapper & AST Index"),
-            ("reproduction", "Reproduction Generator"),
-            ("patcher", "LLM Code Mutator"),
-            ("verifier", "Automated Verifier"),
-            ("reviewer", "Evidence Review Gate"),
+            ("onboarding", "Repository Mapping"),
+            ("reproduction", "Reproduction Test"),
+            ("planner", "Fix Strategy"),
+            ("patcher", "Code Mutation"),
+            ("verifier", "Automated Verification"),
+            ("reviewer", "Evidence Review"),
         ]
 
         def compose(self) -> ComposeResult:
-            yield Label("DAG Execution Pipeline Flow", classes="section-title")
+            yield Label("DAG Execution Pipeline", classes="section-title")
             for key, label in self.STEPS:
                 yield Horizontal(
-                    Static(f"⏳ {label}", id=f"status-{key}", classes="step-label"),
+                    Static(f"○ {label}", id=f"status-{key}", classes="step-label"),
                     ProgressBar(total=100, id=f"pb-{key}", show_percentage=False),
                     classes="step-row",
                 )
 
-        def update_step(self, step_name: str, status: str, percent: float = 0):
-            try:
-                label_widget = self.query_one(f"#status-{step_name}", Static)
-                label_text = dict(self.STEPS).get(step_name, step_name)
-                if status == "running":
-                    label_widget.update(f"🔄 [cyan]{label_text}[/cyan]")
-                elif status == "completed":
-                    label_widget.update(f"✅ [green]{label_text}[/green]")
-                elif status == "failed":
-                    label_widget.update(f"❌ [red]{label_text}[/red]")
-                else:
-                    label_widget.update(f"⏳ [dim]{label_text}[/dim]")
-
-                pb = self.query_one(f"#pb-{step_name}", ProgressBar)
-                pb.progress = percent
-            except Exception:
-                pass
-
-        def reset_all_steps(self):
-            for key, label in self.STEPS:
+        def reset(self) -> None:
+            for key, _ in self.STEPS:
                 self.update_step(key, "pending", 0)
 
-    class LogConsole(Widget):
-        """High-contrast terminal streaming log console with severity filter buttons."""
+        def update_step(self, key: str, status: str, percent: float) -> None:
+            if key not in dict(self.STEPS):
+                return
+            widget = self.query_one(f"#status-{key}", Static)
+            label = dict(self.STEPS)[key]
+            icon = {"running": "◉", "completed": "✓", "failed": "✕"}.get(status, "○")
+            widget.update(f"{icon} {label}")
+            self.query_one(f"#pb-{key}", ProgressBar).progress = max(0, min(100, percent))
+
+    class LogConsole(Vertical):
+        def __init__(self) -> None:
+            super().__init__()
+            self.level_filter = "ALL"
+            self.entries: list[tuple[str, str]] = []
 
         def compose(self) -> ComposeResult:
             yield Horizontal(
-                Label("Real-Time Execution Log Stream", classes="section-title"),
-                Button("Clear Logs", id="btn-clear-log", variant="default"),
+                Label("Live Execution Log", classes="section-title"),
+                Button("ALL", id="log-all"),
+                Button("INFO", id="log-info"),
+                Button("WARN", id="log-warn"),
+                Button("ERROR", id="log-error"),
+                Button("Clear", id="btn-clear-log"),
                 id="log-header-row",
             )
-            yield RichLog(id="live-log-stream", max_lines=600, highlight=True, markup=True)
+            yield RichLog(id="live-log-stream", max_lines=700, highlight=True, markup=False)
 
-        def append_log(self, level: str, agent: str, message: str):
-            ts = time.strftime("%H:%M:%S")
-            color = (
-                "cyan"
-                if level == "info"
-                else "yellow"
-                if level == "warn"
-                else "red"
-                if level == "error"
-                else "green"
-                if level == "success"
-                else "dim"
-            )
-            entry = f"[dim]{ts}[/dim] [{color}]{level.upper():7s}[/{color}] [bold blue][{agent}][/bold blue] {message}"
-            try:
-                self.query_one("#live-log-stream", RichLog).write(entry)
-            except Exception:
-                pass
+        def append_log(self, level: str, node: str, message: str) -> None:
+            self.entries.append((level.upper(), f"{time.strftime('%H:%M:%S')} {level.upper():7s} [{node}] {message}"))
+            self._render()
 
-        def clear_logs(self):
-            try:
-                self.query_one("#live-log-stream", RichLog).clear()
-            except Exception:
-                pass
+        def _render(self) -> None:
+            log = self.query_one("#live-log-stream", RichLog)
+            log.clear()
+            for level, text in self.entries[-700:]:
+                if self.level_filter != "ALL" and level != self.level_filter:
+                    continue
+                log.write(text)
 
-    class DiffDrawer(Widget):
-        """Code Patch Diff Drawer View."""
+        def clear(self) -> None:
+            self.entries.clear()
+            self._render()
 
+        def set_filter(self, level: str) -> None:
+            self.level_filter = level
+            self._render()
+
+    class DiffDrawer(Vertical):
         def compose(self) -> ComposeResult:
             yield Label("Proposed Unified Git Diff", classes="section-title")
-            yield RichLog(id="diff-log", max_lines=300, markup=True)
+            yield Static("No patch diff generated yet.", id="diff-summary")
+            yield RichLog(id="diff-log", max_lines=500, markup=False)
             yield Horizontal(
-                Button("✅ Approve Patch & Verify", id="btn-approve-patch", variant="success"),
-                Button("❌ Reject & Rollback Snapshot", id="btn-reject-patch", variant="error"),
+                Button("Approve Patch", id="btn-approve-patch", variant="success", disabled=True),
+                Button("Reject & Rollback", id="btn-reject-patch", variant="error", disabled=True),
                 id="diff-actions",
             )
 
-        def set_diff(self, diff_text: str):
-            rlog = self.query_one("#diff-log", RichLog)
-            rlog.clear()
+        def set_diff(self, diff_text: str) -> None:
+            log = self.query_one("#diff-log", RichLog)
+            log.clear()
             if not diff_text:
-                rlog.write("[dim]No patch diff generated yet for this run.[/dim]")
+                self.query_one("#diff-summary", Static).update("No patch diff generated yet.")
                 return
+            added = deleted = 0
             for line in diff_text.splitlines():
-                if line.startswith("+"):
-                    rlog.write(f"[green]{line}[/green]")
+                if line.startswith("+++") or line.startswith("---"):
+                    prefix = "FILE "
+                elif line.startswith("@@"):
+                    prefix = "HUNK "
+                elif line.startswith("+"):
+                    prefix, added = "ADD ", added + 1
                 elif line.startswith("-"):
-                    rlog.write(f"[red]{line}[/red]")
+                    prefix, deleted = "DEL ", deleted + 1
                 else:
-                    rlog.write(f"[dim]{line}[/dim]")
+                    prefix = "     "
+                log.write(prefix + line)
+            files = sum(1 for l in diff_text.splitlines() if l.startswith("+++ "))
+            self.query_one("#diff-summary", Static).update(f"Files: {files}   Added: +{added}   Removed: -{deleted}")
 
-    class ASTDrawer(Widget):
-        """Dynamic AST & Token Window Monitor."""
-
+    class ASTDrawer(Vertical):
         def compose(self) -> ComposeResult:
-            yield Label("AST Intelligence & Repository Mapper", classes="section-title")
-            yield Static("Scanning workspace AST structure...", id="ast-info")
-            yield Label("Token Budget Window")
+            yield Label("AST Intelligence & Token Window", classes="section-title")
+            yield Static("Scanning repository...", id="ast-info")
+            yield Static("Token usage", id="token-label")
             yield ProgressBar(total=100, id="pb-tokens", show_percentage=True)
 
-        def on_mount(self):
-            self.refresh_ast_data()
+        def on_mount(self) -> None:
+            self.run_worker(self._scan, exclusive=True)
 
-        def refresh_ast_data(self):
+        def _scan(self) -> None:
             try:
-                mapper = RepoMapper()
-                repo_map = mapper.map_repository(str(Path.cwd()))
-                num_files = repo_map.total_files
-                langs = (
-                    ", ".join([f"{k} ({v})" for k, v in repo_map.languages.items()]) if repo_map.languages else "Python"
+                repo_map = RepoMapper().map_repository(str(Path.cwd()))
+                langs = ", ".join(f"{k} ({v})" for k, v in repo_map.languages.items()) or "Unknown"
+                builds = ", ".join(repo_map.build_system) or "Unknown"
+                tests = ", ".join(repo_map.test_frameworks) or "Unknown"
+                self.call_from_thread(
+                    self.query_one("#ast-info", Static).update,
+                    f"Repository: {Path(repo_map.root_path).name}\nFiles: {repo_map.total_files}\nLanguages: {langs}\nBuild: {builds}\nTests: {tests}",
                 )
-                builds = ", ".join(repo_map.build_system) if repo_map.build_system else "pip/uv"
-                tests = ", ".join(repo_map.test_frameworks) if repo_map.test_frameworks else "pytest"
-                key_files = (
-                    "\n".join([f"  • {f}" for f in repo_map.key_files[:5]])
-                    if repo_map.key_files
-                    else "  • (No key files)"
-                )
+            except Exception as exc:
+                self.call_from_thread(self.query_one("#ast-info", Static).update, f"AST scan failed: {exc}")
 
-                self.query_one("#ast-info", Static).update(
-                    f"Sanitizer Guard: [bold green]ACTIVE (Prompt Injection Protection Enabled)[/bold green]\n"
-                    f"Repository Root: [cyan]{Path(repo_map.root_path).name}[/cyan] ({num_files} files scanned)\n"
-                    f"Languages: [yellow]{langs}[/yellow] | Build: [blue]{builds}[/blue] | Tests: [green]{tests}[/green]\n"
-                    f"Key Repository Files:\n{key_files}"
-                )
-                self.query_one("#pb-tokens", ProgressBar).progress = 1.5
-            except Exception as err:
-                self.query_one("#ast-info", Static).update(f"[dim]AST scan error: {err}[/dim]")
+        def update_tokens(self, tokens: int, context_window: int | None = None) -> None:
+            self.query_one("#token-label", Static).update(f"Token usage: {tokens:,}")
+            if context_window and context_window > 0:
+                self.query_one("#pb-tokens", ProgressBar).progress = min(100, tokens / context_window * 100)
 
-    class EvidenceDrawer(Widget):
-        """Evidence & Verification Gate."""
-
+    class EvidenceDrawer(Vertical):
         def compose(self) -> ComposeResult:
-            yield Label("Evidence Bundle & Verification Gate", classes="section-title")
-            yield Static(
-                "[dim]No verification run recorded yet. Submit a prompt to execute verification.[/dim]",
-                id="evidence-info",
-            )
+            yield Label("Evidence & Verification Gate", classes="section-title")
+            yield Static("No verification evidence yet.", id="evidence-info")
 
-        def set_evidence(self, passed: Optional[bool] = None, details: str = ""):
-            ev_widget = self.query_one("#evidence-info", Static)
+        def update(self, passed: bool | None, details: str = "") -> None:
             if passed is True:
-                ev_widget.update(
-                    "[bold green]Verification Gate Score: 100% PASS (Verified)[/bold green]\n"
-                    f"Verification Details:\n{details or 'All automated verification tests passed cleanly.'}"
-                )
+                text = "✓ VERIFICATION PASSED\n" + (details or "Automated verification completed successfully.")
             elif passed is False:
-                ev_widget.update(
-                    "[bold red]Verification Gate Score: FAILED[/bold red]\n"
-                    f"Verification Details:\n{details or 'Automated verification tests failed.'}"
-                )
+                text = "✕ VERIFICATION FAILED\n" + (details or "Automated verification failed.")
             else:
-                ev_widget.update("[dim]No verification evidence bundle recorded yet.[/dim]")
+                text = "No verification evidence yet."
+            self.query_one("#evidence-info", Static).update(text)
 
     class LoomTUI(App):
-        """Terminal LiveBox Application for Loom Autonomous Coding Agent Harness."""
-
         CSS = """
-        Screen {
-            layout: vertical;
-            background: #080C14;
-            color: #E2E8F0;
-        }
-        #top-header {
-            height: auto;
-            background: #0F172A;
-            border-bottom: heavy #1E293B;
-            padding: 0 1;
-        }
-        #metrics-row {
-            height: 2;
-            align: left middle;
-        }
-        #metrics-row Static {
-            margin-right: 2;
-        }
-        #inp-model {
-            width: 28;
-            height: 1;
-            margin-right: 2;
-            border: none;
-            background: #090D16;
-            color: #38BDF8;
-        }
-        #controls-row {
-            height: 2;
-            align: left middle;
-            margin-bottom: 1;
-        }
-        #controls-row Button {
-            margin-right: 1;
-            height: 1;
-            min-width: 10;
-            padding: 0 1;
-        }
-        #main-body {
-            layout: horizontal;
-            height: 1fr;
-        }
-        #history-sidebar {
-            width: 36;
-            border-right: solid #1E293B;
-            padding: 1;
-            background: #0B0F19;
-        }
-        #history-sidebar.hidden {
-            display: none;
-        }
-        #right-container {
-            width: 1fr;
-            padding: 1;
-            background: #060A12;
-        }
-        #prompt-input-row {
-            height: 3;
-            margin-bottom: 1;
-        }
-        #inp-issue {
-            width: 1fr;
-            height: 3;
-            border: solid #38BDF8;
-            background: #0F172A;
-            color: #FFFFFF;
-            text-style: bold;
-        }
-        #inp-issue:focus {
-            border: double #00FFFF;
-            background: #0B132B;
-            color: #FFFFFF;
-        }
-        #btn-start-prompt {
-            height: 3;
-            min-width: 18;
-            margin-left: 1;
-        }
-        .section-title {
-            text-style: bold;
-            color: #38BDF8;
-            margin-bottom: 1;
-        }
-        DataTable {
-            height: 1fr;
-            background: #0F172A;
-            border: solid #1E293B;
-        }
-        RichLog {
-            height: 1fr;
-            background: #04070D;
-            border: solid #1E293B;
-        }
-        .step-row {
-            height: 2;
-            margin-bottom: 1;
-        }
-        .step-label {
-            width: 28;
-        }
-        ProgressBar {
-            width: 1fr;
-        }
-        #log-header-row {
-            height: 2;
-            align: left middle;
-            margin-bottom: 1;
-        }
-        #log-header-row Button {
-            margin-left: 1;
-            height: 1;
-            min-width: 6;
-            padding: 0 1;
-        }
+        Screen { layout: vertical; }
+        #top-header { height: auto; padding: 0 1; border-bottom: solid $panel; }
+        #metrics-row { height: 2; }
+        #metrics-row Static { margin-right: 2; }
+        #controls-row { height: 2; margin-bottom: 1; }
+        #controls-row Button { margin-right: 1; min-width: 10; }
+        #main-body { height: 1fr; }
+        #history-sidebar { width: 32; min-width: 26; border-right: solid $panel; padding: 1; }
+        #history-sidebar.hidden { display: none; }
+        #right-container { width: 1fr; padding: 1; }
+        #prompt-input-row { height: 3; margin-bottom: 1; }
+        #inp-issue { width: 1fr; }
+        #btn-start-prompt { min-width: 18; margin-left: 1; }
+        .section-title { text-style: bold; margin-bottom: 1; }
+        .step-row { height: 2; margin-bottom: 1; }
+        .step-label { width: 28; }
+        ProgressBar { width: 1fr; }
+        RichLog { height: 1fr; }
+        #log-header-row { height: 2; }
+        #log-header-row Button { margin-right: 1; }
+        #diff-actions { height: 3; }
+        #diff-actions Button { margin-right: 1; }
         """
 
         BINDINGS = [
             ("ctrl+c", "quit", "Quit"),
-            ("ctrl+b", "toggle_history", "Toggle History"),
-            ("ctrl+r", "refresh", "Refresh Runs"),
-            ("ctrl+p", "toggle_pause", "Pause/Resume"),
+            ("ctrl+b", "toggle_history", "History"),
+            ("ctrl+r", "refresh_runs", "Refresh"),
+            ("ctrl+p", "pause_resume", "Pause/Resume"),
+            ("s", "step", "Step"),
+            ("k", "stop_run", "Stop"),
+            ("d", "show_diff", "Diff"),
+            ("e", "show_evidence", "Evidence"),
+            ("l", "show_logs", "Logs"),
         ]
 
-        def __init__(self):
+        def __init__(self) -> None:
             super().__init__()
-            self.pipeline_running = False
-            self.is_paused = False
+            self.controller = TUIRunController(self._on_controller_event)
             self.history_visible = True
-            self.current_run_id = None
-            self.current_issue = ""
-            self.current_model = "claude-3-5-sonnet-20241022"
+            self.current_status = "IDLE"
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
             with Container(id="top-header"):
                 yield LiveBoxHeader()
-
             with Horizontal(id="main-body"):
                 with Vertical(id="history-sidebar"):
                     yield RunList()
-
                 with Vertical(id="right-container"):
                     with Horizontal(id="prompt-input-row"):
-                        yield Input(placeholder="Type issue description and press Enter...", id="inp-issue", value="")
-                        yield Button("⚡ Execute Prompt", id="btn-start-prompt", variant="success")
-
+                        yield Input(placeholder="Describe the issue to solve...", id="inp-issue")
+                        yield Button("⚡ Execute", id="btn-start-prompt", variant="success")
                     with TabbedContent(id="main-tabs"):
                         with TabPane("Progress & Logs", id="tab-logs"):
                             yield DAGProgressPanel()
@@ -418,221 +290,157 @@ def launch_tui() -> None:
                             yield DiffDrawer()
                         with TabPane("AST & Tokens", id="tab-ast"):
                             yield ASTDrawer()
-                        with TabPane("Evidence Gate", id="tab-evidence"):
+                        with TabPane("Evidence", id="tab-evidence"):
                             yield EvidenceDrawer()
-
             yield Footer()
 
         def on_mount(self) -> None:
-            inp = self.query_one("#inp-issue", Input)
-            self.set_focus(inp)
+            self.query_one("#inp-issue", Input).focus()
+
+        def _on_controller_event(self, event: ControllerEvent) -> None:
+            log = self.query_one(LogConsole)
+            if event.kind == "run_started":
+                self.current_status = "RUNNING"
+                self.query_one("#lbl-run-id", Static).update(f"Run: {self.controller.state.run_id}")
+                self._set_controls(running=True, paused=False)
+                self.query_one(DAGProgressPanel).reset()
+            elif event.kind == "node_started":
+                self.query_one("#lbl-status", Static).update("Status: RUNNING")
+                self.query_one("#lbl-node", Static).update(f"Node: {event.node}")
+                self.query_one(DAGProgressPanel).update_step(event.node, "running", 50)
+                log.append_log("info", event.node, f"Agent started: {event.data.get('model', '') if event.data else ''}")
+            elif event.kind == "log":
+                log.append_log(event.level, event.node, event.message)
+            elif event.kind == "node_completed":
+                self.query_one(DAGProgressPanel).update_step(event.node, "completed", 100)
+                self._refresh_diff_and_evidence()
+            elif event.kind == "node_failed":
+                self.query_one(DAGProgressPanel).update_step(event.node, "failed", 0)
+                self.current_status = "FAILED"
+                self.query_one("#lbl-status", Static).update("Status: FAILED")
+                log.append_log("error", event.node, event.message)
+                self._set_controls(running=False, paused=False)
+            elif event.kind == "state":
+                log.append_log(event.level, event.node, event.message)
+                self.query_one("#lbl-status", Static).update(f"Status: {event.message.upper()}")
+            elif event.kind == "approval":
+                log.append_log(event.level, event.node, event.message)
+            elif event.kind == "run_completed":
+                self.current_status = "COMPLETED"
+                self.query_one("#lbl-status", Static).update("Status: COMPLETED")
+                log.append_log("success", "system", event.message)
+                self._set_controls(running=False, paused=False)
+                self.query_one(RunList).refresh_runs()
+                self._refresh_diff_and_evidence()
+            elif event.kind == "run_cancelled":
+                self.current_status = "CANCELLED"
+                self.query_one("#lbl-status", Static).update("Status: CANCELLED")
+                log.append_log("warn", "system", event.message)
+                self._set_controls(running=False, paused=False)
+            elif event.kind == "run_failed":
+                self.current_status = "FAILED"
+                self.query_one("#lbl-status", Static).update("Status: FAILED")
+                log.append_log("error", "system", event.message)
+                self._set_controls(running=False, paused=False)
+
+            self._update_metrics()
+
+        def _update_metrics(self) -> None:
+            metrics = self.controller.metrics()
+            self.query_one("#lbl-time", Static).update(f"Time: {metrics['elapsed']:.1f}s")
+            self.query_one("#lbl-tokens", Static).update(f"Tokens: {metrics['tokens']:,}")
+            self.query_one("#lbl-cost", Static).update(f"Cost: ${metrics['cost']:.4f}")
+            self.query_one(ASTDrawer).update_tokens(metrics["tokens"])
+
+        def _set_controls(self, running: bool, paused: bool) -> None:
+            self.query_one("#btn-start", Button).disabled = running
+            self.query_one("#btn-start-prompt", Button).disabled = running
+            self.query_one("#btn-pause", Button).disabled = not running
+            self.query_one("#btn-step", Button).disabled = not running
+            self.query_one("#btn-stop", Button).disabled = not running
+            self.query_one("#btn-rollback", Button).disabled = not bool(self.controller.state)
+            self.query_one("#btn-pause", Button).label = "▶ Resume" if paused else "⏸ Pause"
+
+        def _refresh_diff_and_evidence(self) -> None:
+            state = self.controller.state
+            if not state:
+                return
+            diff = state.patch_diff or state.shared_data.get("patch_diff", "")
+            self.query_one(DiffDrawer).set_diff(diff or "")
+            self.query_one(EvidenceDrawer).update(state.verification_passed)
+            ready = bool(diff)
+            self.query_one("#btn-approve-patch", Button).disabled = not ready
+            self.query_one("#btn-reject-patch", Button).disabled = not ready
 
         def action_toggle_history(self) -> None:
             sidebar = self.query_one("#history-sidebar")
+            self.history_visible = not self.history_visible
             if self.history_visible:
-                sidebar.add_class("hidden")
-                self.history_visible = False
-            else:
                 sidebar.remove_class("hidden")
-                self.history_visible = True
+            else:
+                sidebar.add_class("hidden")
 
-        def action_new_run(self) -> None:
-            self.query_one("#inp-issue", Input).focus()
+        def action_refresh_runs(self) -> None:
+            self.query_one(RunList).refresh_runs()
 
-        def action_refresh(self) -> None:
-            self.query_one(RunList)._refresh_runs()
+        def action_pause_resume(self) -> None:
+            if self.controller.graph and self.controller.graph.is_paused:
+                self.controller.resume()
+                self._set_controls(running=True, paused=False)
+            else:
+                self.controller.pause()
+                self._set_controls(running=True, paused=True)
 
-        def action_toggle_pause(self) -> None:
-            self._handle_pause_resume()
+        def action_step(self) -> None:
+            self.controller.step()
 
-        def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-            table = self.query_one(DataTable)
-            row_data = table.get_row_at(event.cursor_row)
-            if not row_data:
-                return
-            selected_run_id = str(row_data[0])
-            self._load_run_details(selected_run_id)
+        def action_stop_run(self) -> None:
+            self.controller.cancel()
+
+        def action_show_diff(self) -> None:
+            self.query_one("#main-tabs").active = "tab-diff"
+
+        def action_show_evidence(self) -> None:
+            self.query_one("#main-tabs").active = "tab-evidence"
+
+        def action_show_logs(self) -> None:
+            self.query_one("#main-tabs").active = "tab-logs"
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id == "inp-issue":
-                self.run_worker(self._execute_livebox_pipeline())
-
-        def _load_run_details(self, run_id: str):
-            checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
-            trace_file = Path.home() / ".loom" / "traces" / f"trace_{run_id}.json"
-
-            if not checkpoint_file.exists():
-                return
-
-            try:
-                data = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-                self.current_run_id = run_id
-                self.query_one("#lbl-run-id", Static).update(f"Run: [cyan]{run_id}[/cyan]")
-
-                model_used = data.get("shared_data", {}).get("model", self.current_model)
-                self.query_one("#inp-model", Input).value = model_used
-
-                cost = data.get("shared_data", {}).get("cost_report", {}).get("total_cost_usd", 0.0)
-                self.query_one("#lbl-cost", Static).update(f"Cost: [emerald]${cost:.4f}[/emerald]")
-
-                issue = data.get("issue_description", "")
-                if issue:
-                    self.query_one("#inp-issue", Input).value = issue
-
-                console = self.query_one(LogConsole)
-                console.clear_logs()
-                console.append_log("info", "system", f"Loaded checkpoint details for run {run_id}")
-
-                if trace_file.exists():
-                    events = json.loads(trace_file.read_text(encoding="utf-8"))
-                    for ev in events:
-                        node = ev.get("node_name", "agent")
-                        evt_type = ev.get("event_type", "event")
-                        console.append_log("info", node, f"Event {evt_type}: {json.dumps(ev.get('data', {}))}")
-
-                patch_diff = data.get("patch_diff") or data.get("shared_data", {}).get("patch_diff", "")
-                self.query_one(DiffDrawer).set_diff(patch_diff)
-                self.query_one(EvidenceDrawer).set_evidence(data.get("verification_passed", False))
-
-                dag_panel = self.query_one(DAGProgressPanel)
-                nodes = data.get("nodes", {})
-                for step_key in ["onboarding", "reproduction", "patcher", "verifier", "reviewer"]:
-                    ns = nodes.get(step_key, {})
-                    st = ns.get("status", "completed" if data.get("verification_passed") else "pending")
-                    dag_panel.update_step(step_key, st, 100.0 if st == "completed" else 0.0)
-
-            except Exception as err:
-                self.query_one(LogConsole).append_log("error", "system", f"Error loading run: {err}")
+                self._start_run()
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
-            btn_id = event.button.id
-            if btn_id in ("btn-start", "btn-start-prompt"):
-                self.run_worker(self._execute_livebox_pipeline())
-            elif btn_id == "btn-pause":
-                self._handle_pause_resume()
-            elif btn_id == "btn-step":
-                self.query_one(LogConsole).append_log("info", "system", "Executing single step over...")
-            elif btn_id == "btn-rollback":
-                self.query_one(LogConsole).append_log(
-                    "warn", "system", "1-Click Snapshot Restoration executed! Workspace rolled back."
-                )
-            elif btn_id == "btn-toggle-history":
+            button_id = event.button.id
+            if button_id in {"btn-start", "btn-start-prompt"}:
+                self._start_run()
+            elif button_id == "btn-pause":
+                self.action_pause_resume()
+            elif button_id == "btn-step":
+                self.action_step()
+            elif button_id == "btn-stop":
+                self.action_stop_run()
+            elif button_id == "btn-rollback":
+                self.controller.rollback()
+            elif button_id == "btn-toggle-history":
                 self.action_toggle_history()
-            elif btn_id == "btn-stop":
-                self.pipeline_running = False
-                self.query_one(LogConsole).append_log("error", "system", "Pipeline execution stopped by user.")
-            elif btn_id == "btn-approve-patch":
-                self.query_one(LogConsole).append_log("success", "reviewer", "Patch approved by human operator!")
-            elif btn_id == "btn-reject-patch":
-                self.query_one(LogConsole).append_log(
-                    "warn", "reviewer", "Patch rejected by human operator. Triggering rollback..."
-                )
-            elif btn_id == "btn-clear-log":
-                self.query_one(LogConsole).clear_logs()
+            elif button_id == "btn-clear-log":
+                self.query_one(LogConsole).clear()
+            elif button_id in {"log-all", "log-info", "log-warn", "log-error"}:
+                self.query_one(LogConsole).set_filter(button_id.removeprefix("log-").upper())
+            elif button_id == "btn-approve-patch":
+                self.controller.approve_patch()
+                self.query_one("#btn-approve-patch", Button).disabled = True
+                self.query_one("#btn-reject-patch", Button).disabled = True
+            elif button_id == "btn-reject-patch":
+                self.controller.reject_patch()
 
-        def _handle_pause_resume(self):
-            if self.is_paused:
-                self.is_paused = False
-                self.query_one("#btn-pause", Button).label = "⏸ Pause"
-                self.query_one(LogConsole).append_log("info", "system", "Execution resumed.")
-            else:
-                self.is_paused = True
-                self.query_one("#btn-pause", Button).label = "▶ Resume"
-                self.query_one(LogConsole).append_log("warn", "system", "Execution paused.")
+        def _start_run(self) -> None:
+            issue = self.query_one("#inp-issue", Input).value.strip()
+            model = os.getenv("LOOM_TUI_MODEL", "claude-3-5-sonnet-20241022")
+            self.controller.start(issue, str(Path.cwd()), model)
 
-        async def _execute_livebox_pipeline(self):
-            if self.pipeline_running:
-                return
-
-            issue_text = (self.query_one("#inp-issue", Input).value or "").strip()
-            model_text = (self.query_one("#inp-model", Input).value or "").strip() or self.current_model
-            console = self.query_one(LogConsole)
-            dag_panel = self.query_one(DAGProgressPanel)
-            diff_drawer = self.query_one(DiffDrawer)
-
-            if not issue_text:
-                console.append_log(
-                    "warn", "system", "Please type an issue prompt in the top box before pressing Enter or Start."
-                )
-                return
-
-            self.pipeline_running = True
-            self.is_paused = False
-            dag_panel.reset_all_steps()
-
-            run_id = f"run_{int(time.time())}"
-            self.current_run_id = run_id
-            self.query_one("#lbl-run-id", Static).update(f"Run: [cyan]{run_id}[/cyan]")
-
-            console.append_log("info", "harness", f"Starting LiveBox execution for prompt: '{issue_text}'")
-            start_time = time.time()
-
-            steps = [
-                (
-                    "onboarding",
-                    "Repo Mapper & AST Index",
-                    "Parsing AST symbols & repository dependency map...",
-                    "Indexed workspace structure. Sanitizer status: SAFE.",
-                ),
-                (
-                    "reproduction",
-                    "Reproduction Generator",
-                    "Generating pytest reproduction test case...",
-                    "Generated test reproduction targeting issue.",
-                ),
-                (
-                    "patcher",
-                    "LLM Code Mutator",
-                    "Generating LLM code patch proposal...",
-                    "Unified diff patch generated and applied to sandbox snapshot.",
-                ),
-                (
-                    "verifier",
-                    "Automated Verifier",
-                    "Executing automated test suite against sandbox...",
-                    "Automated verification tests PASSED.",
-                ),
-                (
-                    "reviewer",
-                    "Evidence Review Gate",
-                    "Evaluating evidence bundle & security gates...",
-                    "Reviewer verdict: APPROVED.",
-                ),
-            ]
-
-            diff_drawer.set_diff("")
-
-            for step_key, label, msg1, msg2 in steps:
-                if not self.pipeline_running:
-                    break
-
-                while self.is_paused and self.pipeline_running:
-                    await asyncio.sleep(0.2)
-
-                dag_panel.update_step(step_key, "running", 50.0)
-                console.append_log("info", step_key, f"[{model_text}] Starting {label}...")
-                await asyncio.sleep(0.5)
-
-                console.append_log("debug", step_key, msg1)
-                await asyncio.sleep(0.4)
-
-                console.append_log("success", step_key, msg2)
-                dag_panel.update_step(step_key, "completed", 100.0)
-
-                elapsed = time.time() - start_time
-                self.query_one("#lbl-time", Static).update(f"Time: [blue]{elapsed:.1f}s[/blue]")
-                self.query_one("#lbl-cost", Static).update(
-                    f"Cost: [emerald]${(0.0005 * (steps.index((step_key, label, msg1, msg2)) + 1)):.4f}[/emerald]"
-                )
-
-            if self.pipeline_running:
-                console.append_log("success", "reviewer", f"LiveBox pipeline completed! Run ID: {run_id}")
-                self.query_one(RunList)._refresh_runs()
-
-            self.pipeline_running = False
-
-    app = LoomTUI()
-    app.run()
+    LoomTUI().run()
 
 
 if __name__ == "__main__":
