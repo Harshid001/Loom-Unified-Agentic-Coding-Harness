@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Loom API & Sandbox Worker
+# Multi-stage Dockerfile for Loom API and Sandbox Worker
 FROM python:3.11-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
@@ -12,11 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    postgresql-client \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
 COPY README.md .
 COPY loom/ loom/
+COPY scripts/ scripts/
 
 RUN pip install --upgrade pip && \
     pip install .
@@ -31,4 +34,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["python", "-m", "loom.api.server"]
+CMD ["python", "-m", "loom.runtime.entrypoint"]

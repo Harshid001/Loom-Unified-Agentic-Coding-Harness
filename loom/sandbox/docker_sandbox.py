@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -12,7 +13,12 @@ logger = logging.getLogger("loom.sandbox.docker")
 
 
 class DockerSandbox(BaseSandbox):
-    """Executes commands inside an isolated Docker container with strict CPU/memory limits and dropped privileges."""
+    """Execute commands inside an isolated Docker container.
+
+    Production mode deliberately fails closed when Docker is unavailable. A local
+    process fallback is retained only for explicit development/test usage so a
+    missing Docker daemon can never silently remove the sandbox boundary.
+    """
 
     def __init__(
         self,
@@ -22,6 +28,7 @@ class DockerSandbox(BaseSandbox):
         memory_mb: int = 4096,
         read_only_root: bool = False,
         allow_network: bool = True,
+        allow_local_fallback: Optional[bool] = None,
     ):
         self.repo_path = Path(repo_path).resolve()
         self.worktree_manager = WorktreeManager(str(self.repo_path))
@@ -30,8 +37,11 @@ class DockerSandbox(BaseSandbox):
         self.memory_mb = memory_mb
         self.read_only_root = read_only_root
         self.allow_network = allow_network
-
-        # Fallback local process sandbox if Docker binary or daemon is unavailable
+        self.allow_local_fallback = (
+            allow_local_fallback
+            if allow_local_fallback is not None
+            else os.getenv("LOOM_ENV", "development").lower() not in {"prod", "production"}
+        )
         self.fallback_sandbox = LocalProcessSandbox(repo_path)
         self._docker_available: Optional[bool] = None
 
@@ -39,14 +49,34 @@ class DockerSandbox(BaseSandbox):
         if self._docker_available is not None:
             return self._docker_available
         try:
-            res = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
-            self._docker_available = (res.returncode == 0)
-        except Exception:
+            res = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                stdin=subprocess.DEVNULL,
+            )
+            self._docker_available = res.returncode == 0
+        except (OSError, subprocess.SubprocessError):
             self._docker_available = False
 
         if not self._docker_available:
-            logger.warning("Docker environment unavailable for Tier B/C sandbox; falling back to process isolation with warnings.")
+            logger.warning("Docker environment unavailable for sandbox execution")
         return self._docker_available
+
+    def _docker_unavailable_result(self, cmd: Union[str, List[str]]) -> CommandResult:
+        command = cmd if isinstance(cmd, str) else " ".join(cmd)
+        return CommandResult(
+            command=command,
+            exit_code=125,
+            stdout="",
+            stderr=(
+                "Docker sandbox unavailable. Production execution is fail-closed; "
+                "start Docker or configure an approved sandbox worker."
+            ),
+            duration_seconds=0.0,
+            timed_out=False,
+        )
 
     def run_command(
         self,
@@ -56,10 +86,15 @@ class DockerSandbox(BaseSandbox):
         env: Optional[Dict[str, str]] = None,
     ) -> CommandResult:
         if not self.is_docker_available():
-            return self.fallback_sandbox.run_command(cmd=cmd, cwd=cwd, timeout=timeout, env=env)
+            if self.allow_local_fallback:
+                logger.warning("Using development-only local sandbox fallback")
+                return self.fallback_sandbox.run_command(cmd=cmd, cwd=cwd, timeout=timeout, env=env)
+            return self._docker_unavailable_result(cmd)
 
         exec_cwd = Path(cwd).resolve() if cwd else self.repo_path
-        if not exec_cwd.is_relative_to(self.repo_path) and exec_cwd != self.repo_path:
+        try:
+            exec_cwd.relative_to(self.repo_path)
+        except ValueError:
             exec_cwd = self.repo_path
 
         rel_cwd = exec_cwd.relative_to(self.repo_path)
@@ -76,12 +111,14 @@ class DockerSandbox(BaseSandbox):
             "docker",
             "run",
             "--rm",
+            "--init",
             "-v",
             f"{self.repo_path}:/workspace:rw",
             "-w",
             container_workdir,
             f"--cpus={self.cpu_limit}",
             f"--memory={self.memory_mb}m",
+            "--pids-limit=256",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
         ]
@@ -90,11 +127,11 @@ class DockerSandbox(BaseSandbox):
             docker_cmd.extend(["--network", "none"])
 
         if self.read_only_root:
-            docker_cmd.extend(["--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid"])
+            docker_cmd.extend(["--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev"])
 
         if env:
-            for k, v in env.items():
-                docker_cmd.extend(["-e", f"{k}={v}"])
+            for key, value in env.items():
+                docker_cmd.extend(["-e", f"{key}={value}"])
 
         docker_cmd.append(self.image_name)
         docker_cmd.extend(cmd_args)
@@ -118,30 +155,25 @@ class DockerSandbox(BaseSandbox):
                 duration_seconds=round(duration, 3),
                 timed_out=False,
             )
-        except subprocess.TimeoutExpired as e:
+        except subprocess.TimeoutExpired as exc:
             duration = time.time() - start_time
-            out_str = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-            err_str = (
-                e.stderr.decode()
-                if isinstance(e.stderr, bytes)
-                else (e.stderr or f"Container command timed out after {timeout} seconds.")
-            )
+            out_str = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+            err_str = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
             return CommandResult(
                 command=cmd_str,
                 exit_code=124,
                 stdout=out_str,
-                stderr=err_str,
+                stderr=err_str or f"Container command timed out after {timeout} seconds.",
                 duration_seconds=round(duration, 3),
                 timed_out=True,
             )
-        except Exception as e:
-            duration = time.time() - start_time
+        except OSError as exc:
             return CommandResult(
                 command=cmd_str,
                 exit_code=1,
                 stdout="",
-                stderr=str(e),
-                duration_seconds=round(duration, 3),
+                stderr=str(exc),
+                duration_seconds=round(time.time() - start_time, 3),
                 timed_out=False,
             )
 

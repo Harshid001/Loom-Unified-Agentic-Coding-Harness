@@ -2,16 +2,15 @@ from typing import Any, Dict
 
 from loom.orchestrator.agents.base_agent import BaseAgent
 from loom.orchestrator.state import OrchestratorState
-from loom.sandbox.local_process import LocalProcessSandbox
+from loom.sandbox.factory import sandbox_for_state
 from loom.verification.runner import VerificationRunner
 
 
 class VerifierAgent(BaseAgent):
-    """Runs the §3.6 verification-first pipeline: build/tests, repro flip check,
-    SAST scan, confidence score, and decision matrix."""
+    """Runs the verification-first pipeline inside the selected sandbox tier."""
 
     async def execute(self, state: OrchestratorState) -> Dict[str, Any]:
-        sandbox = LocalProcessSandbox(state.repo_path)
+        sandbox = sandbox_for_state(state)
         threshold = float(state.shared_data.get("auto_merge_threshold", 0.95))
         runner = VerificationRunner(sandbox, auto_merge_threshold=threshold)
 
