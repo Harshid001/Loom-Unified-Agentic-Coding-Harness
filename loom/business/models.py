@@ -29,6 +29,14 @@ class MembershipRole(str, Enum):
     AUDITOR = "auditor"
 
 
+class BillingStatus(str, Enum):
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    GRACE = "grace"
+    CANCELED = "canceled"
+    UNCONFIGURED = "unconfigured"
+
+
 class Organization(BaseModel):
     id: str = Field(default_factory=lambda: f"org_{uuid.uuid4().hex[:12]}")
     name: str
@@ -41,6 +49,12 @@ class Organization(BaseModel):
     post_merge_monitor_timeout_seconds: int = 3600
     overage_run_cap_multiplier: float = 2.0
     last_payment_failed_at: Optional[float] = None
+    billing_status: BillingStatus = BillingStatus.UNCONFIGURED
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    billing_cycle_anchor: Optional[float] = None
+    pending_tier: Optional[OrgTier] = None
+    pending_tier_effective_at: Optional[float] = None
     router_weights: Dict[str, float] = Field(
         default_factory=lambda: {
             "w1_cost": 0.25,
