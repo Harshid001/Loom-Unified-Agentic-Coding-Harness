@@ -1,7 +1,5 @@
 """Centralized run-level authorization for tenant-isolated API routes."""
 
-from __future__ import annotations
-
 import asyncio
 from typing import Any
 
