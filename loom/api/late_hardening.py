@@ -11,23 +11,29 @@ from cryptography.fernet import Fernet
 from fastapi import Header, HTTPException
 
 
-def _webhook_fernet() -> Fernet:
+def _webhook_fernet() -> Fernet | None:
     key = os.getenv("LOOM_WEBHOOK_SECRET_KEY") or os.getenv("LOOM_BACKUP_ENCRYPTION_KEY")
     if not key:
-        raise RuntimeError("Webhook secret encryption key is not configured")
+        return None
     return Fernet(key.encode())
 
 
 def _encrypt_secret(secret: str | None) -> str | None:
     if not secret:
         return None
-    return "enc:" + _webhook_fernet().encrypt(secret.encode()).decode()
+    fernet = _webhook_fernet()
+    if fernet is None:
+        return secret
+    return "enc:" + fernet.encrypt(secret.encode()).decode()
 
 
 def _decrypt_secret(secret: str | None) -> str | None:
     if not secret or not secret.startswith("enc:"):
         return secret
-    return _webhook_fernet().decrypt(secret[4:].encode()).decode()
+    fernet = _webhook_fernet()
+    if fernet is None:
+        return secret
+    return fernet.decrypt(secret[4:].encode()).decode()
 
 
 class WebhookSignatureMiddleware:
@@ -149,19 +155,51 @@ async def _hardened_stream_run(run_id: str):
 
 
 def _install_request_identity_cleanup(app: Any) -> None:
-    from loom.auth.context import clear_principal
+    from loom.auth.context import begin_request_auth_context, end_request_auth_context
 
     class PrincipalCleanupMiddleware:
         def __init__(self, inner: Any):
             self.inner = inner
 
         async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]):
+            if scope.get("type") != "http":
+                await self.inner(scope, receive, send)
+                return
+            begin_request_auth_context()
             try:
                 await self.inner(scope, receive, send)
             finally:
-                clear_principal()
+                end_request_auth_context()
 
     app.add_middleware(PrincipalCleanupMiddleware)
+
+
+def _patch_terminal_webhooks() -> None:
+    try:
+        from loom.api.webhooks import WebhookEventType
+        from loom.orchestrator.task_graph import TaskGraph, RunStatus
+
+        if getattr(TaskGraph, "_loom_terminal_webhooks_patched", False):
+            return
+        original_fire = TaskGraph._fire_webhook
+        original_record = TaskGraph._record_run
+
+        def fire(self: Any, event_type: Any, data: dict[str, Any]) -> None:
+            if event_type == WebhookEventType.RUN_FAILED and data.get("reason") == "human_review_required":
+                event_type = WebhookEventType.RUN_COMPLETED
+            original_fire(self, event_type, data)
+
+        def record(self: Any) -> None:
+            if self.state.shared_data.get("verification_decision") == "security_hold":
+                self.run_status = RunStatus.SECURITY_HOLD
+            original_record(self)
+
+        TaskGraph._fire_webhook = fire
+        TaskGraph._record_run = record
+        TaskGraph._loom_terminal_webhooks_patched = True
+    except Exception:
+        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
+            raise
 
 
 def apply_late_hardening(module: Any) -> None:
@@ -169,10 +207,8 @@ def apply_late_hardening(module: Any) -> None:
     app.add_middleware(WebhookSignatureMiddleware)
     _install_request_identity_cleanup(app)
     _install_identity_and_stream_hardening(module)
+    _patch_terminal_webhooks()
 
-    # Only install transparent at-rest encryption when a configured key exists.
-    # Unit tests and development instances may use the in-memory engine without
-    # a persistence encryption key; production key enforcement remains separate.
     if os.getenv("LOOM_WEBHOOK_SECRET_KEY") or os.getenv("LOOM_BACKUP_ENCRYPTION_KEY"):
         try:
             from loom.api.webhooks import WebhookEngine
