@@ -12,7 +12,12 @@ from typing import Iterable, List, Optional
 
 from pydantic import BaseModel, Field
 
-from loom.auth.context import AuthenticatedPrincipal, clear_principal, set_principal
+from loom.auth.context import (
+    AuthenticatedPrincipal,
+    clear_principal,
+    in_request_auth_context,
+    set_principal,
+)
 
 logger = logging.getLogger("loom.auth.api_tokens")
 
@@ -137,19 +142,21 @@ class ApiTokenStore:
         return record, token
 
     def verify(self, token: str) -> Optional[ApiTokenRecord]:
-        clear_principal()
+        if in_request_auth_context():
+            clear_principal()
         digest = hash_token(token)
         now = time.time()
         for record in dict.values(self._records):
             if record.active and not record.is_expired(now) and secrets.compare_digest(record.token_hash, digest):
-                set_principal(
-                    AuthenticatedPrincipal(
-                        user_id=record.user_id,
-                        org_id=record.org_id,
-                        token_id=record.id,
-                        auth_method="api_token",
+                if in_request_auth_context():
+                    set_principal(
+                        AuthenticatedPrincipal(
+                            user_id=record.user_id,
+                            org_id=record.org_id,
+                            token_id=record.id,
+                            auth_method="api_token",
+                        )
                     )
-                )
                 return record
         return None
 
