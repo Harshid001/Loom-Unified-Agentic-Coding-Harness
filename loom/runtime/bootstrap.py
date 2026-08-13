@@ -14,6 +14,9 @@ PRODUCTION_REQUIRED = (
     "SANDBOX_WORKER_TOKEN",
     "REDIS_URL",
     "LOOM_BACKUP_S3_BUCKET",
+    "LOOM_MAX_RUN_COST_USD",
+    "LOOM_MAX_RUN_DURATION_SECONDS",
+    "LOOM_MAX_RUN_TOKENS",
 )
 
 
@@ -35,6 +38,13 @@ def validate_production_environment() -> None:
     roots = [Path(value.strip()).resolve() for value in os.getenv("ALLOWED_REPO_ROOTS", "").split(",") if value.strip()]
     if not roots:
         raise RuntimeError("Production startup blocked: ALLOWED_REPO_ROOTS must contain at least one repository root")
+
+    for name in ("LOOM_MAX_RUN_COST_USD", "LOOM_MAX_RUN_DURATION_SECONDS", "LOOM_MAX_RUN_TOKENS"):
+        try:
+            if float(os.getenv(name, "0")) <= 0:
+                raise ValueError
+        except ValueError as exc:
+            raise RuntimeError(f"Production startup blocked: {name} must be a positive number") from exc
 
     if os.getenv("LOOM_TOKEN_ADMIN_ENABLED", "false").lower() in {"1", "true", "yes"}:
         raise RuntimeError(
