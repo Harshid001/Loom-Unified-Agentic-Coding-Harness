@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum
 
 
-class FailureClass(StrEnum):
+class FailureClass(str, Enum):
     TRANSIENT = "transient"
     RATE_LIMIT = "rate_limit"
     SANDBOX = "sandbox"
@@ -36,7 +36,7 @@ def classify_failure(error: BaseException) -> FailureClass:
         return FailureClass.RATE_LIMIT
     if "sandbox" in message or "docker" in message or "microvm" in message:
         return FailureClass.SANDBOX
-    if "conflict" in message or "patch" in message and "apply" in message:
+    if "conflict" in message or ("patch" in message and "apply" in message):
         return FailureClass.PATCH_CONFLICT
     if any(token in message for token in ("timeout", "timed out", "connection", "temporarily", "unavailable", "503")):
         return FailureClass.TRANSIENT
