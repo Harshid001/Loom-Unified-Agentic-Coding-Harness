@@ -99,3 +99,15 @@ def test_production_factory_uses_remote_worker(tmp_path, monkeypatch):
 
     sandbox = sandbox_for_state(state)
     assert isinstance(sandbox, RemoteDockerSandbox)
+
+
+def test_production_factory_fails_closed_for_fake_firecracker(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "production")
+    monkeypatch.setenv("LOOM_SANDBOX_WORKER_URL", "http://sandbox-worker:8100")
+    monkeypatch.setenv("SANDBOX_WORKER_TOKEN", "worker-secret")
+
+    state = OrchestratorState(run_id="run_test", repo_path=str(tmp_path), issue_description="test")
+    state.shared_data["sandbox_tier"] = "C"
+
+    with pytest.raises(RuntimeError, match="real Firecracker"):
+        sandbox_for_state(state)
