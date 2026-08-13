@@ -60,11 +60,21 @@ class JobQueue:
     async def enqueue(self, job: RunJob) -> str:
         await self.ensure_group()
         payload = json.dumps(asdict(job), separators=(",", ":"), default=str)
-        await self.coordinator.client.xadd(self.STREAM, {"job": payload}, maxlen=100000, approximate=True)
+        await self.coordinator.client.xadd(
+            self.STREAM,
+            {"job": payload},
+            maxlen=100000,
+            approximate=True,
+        )
         key = f"loom:job:{job.job_id}"
         await self.coordinator.client.hset(
             key,
-            mapping={"run_id": job.run_id, "status": "queued", "attempts": job.attempts, "created_at": job.created_at},
+            mapping={
+                "run_id": job.run_id,
+                "status": "queued",
+                "attempts": job.attempts,
+                "created_at": job.created_at,
+            },
         )
         await self.coordinator.client.expire(key, 7 * 24 * 3600)
         return job.job_id
@@ -72,20 +82,26 @@ class JobQueue:
     async def claim(self, block_ms: int = 5000) -> Optional[ClaimedJob]:
         await self.ensure_group()
         try:
-            claimed = cast(Any, await self.coordinator.client.xautoclaim(
-                self.STREAM,
-                self.GROUP,
-                self.consumer,
-                min_idle_time=self.visibility_timeout * 1000,
-                start_id="0-0",
-                count=1,
-            ))
+            claimed = cast(
+                Any,
+                await self.coordinator.client.xautoclaim(
+                    self.STREAM,
+                    self.GROUP,
+                    self.consumer,
+                    min_idle_time=self.visibility_timeout * 1000,
+                    start_id="0-0",
+                    count=1,
+                ),
+            )
             messages = claimed[1] if isinstance(claimed, (list, tuple)) and len(claimed) > 1 else []
             if messages:
                 message_id, values = messages[0]
                 raw = values.get("job") if isinstance(values, dict) else None
                 if raw:
-                    return ClaimedJob(job=RunJob(**json.loads(str(raw))), message_id=str(message_id))
+                    return ClaimedJob(
+                        job=RunJob(**json.loads(str(raw))),
+                        message_id=str(message_id),
+                    )
         except Exception:
             pass
 
@@ -102,16 +118,22 @@ class JobQueue:
         message_id, values = messages[0]
         raw = values.get("job")
         if not raw:
-            await self.ack(message_id)
+            await self.ack(str(message_id))
             return None
-        return ClaimedJob(job=RunJob(**json.loads(raw)), message_id=message_id)
+        return ClaimedJob(
+            job=RunJob(**json.loads(str(raw))),
+            message_id=str(message_id),
+        )
 
     async def ack(self, message_id: str) -> None:
         await self.coordinator.client.xack(self.STREAM, self.GROUP, message_id)
 
     async def mark_worker_heartbeat(self) -> None:
         key = f"loom:worker:{self.consumer}"
-        await self.coordinator.client.hset(key, mapping={"worker_id": self.consumer, "heartbeat_at": time.time()})
+        await self.coordinator.client.hset(
+            key,
+            mapping={"worker_id": self.consumer, "heartbeat_at": time.time()},
+        )
         await self.coordinator.client.expire(key, max(self.visibility_timeout, 120))
 
     async def mark_started(self, job: RunJob) -> None:
