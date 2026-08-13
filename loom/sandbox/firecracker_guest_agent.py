@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import resource
 import signal
 import socket
 import subprocess
@@ -16,6 +15,11 @@ import tarfile
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - POSIX-only stdlib module
+    resource = None  # type: ignore[assignment]
 
 DEFAULT_PORT = 1024
 WORKSPACE = Path("/workspace")
@@ -38,6 +42,8 @@ def _safe_extract(tar_path: Path, destination: Path) -> None:
 
 
 def _apply_limits(timeout: int) -> None:
+    if resource is None:
+        return
     resource.setrlimit(resource.RLIMIT_CPU, (max(1, timeout), max(1, timeout + 1)))
     resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))
     resource.setrlimit(resource.RLIMIT_NPROC, (512, 512))
