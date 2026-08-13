@@ -71,7 +71,6 @@ class JobQueue:
 
     async def claim(self, block_ms: int = 5000) -> Optional[ClaimedJob]:
         await self.ensure_group()
-        # Recover work abandoned by a dead worker before reading new messages.
         try:
             claimed = await self.coordinator.client.xautoclaim(
                 self.STREAM,
@@ -88,7 +87,6 @@ class JobQueue:
                 if raw:
                     return ClaimedJob(job=RunJob(**json.loads(raw)), message_id=message_id)
         except Exception:
-            # Compatibility with Redis versions/client implementations without XAUTOCLAIM.
             pass
 
         result = await self.coordinator.client.xreadgroup(
@@ -111,6 +109,11 @@ class JobQueue:
     async def ack(self, message_id: str) -> None:
         await self.coordinator.client.xack(self.STREAM, self.GROUP, message_id)
 
+    async def mark_worker_heartbeat(self) -> None:
+        key = f"loom:worker:{self.consumer}"
+        await self.coordinator.client.hset(key, mapping={"worker_id": self.consumer, "heartbeat_at": time.time()})
+        await self.coordinator.client.expire(key, max(self.visibility_timeout, 120))
+
     async def mark_started(self, job: RunJob) -> None:
         key = f"loom:job:{job.job_id}"
         await self.coordinator.client.hset(
@@ -127,8 +130,10 @@ class JobQueue:
 
     async def heartbeat(self, job: RunJob) -> None:
         key = f"loom:job:{job.job_id}"
-        await self.coordinator.client.hset(key, "heartbeat_at", time.time())
+        now = time.time()
+        await self.coordinator.client.hset(key, "heartbeat_at", now)
         await self.coordinator.client.expire(key, self.visibility_timeout)
+        await self.mark_worker_heartbeat()
 
     async def mark_finished(self, job: RunJob, status: str, error: str = "") -> None:
         key = f"loom:job:{job.job_id}"
