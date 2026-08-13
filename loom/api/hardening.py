@@ -197,7 +197,7 @@ class RedisRateLimiter:
         self.limit = limit
         self.window = window_seconds
         self._local: dict[str, RateLimitState] = defaultdict(lambda: RateLimitState(deque()))
-        self._redis = None
+        self._redis: Any | None = None
 
     async def _client(self) -> Any:
         if self._redis is not None:
