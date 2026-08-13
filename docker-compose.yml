@@ -10,6 +10,7 @@ services:
       API_KEY: ${API_KEY:?API_KEY is required}
       DASHBOARD_AUTH_TOKEN: ${DASHBOARD_AUTH_TOKEN:?DASHBOARD_AUTH_TOKEN is required}
       DATABASE_URL: postgresql://loom:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/loom
+      REDIS_URL: redis://redis:6379/0
       ALLOWED_REPO_ROOTS: /workspace
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
       LOOM_SANDBOX_WORKER_URL: http://sandbox-worker:8100
@@ -23,6 +24,8 @@ services:
       - loom_runtime:/home/loomuser/.loom
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       sandbox-worker:
         condition: service_healthy
@@ -58,6 +61,17 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -74,5 +88,6 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   evidence_data:
   loom_runtime:
