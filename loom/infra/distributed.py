@@ -11,7 +11,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, cast
 
 try:
     from redis.asyncio import Redis
@@ -96,19 +96,18 @@ class RedisCoordinator:
         if not self.enabled:
             return None
         data = await self.client.hgetall(f"loom:run:{run_id}")
-        return data or None
+        return cast(Optional[dict[str, str]], data or None)
 
     async def record_event(self, run_id: str, event: dict[str, Any]) -> None:
         if not self.enabled:
             return
         key = f"loom:run:{run_id}:events"
-        channel = key
         payload = json.dumps(event, separators=(",", ":"), default=str)
         pipe = self.client.pipeline()
         pipe.rpush(key, payload)
         pipe.ltrim(key, -1000, -1)
         pipe.expire(key, EVENT_TTL_SECONDS)
-        pipe.publish(channel, payload)
+        pipe.publish(key, payload)
         await pipe.execute()
         if event.get("type") == "status_change":
             status = event.get("data", {}).get("status")
@@ -119,7 +118,7 @@ class RedisCoordinator:
         if not self.enabled:
             return []
         values = await self.client.lrange(f"loom:run:{run_id}:events", 0, -1)
-        return [json.loads(value) for value in values]
+        return [cast(dict[str, Any], json.loads(value)) for value in values]
 
     async def publish_control(self, run_id: str, action: str, payload: dict[str, Any]) -> None:
         if not self.enabled:
@@ -138,7 +137,7 @@ class RedisCoordinator:
             if not result:
                 continue
             _, payload = result
-            yield json.loads(payload)
+            yield cast(dict[str, Any], json.loads(payload))
 
 
 class RedisRateLimiter:
