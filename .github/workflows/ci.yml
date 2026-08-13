@@ -7,6 +7,7 @@ on:
       - master
       - prod-hardening-90plus
       - production-readiness/remediation
+      - prod-readiness
       - 'agent/**'
       - 'feat/**'
       - 'remove-docker-firecracker'
@@ -37,10 +38,12 @@ jobs:
           python -m pip install --upgrade pip setuptools
           pip install -e ".[dev]"
           pip install "ruff==0.16.2" "mypy==2.3.0" "pip-audit==2.10.1" "redis==8.1.0"
+      - name: Production configuration schema preflight
+        run: python scripts/production_preflight.py --allow-placeholders
       - name: Dependency Vulnerability Audit
         run: pip-audit --skip-editable
       - name: Run Python Linter
-        run: ruff check loom/ tests/
+        run: ruff check loom/ tests/ scripts/
       - name: Run Type Checker
         run: mypy loom/ --ignore-missing-imports
       - name: Run Security Regression Tests
