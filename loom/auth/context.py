@@ -49,20 +49,31 @@ def get_service_principal() -> AuthenticatedPrincipal:
 
 
 def _is_secure_runtime() -> bool:
-    env = os.getenv("LOOM_ENV", "development").lower()
+    """Return whether client-supplied identity headers must be ignored.
+
+    Production is always secure, even when a stale/global DEV_MODE environment
+    variable is present. Header-based identity compatibility is available only
+    when development mode is explicitly selected *and* the development bypass
+    is explicitly enabled.
+    """
+    env = os.getenv("LOOM_ENV", "").lower()
     dev_flag = os.getenv("DEV_MODE", "").lower()
-    return not (env == "development" or dev_flag in {"true", "1", "yes"})
+
+    if env in {"prod", "production"}:
+        return True
+
+    return not (env == "development" and dev_flag in {"true", "1", "yes", "on"})
 
 
 def get_effective_principal(
     user_id_header: Optional[str] = None,
     org_id_header: Optional[str] = None,
 ) -> AuthenticatedPrincipal:
-    """Return credential-bound identity, never forged client headers in production."""
+    """Return credential-bound identity, never forged client headers in secure runtime."""
     current = get_principal()
-    # API-token identities are request-bound and authoritative while active.
-    # Shared API-key identities are always derived from current environment so
-    # an old API-key principal cannot leak across requests or tests.
+    # API-token identities are request-bound and authoritative.
+    # Shared API-key identity is derived from current environment so an old
+    # API-key principal cannot leak across requests or tests.
     principal = current if current is not None and current.auth_method == "api_token" else get_service_principal()
 
     if _is_secure_runtime():
