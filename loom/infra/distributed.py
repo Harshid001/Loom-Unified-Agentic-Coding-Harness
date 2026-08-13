@@ -102,11 +102,13 @@ class RedisCoordinator:
         if not self.enabled:
             return
         key = f"loom:run:{run_id}:events"
+        channel = key
         payload = json.dumps(event, separators=(",", ":"), default=str)
         pipe = self.client.pipeline()
         pipe.rpush(key, payload)
         pipe.ltrim(key, -1000, -1)
         pipe.expire(key, EVENT_TTL_SECONDS)
+        pipe.publish(channel, payload)
         await pipe.execute()
         if event.get("type") == "status_change":
             status = event.get("data", {}).get("status")
