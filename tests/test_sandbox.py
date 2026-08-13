@@ -1,8 +1,11 @@
 import pytest
 
 from loom.business.models import OrgTier
+from loom.orchestrator.state import OrchestratorState
 from loom.sandbox.docker_sandbox import DockerSandbox
+from loom.sandbox.factory import sandbox_for_state
 from loom.sandbox.local_process import LocalProcessSandbox
+from loom.sandbox.remote import RemoteDockerSandbox
 from loom.sandbox.tiers import SandboxContext, SandboxTier, SandboxTierSelector
 
 
@@ -72,3 +75,27 @@ def test_sandbox_tier_selector_creates_docker_sandbox(tmp_path):
     sandbox_c = selector.create_sandbox(ctx_c, str(tmp_path))
     assert isinstance(sandbox_c, DockerSandbox)
     assert sandbox_c.read_only_root is True
+
+
+def test_production_factory_requires_worker(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "production")
+    monkeypatch.delenv("LOOM_SANDBOX_WORKER_URL", raising=False)
+    monkeypatch.delenv("SANDBOX_WORKER_TOKEN", raising=False)
+
+    state = OrchestratorState(run_id="run_test", repo_path=str(tmp_path), issue_description="test")
+    state.shared_data["sandbox_tier"] = "B"
+
+    with pytest.raises(RuntimeError, match="requires LOOM_SANDBOX_WORKER_URL"):
+        sandbox_for_state(state)
+
+
+def test_production_factory_uses_remote_worker(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "production")
+    monkeypatch.setenv("LOOM_SANDBOX_WORKER_URL", "http://sandbox-worker:8100")
+    monkeypatch.setenv("SANDBOX_WORKER_TOKEN", "worker-secret")
+
+    state = OrchestratorState(run_id="run_test", repo_path=str(tmp_path), issue_description="test")
+    state.shared_data["sandbox_tier"] = "B"
+
+    sandbox = sandbox_for_state(state)
+    assert isinstance(sandbox, RemoteDockerSandbox)
