@@ -1,6 +1,6 @@
 """Client-side sandbox adapter for the isolated Loom sandbox worker."""
 
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 import httpx
 
@@ -19,11 +19,11 @@ class RemoteDockerSandbox(BaseSandbox):
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.worker_token}"}
 
-    def _request(self, method: str, path: str, payload: Dict[str, object]) -> dict:
+    def _request(self, method: str, path: str, payload: Dict[str, object]) -> dict[str, Any]:
         with httpx.Client(timeout=self.request_timeout) as client:
             response = client.request(method, f"{self.worker_url}{path}", json=payload, headers=self._headers())
             response.raise_for_status()
-            return response.json()
+            return cast(dict[str, Any], response.json())
 
     def run_command(
         self,
