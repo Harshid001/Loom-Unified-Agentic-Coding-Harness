@@ -11,6 +11,9 @@ from loom.business.models import MembershipRole
 
 class Action(str, Enum):
     TRIGGER_RUN = "trigger_run"
+    VIEW_RUN = "view_run"
+    ROLLBACK_RUN = "rollback_run"
+    REPORT_CI = "report_ci"
     APPROVE_AUTO_MERGE_OVERRIDE = "approve_auto_merge_override"
     MODIFY_ENTITLEMENTS = "modify_entitlements"
     MODIFY_QUOTA_POLICY = "modify_quota_policy"
@@ -26,39 +29,23 @@ class Action(str, Enum):
 
 RBAC_MATRIX: Dict[MembershipRole, Set[Action]] = {
     MembershipRole.OWNER: {
-        Action.TRIGGER_RUN,
-        Action.APPROVE_AUTO_MERGE_OVERRIDE,
-        Action.MODIFY_ENTITLEMENTS,
-        Action.MODIFY_QUOTA_POLICY,
-        Action.CONFIGURE_SANDBOX,
-        Action.EXPORT_EVIDENCE,
-        Action.EXPORT_AUDIT_LOG,
-        Action.MANAGE_SSO_SCIM,
-        Action.INVITE_MEMBERS,
-        Action.REMOVE_MEMBERS,
-        Action.VIEW_BILLING,
-        Action.MODIFY_BILLING,
+        Action.TRIGGER_RUN, Action.VIEW_RUN, Action.ROLLBACK_RUN, Action.REPORT_CI,
+        Action.APPROVE_AUTO_MERGE_OVERRIDE, Action.MODIFY_ENTITLEMENTS,
+        Action.MODIFY_QUOTA_POLICY, Action.CONFIGURE_SANDBOX, Action.EXPORT_EVIDENCE,
+        Action.EXPORT_AUDIT_LOG, Action.MANAGE_SSO_SCIM, Action.INVITE_MEMBERS,
+        Action.REMOVE_MEMBERS, Action.VIEW_BILLING, Action.MODIFY_BILLING,
     },
     MembershipRole.ADMIN: {
-        Action.TRIGGER_RUN,
-        Action.APPROVE_AUTO_MERGE_OVERRIDE,
-        Action.MODIFY_ENTITLEMENTS,
-        Action.MODIFY_QUOTA_POLICY,
-        Action.CONFIGURE_SANDBOX,
-        Action.EXPORT_EVIDENCE,
-        Action.EXPORT_AUDIT_LOG,
-        Action.MANAGE_SSO_SCIM,
-        Action.INVITE_MEMBERS,
+        Action.TRIGGER_RUN, Action.VIEW_RUN, Action.ROLLBACK_RUN, Action.REPORT_CI,
+        Action.APPROVE_AUTO_MERGE_OVERRIDE, Action.MODIFY_ENTITLEMENTS,
+        Action.MODIFY_QUOTA_POLICY, Action.CONFIGURE_SANDBOX, Action.EXPORT_EVIDENCE,
+        Action.EXPORT_AUDIT_LOG, Action.MANAGE_SSO_SCIM, Action.INVITE_MEMBERS,
         Action.REMOVE_MEMBERS,
     },
-    MembershipRole.DEVELOPER: {Action.TRIGGER_RUN},
-    MembershipRole.REVIEWER: {Action.APPROVE_AUTO_MERGE_OVERRIDE},
-    MembershipRole.BILLING_ADMIN: {
-        Action.VIEW_BILLING,
-        Action.MODIFY_BILLING,
-        Action.MODIFY_QUOTA_POLICY,
-    },
-    MembershipRole.AUDITOR: {Action.EXPORT_EVIDENCE, Action.EXPORT_AUDIT_LOG},
+    MembershipRole.DEVELOPER: {Action.TRIGGER_RUN, Action.VIEW_RUN},
+    MembershipRole.REVIEWER: {Action.VIEW_RUN, Action.APPROVE_AUTO_MERGE_OVERRIDE},
+    MembershipRole.BILLING_ADMIN: {Action.VIEW_BILLING, Action.MODIFY_BILLING, Action.MODIFY_QUOTA_POLICY},
+    MembershipRole.AUDITOR: {Action.VIEW_RUN, Action.EXPORT_EVIDENCE, Action.EXPORT_AUDIT_LOG},
 }
 
 
@@ -119,12 +106,12 @@ def require_permission(user_id: str, org_id: str, role: str | MembershipRole, pe
     except ValueError as exc:
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Invalid membership role") from exc
 
-    if permission == "runs:read":
-        return True
-
     action_map = {
+        "runs:read": Action.VIEW_RUN,
         "runs:write": Action.TRIGGER_RUN,
         "runs:trigger": Action.TRIGGER_RUN,
+        "runs:rollback": Action.ROLLBACK_RUN,
+        "runs:ci-report": Action.REPORT_CI,
         "entitlements:modify": Action.MODIFY_ENTITLEMENTS,
         "quota:modify": Action.MODIFY_QUOTA_POLICY,
         "sandbox:configure": Action.CONFIGURE_SANDBOX,
