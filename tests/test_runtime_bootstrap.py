@@ -13,6 +13,9 @@ def _set_required(monkeypatch, tmp_path):
     monkeypatch.setenv("SANDBOX_WORKER_TOKEN", "worker")
     monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
     monkeypatch.setenv("LOOM_BACKUP_S3_BUCKET", "loom-backups")
+    monkeypatch.setenv("LOOM_MAX_RUN_COST_USD", "10")
+    monkeypatch.setenv("LOOM_MAX_RUN_DURATION_SECONDS", "3600")
+    monkeypatch.setenv("LOOM_MAX_RUN_TOKENS", "100000")
 
 
 def test_production_bootstrap_requires_security_configuration(tmp_path, monkeypatch):
@@ -26,6 +29,9 @@ def test_production_bootstrap_requires_security_configuration(tmp_path, monkeypa
         "SANDBOX_WORKER_TOKEN",
         "REDIS_URL",
         "LOOM_BACKUP_S3_BUCKET",
+        "LOOM_MAX_RUN_COST_USD",
+        "LOOM_MAX_RUN_DURATION_SECONDS",
+        "LOOM_MAX_RUN_TOKENS",
     ):
         monkeypatch.delenv(name, raising=False)
 
