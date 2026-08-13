@@ -9,7 +9,6 @@ from loom.auth.context import require_authenticated_principal
 from loom.business.rbac import Action, RBACEnforcer
 from loom.db.records_store import get_run_record_store
 
-
 _RUN_ACTIONS: dict[tuple[str, str], Action] = {
     ("GET", "/runs/{run_id}"): Action.VIEW_RUN,
     ("GET", "/runs/{run_id}/evidence"): Action.VIEW_RUN,
