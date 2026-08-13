@@ -8,8 +8,7 @@ from pathlib import PurePosixPath
 from typing import Iterable, List
 
 
-_SHELL_META = re.compile(r"[;&|`$<>]|
-")
+_SHELL_META = re.compile(r"[;&|`$<>]")
 _SAFE_ARGUMENT = re.compile(r"^[A-Za-z0-9_./:@+%=-]+$")
 
 
