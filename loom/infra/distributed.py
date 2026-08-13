@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover - dependency is installed in production
 
 EVENT_TTL_SECONDS = int(os.getenv("LOOM_RUN_EVENT_TTL_SECONDS", "86400"))
 RUN_TTL_SECONDS = int(os.getenv("LOOM_RUN_TTL_SECONDS", "604800"))
+IDEMPOTENCY_TTL_SECONDS = int(os.getenv("LOOM_IDEMPOTENCY_TTL_SECONDS", "86400"))
 
 
 class DistributedInfraError(RuntimeError):
@@ -67,6 +68,21 @@ class RedisCoordinator:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    async def reserve_idempotency_key(self, org_id: str, idempotency_key: str, run_id: str) -> bool:
+        """Atomically reserve an API idempotency key for a run."""
+        if not self.enabled:
+            return True
+        key = f"loom:idempotency:{org_id}:{idempotency_key}"
+        return bool(await self.client.set(key, run_id, nx=True, ex=IDEMPOTENCY_TTL_SECONDS))
+
+    async def get_idempotent_run(self, org_id: str, idempotency_key: str) -> Optional[str]:
+        """Return the run previously associated with an idempotency key."""
+        if not self.enabled:
+            return None
+        key = f"loom:idempotency:{org_id}:{idempotency_key}"
+        value = await self.client.get(key)
+        return str(value) if value is not None else None
 
     async def register_run(self, metadata: RunMetadata) -> None:
         if not self.enabled:
