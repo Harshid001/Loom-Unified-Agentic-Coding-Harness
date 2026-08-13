@@ -1,0 +1,29 @@
+[Unit]
+Description=Loom Firecracker Worker
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=loom-sandbox
+Group=loom-sandbox
+EnvironmentFile=/etc/loom/firecracker-worker.env
+ExecStart=/usr/bin/python3 -m loom.sandbox.firecracker_worker
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_VSOCK AF_INET AF_INET6
+ReadWritePaths=/var/lib/loom/firecracker /var/lib/loom/evidence
+
+[Install]
+WantedBy=multi-user.target

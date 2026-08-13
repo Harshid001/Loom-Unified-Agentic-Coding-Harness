@@ -1,18 +1,16 @@
-"""Firecracker microVM sandbox provider.
-
-This provider is intentionally fail-closed: production Tier C runs require an
-actual Firecracker binary, kernel/rootfs configuration, and an explicit worker
-socket. It never downgrades to Docker/local execution.
-"""
-
+"""Loom-facing Firecracker microVM sandbox provider."""
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
+
+import httpx
 
 from loom.sandbox.base import BaseSandbox, CommandResult
 from loom.sandbox.worktree import WorktreeManager
@@ -23,122 +21,117 @@ class FirecrackerUnavailable(RuntimeError):
 
 
 class FirecrackerSandbox(BaseSandbox):
-    """Execute a command in a disposable Firecracker microVM.
+    """Delegate Tier C execution to an authenticated Firecracker worker.
 
-    The implementation uses an external Firecracker worker process. The worker
-    is responsible for creating the VM, mounting the workspace, enforcing the
-    jailer/cgroup boundary, executing the argv, collecting output and destroying
-    the VM. This class remains a small provider boundary so the orchestrator does
-    not depend on Firecracker-specific details.
+    HTTP JSON is the production contract. ``LOOM_FIRECRACKER_WORKER_CMD`` is
+    retained only as a deterministic unit-test/dev harness and is never a
+    Docker/local fallback.
     """
 
-    def __init__(self, repo_path: str, worker_socket: Optional[str] = None):
+    def __init__(self, repo_path: str, worker_url: Optional[str] = None, worker_token: Optional[str] = None):
         self.repo_path = Path(repo_path).resolve()
-        self.worker_socket = worker_socket or os.getenv("LOOM_FIRECRACKER_WORKER_SOCKET")
+        self.worker_url: str = worker_url or os.getenv("LOOM_FIRECRACKER_WORKER_URL") or ""
+        self.worker_token = worker_token or os.getenv("LOOM_FIRECRACKER_WORKER_TOKEN") or os.getenv("SANDBOX_WORKER_TOKEN")
         self.worktree_manager = WorktreeManager(str(self.repo_path))
-        self.binary = os.getenv("FIRECRACKER_BIN", "firecracker")
 
     def _ensure_configured(self) -> None:
-        if not self.worker_socket:
+        production = os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
+        if production and not self.worker_url:
             raise FirecrackerUnavailable(
-                "Tier C requires LOOM_FIRECRACKER_WORKER_SOCKET; refusing Docker/local fallback"
+                "Production Tier C requires LOOM_FIRECRACKER_WORKER_URL; refusing local worker-command execution"
             )
-        if not Path(self.repo_path).is_dir():
+        if not self.worker_url and not os.getenv("LOOM_FIRECRACKER_WORKER_CMD"):
+            raise FirecrackerUnavailable(
+                "Tier C requires LOOM_FIRECRACKER_WORKER_URL; refusing Docker/local fallback"
+            )
+        if self.worker_url and not self.worker_token:
+            raise FirecrackerUnavailable("Tier C worker authentication requires LOOM_FIRECRACKER_WORKER_TOKEN")
+        if not self.repo_path.is_dir():
             raise FirecrackerUnavailable(f"Repository path does not exist: {self.repo_path}")
 
-    def run_command(
-        self,
-        cmd: Union[str, list[str]],
-        cwd: Optional[str] = None,
-        timeout: int = 60,
-        env: Optional[Dict[str, str]] = None,
-    ) -> CommandResult:
-        start = time.time()
+    def _remote(self, payload: dict[str, object], timeout: int) -> CommandResult:
+        assert self.worker_url and self.worker_token
+        started = time.time()
+        headers = {"Authorization": f"Bearer {self.worker_token}"}
         try:
-            self._ensure_configured()
-        except FirecrackerUnavailable as exc:
+            with httpx.Client(timeout=float(timeout) + 15) as client:
+                response = client.post(f"{self.worker_url}/execute", json=payload, headers=headers)
+                response.raise_for_status()
+                data = cast(dict[str, Any], response.json())
             return CommandResult(
-                command=cmd if isinstance(cmd, str) else " ".join(cmd),
+                command=str(data.get("command", "")),
+                exit_code=int(data.get("exit_code", 1)),
+                stdout=str(data.get("stdout", "")),
+                stderr=str(data.get("stderr", "")),
+                duration_seconds=float(data.get("duration_seconds", time.time() - started)),
+                timed_out=bool(data.get("timed_out", False)),
+            )
+        except httpx.HTTPError as exc:
+            return CommandResult(
+                command=" ".join(str(x) for x in cast(List[str], payload.get("argv", []))),
                 exit_code=125,
                 stdout="",
-                stderr=str(exc),
-                duration_seconds=0.0,
+                stderr=f"Firecracker worker request failed: {exc}",
+                duration_seconds=round(time.time() - started, 3),
                 timed_out=False,
             )
 
-        request_id = f"loom-{uuid.uuid4().hex}"
-        argv = cmd if isinstance(cmd, list) else ["/bin/sh", "-lc", cmd]
-        payload = {
-            "request_id": request_id,
-            "repo_path": str(self.repo_path),
-            "cwd": cwd or str(self.repo_path),
-            "argv": argv,
-            "timeout": timeout,
-            "env": env or {},
-        }
-
-        # The production worker contract is intentionally external to the core
-        # process. JSONL over stdin/stdout keeps this provider testable without
-        # adding a Firecracker Python dependency.
+    def _dev_harness(self, payload: dict[str, object], command: str, timeout: int) -> CommandResult:
         worker = os.getenv("LOOM_FIRECRACKER_WORKER_CMD")
         if not worker:
-            return CommandResult(
-                command=cmd if isinstance(cmd, str) else " ".join(cmd),
-                exit_code=125,
-                stdout="",
-                stderr="LOOM_FIRECRACKER_WORKER_CMD is required for Tier C execution",
-                duration_seconds=round(time.time() - start, 3),
-                timed_out=False,
-            )
-
+            raise FirecrackerUnavailable("Firecracker worker command is not configured")
+        started = time.time()
         try:
-            import json
-
             result = subprocess.run(
-                worker.split(),
+                shlex.split(worker),
                 input=json.dumps(payload),
                 text=True,
                 capture_output=True,
                 timeout=timeout + 10,
-                stdin=subprocess.PIPE,
                 check=False,
             )
             if result.returncode != 0:
-                return CommandResult(
-                    command=cmd if isinstance(cmd, str) else " ".join(cmd),
-                    exit_code=result.returncode,
-                    stdout=result.stdout,
-                    stderr=result.stderr or "Firecracker worker failed",
-                    duration_seconds=round(time.time() - start, 3),
-                    timed_out=False,
-                )
-            data = json.loads(result.stdout or "{}")
+                return CommandResult(command=command, exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr, duration_seconds=round(time.time() - started, 3))
+            data = cast(dict[str, Any], json.loads(result.stdout or "{}"))
             return CommandResult(
-                command=str(data.get("command") or (cmd if isinstance(cmd, str) else " ".join(cmd))),
+                command=str(data.get("command", command)),
                 exit_code=int(data.get("exit_code", 1)),
                 stdout=str(data.get("stdout", "")),
                 stderr=str(data.get("stderr", "")),
-                duration_seconds=round(float(data.get("duration_seconds", time.time() - start)), 3),
+                duration_seconds=float(data.get("duration_seconds", time.time() - started)),
                 timed_out=bool(data.get("timed_out", False)),
             )
-        except subprocess.TimeoutExpired:
-            return CommandResult(
-                command=cmd if isinstance(cmd, str) else " ".join(cmd),
-                exit_code=124,
-                stdout="",
-                stderr=f"Firecracker worker timed out after {timeout} seconds",
-                duration_seconds=round(time.time() - start, 3),
-                timed_out=True,
-            )
-        except (OSError, ValueError) as exc:
-            return CommandResult(
-                command=cmd if isinstance(cmd, str) else " ".join(cmd),
-                exit_code=1,
-                stdout="",
-                stderr=str(exc),
-                duration_seconds=round(time.time() - start, 3),
-                timed_out=False,
-            )
+        except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+            timed_out = isinstance(exc, subprocess.TimeoutExpired)
+            return CommandResult(command=command, exit_code=124 if timed_out else 1, stdout="", stderr=str(exc), duration_seconds=round(time.time() - started, 3), timed_out=timed_out)
+
+    def run_command(
+        self,
+        cmd: Union[str, List[str]],
+        cwd: Optional[str] = None,
+        timeout: int = 60,
+        env: Optional[Dict[str, str]] = None,
+    ) -> CommandResult:
+        command = cmd if isinstance(cmd, str) else " ".join(cmd)
+        try:
+            self._ensure_configured()
+        except FirecrackerUnavailable as exc:
+            return CommandResult(command=command, exit_code=125, stdout="", stderr=str(exc), duration_seconds=0.0, timed_out=False)
+
+        argv = cmd if isinstance(cmd, list) else ["/bin/sh", "-lc", cmd]
+        payload: dict[str, object] = {
+            "run_id": f"loom-{uuid.uuid4().hex}",
+            "org_id": os.getenv("LOOM_ORG_ID", "unknown"),
+            "repo_path": str(self.repo_path),
+            "argv": argv,
+            "cwd": "/workspace" if cwd is None else str(cwd),
+            "timeout": timeout,
+            "env": env or {},
+            "network": False,
+        }
+        if self.worker_url:
+            return self._remote(payload, timeout)
+        return self._dev_harness(payload, command, timeout)
 
     def create_snapshot(self, label: str) -> str:
         return self.worktree_manager.create_snapshot(label)
