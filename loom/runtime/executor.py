@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
+from typing import Any
 
 from loom.adapters.router import ModelRouter
 from loom.api.webhooks import get_webhook_engine
 from loom.business.models import RunRecord
 from loom.db.records_store import get_run_record_store
+from loom.infra.distributed import RedisCoordinator
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
 from loom.telemetry.cost_tracker import CostTracker
@@ -28,15 +29,39 @@ async def execute_run_job(job: Any) -> OrchestratorState:
     cost_tracker = CostTracker(run_id=job.run_id)
     records_store = get_run_record_store()
     evidence = EvidenceBundler()
+    coordinator = RedisCoordinator()
+
+    async def publish(event_type: str, step_name: str, data: dict[str, Any]) -> None:
+        if coordinator.enabled:
+            await coordinator.record_event(
+                job.run_id,
+                {
+                    "type": event_type,
+                    "timestamp": time.time(),
+                    "run_id": job.run_id,
+                    "step_name": step_name,
+                    "data": data,
+                },
+            )
 
     def on_step_start(step_name: str, model_name: str) -> None:
-        records_store.record_agent_step(job.run_id, step_name, "running", None)
+        if coordinator.enabled:
+            import asyncio
+
+            asyncio.create_task(publish("step_progress", step_name, {"status": "running", "model": model_name}))
 
     def on_step_complete(step_name: str, output: Any) -> None:
-        records_store.record_agent_step(job.run_id, step_name, "completed", output if isinstance(output, dict) else None)
+        if coordinator.enabled:
+            import asyncio
+
+            metrics = output.get("_usage", {}) if isinstance(output, dict) else {}
+            asyncio.create_task(publish("step_progress", step_name, {"status": "completed", "metrics": metrics}))
 
     def on_step_fail(step_name: str, error: str) -> None:
-        records_store.record_agent_step(job.run_id, step_name, "failed", {"error": error})
+        if coordinator.enabled:
+            import asyncio
+
+            asyncio.create_task(publish("step_progress", step_name, {"status": "failed", "error": error}))
 
     graph = TaskGraph(
         state,
@@ -62,10 +87,19 @@ async def execute_run_job(job: Any) -> OrchestratorState:
     )
     started = time.time()
     try:
+        if coordinator.enabled:
+            await coordinator.update_run_status(job.run_id, "running")
         final_state = await graph.run()
         state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
+        if coordinator.enabled:
+            status = "completed" if final_state.verification_passed else "failed"
+            await coordinator.update_run_status(job.run_id, status)
         return final_state
     except Exception as exc:
         state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
         state.shared_data["worker_error"] = str(exc)
+        if coordinator.enabled:
+            await coordinator.update_run_status(job.run_id, "failed")
         raise
+    finally:
+        await coordinator.close()
