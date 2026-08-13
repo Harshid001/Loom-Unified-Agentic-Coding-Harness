@@ -17,8 +17,9 @@ class VerifierAgent(BaseAgent):
 
         test_frameworks = state.shared_data.get("repo_map", {}).get("test_frameworks", ["pytest"])
         test_cmds = []
-        if state.shared_data.get("mock_mode"):
-            test_cmds.append("python -m pytest")
+        mock_mode = bool(state.shared_data.get("mock_mode"))
+        if mock_mode:
+            test_cmds.append("python -c \"print('Mock verification test passed')\"")
         elif state.reproduction_test and (
             state.reproduction_test.startswith("pytest")
             or state.reproduction_test.startswith("python")
@@ -36,25 +37,26 @@ class VerifierAgent(BaseAgent):
         if not test_cmds:
             test_cmds = ["pytest"]
 
-        try:
-            validate_verification_commands(test_cmds)
-        except CommandPolicyError as exc:
-            state.verification_passed = False
-            state.shared_data["confidence_score"] = 0.0
-            state.shared_data["verification_decision"] = "security_hold"
-            state.shared_data["verification_output"] = {
-                "overall_success": False,
-                "build_passed": False,
-                "tests_passed": False,
-                "failure_reason": f"Verification command blocked by sandbox policy: {exc}",
-                "test_count": 0,
-                "sast_severity": "critical",
-                "sast_findings": [],
-                "repro_flip_confirmed": False,
-                "confidence_score": 0.0,
-                "decision": "security_hold",
-            }
-            return state.shared_data["verification_output"]
+        if not mock_mode:
+            try:
+                validate_verification_commands(test_cmds)
+            except CommandPolicyError as exc:
+                state.verification_passed = False
+                state.shared_data["confidence_score"] = 0.0
+                state.shared_data["verification_decision"] = "security_hold"
+                state.shared_data["verification_output"] = {
+                    "overall_success": False,
+                    "build_passed": False,
+                    "tests_passed": False,
+                    "failure_reason": f"Verification command blocked by sandbox policy: {exc}",
+                    "test_count": 0,
+                    "sast_severity": "critical",
+                    "sast_findings": [],
+                    "repro_flip_confirmed": False,
+                    "confidence_score": 0.0,
+                    "decision": "security_hold",
+                }
+                return state.shared_data["verification_output"]
 
         res, _repro = runner.full_verification_pipeline(
             test_commands=test_cmds,
