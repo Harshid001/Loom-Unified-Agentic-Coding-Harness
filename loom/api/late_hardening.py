@@ -149,7 +149,7 @@ async def _hardened_stream_run(run_id: str):
 '''
     try:
         exec(source, module.__dict__)
-        legacy_stream = getattr(module, "stream_run", None)
+        legacy_stream = getattr(module, "stream_run_events", None)
         hardened_stream = getattr(module, "_hardened_stream_run")
         if legacy_stream is not None:
             legacy_stream.__code__ = hardened_stream.__code__
