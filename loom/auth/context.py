@@ -7,6 +7,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Optional
 
+from fastapi import HTTPException, status
+
 
 @dataclass(frozen=True)
 class AuthenticatedPrincipal:
@@ -49,6 +51,50 @@ def get_service_principal() -> AuthenticatedPrincipal:
     )
 
 
-def get_effective_principal() -> AuthenticatedPrincipal:
+def _is_secure_runtime() -> bool:
+    return not (
+        os.getenv("LOOM_ENV", "production").lower() == "development"
+        and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
+    )
+
+
+def get_effective_principal(
+    user_id_header: Optional[str] = None,
+    org_id_header: Optional[str] = None,
+) -> AuthenticatedPrincipal:
+    """Return the credential-bound identity, never forged client headers in production.
+
+    The optional header arguments exist only for compatibility with older callers.
+    In secure runtime they are intentionally ignored. In explicit development
+    compatibility mode they may override the service identity for local workflows.
+    """
     principal = get_principal()
-    return principal if principal is not None else get_service_principal()
+    if principal is None:
+        principal = get_service_principal()
+
+    if _is_secure_runtime():
+        return principal
+
+    return AuthenticatedPrincipal(
+        user_id=user_id_header or principal.user_id,
+        org_id=org_id_header or principal.org_id,
+        token_id=principal.token_id,
+        auth_method=principal.auth_method,
+    )
+
+
+def resolve_request_org(client_org_id: Optional[str] = None) -> str:
+    """Resolve request organization from authenticated identity in secure runtime."""
+    principal = get_effective_principal(org_id_header=client_org_id)
+    return principal.org_id
+
+
+def require_authenticated_principal() -> AuthenticatedPrincipal:
+    """Require a credential-bound principal rather than relying on a default identity."""
+    principal = get_principal()
+    if principal is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    return principal
