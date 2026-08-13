@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI, Request
@@ -63,7 +64,7 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
                     state.run_id,
                     {
                         "type": event_type,
-                        "timestamp": asyncio.get_running_loop().time(),
+                        "timestamp": time.time(),
                         "run_id": state.run_id,
                         "step_name": step_name,
                         "data": data,
@@ -144,7 +145,7 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
             self.state.run_id,
             {
                 "type": "status_change",
-                "timestamp": asyncio.get_running_loop().time(),
+                "timestamp": time.time(),
                 "run_id": self.state.run_id,
                 "step_name": "pipeline",
                 "data": {"status": status},
