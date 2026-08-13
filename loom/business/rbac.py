@@ -80,11 +80,7 @@ class RBACEnforcer:
                 ),
             )
 
-        secure_runtime = not (
-            os.getenv("LOOM_ENV", "production").lower() == "development"
-            and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
-        )
-        if secure_runtime and resource.startswith("org:"):
+        if _secure_runtime() and resource.startswith("org:"):
             resource_org = resource.split(":", 1)[1]
             principal = get_effective_principal()
             if resource_org != principal.org_id:
@@ -102,20 +98,24 @@ class RBACEnforcer:
         return set(self._permissions)
 
 
-def require_permission(user_id: str, org_id: str, role: str | MembershipRole, permission: str) -> bool:
-    principal = get_effective_principal()
-    secure_runtime = not (
+def _secure_runtime() -> bool:
+    return not (
         os.getenv("LOOM_ENV", "production").lower() == "development"
         and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
     )
-    if secure_runtime and (user_id != principal.user_id or org_id != principal.org_id):
+
+
+def require_permission(user_id: str, org_id: str, role: str | MembershipRole, permission: str) -> bool:
+    """Authorize a legacy permission request while binding identity to the verified credential."""
+    principal = get_effective_principal()
+    if _secure_runtime() and (user_id != principal.user_id or org_id != principal.org_id):
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
             detail="Identity is not authorized for the authenticated credential",
         )
 
     try:
-        role_value = MembershipRole(role)
+        role_value = role if isinstance(role, MembershipRole) else MembershipRole(str(role).lower())
     except ValueError as exc:
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Invalid membership role") from exc
 
