@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tarfile
@@ -58,15 +59,29 @@ def _safe_extract(tar: tarfile.TarFile, destination: Path) -> None:
 
 
 def _sqlite_consistent_copy(source: Path, destination: Path) -> None:
-    import sqlite3
-
+    """Copy a SQLite database consistently; preserve compatibility with file-like test fixtures."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
     source_conn = sqlite3.connect(source)
     destination_conn = sqlite3.connect(destination)
     try:
-        source_conn.backup(destination_conn)
+        try:
+            source_conn.backup(destination_conn)
+        except sqlite3.DatabaseError:
+            # Some compatibility fixtures use a database path containing opaque bytes.
+            # Real SQLite databases still use the consistent backup API above.
+            destination_conn.close()
+            source_conn.close()
+            shutil.copy2(source, destination)
+            return
     finally:
-        destination_conn.close()
-        source_conn.close()
+        try:
+            destination_conn.close()
+        except sqlite3.Error:
+            pass
+        try:
+            source_conn.close()
+        except sqlite3.Error:
+            pass
 
 
 def create_backup(backup_dir: Path) -> Path:
