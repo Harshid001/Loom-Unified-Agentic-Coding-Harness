@@ -21,9 +21,9 @@ def _remote_worker(repo_path: str) -> BaseSandbox | None:
 def sandbox_for_state(state: Any) -> BaseSandbox:
     """Construct the sandbox selected for the current run.
 
-    Tier A remains local for development/low-risk workflows. Tier B uses the
-    dedicated Docker worker in production. Tier C is deliberately fail-closed
-    in production until a real Firecracker/microVM worker is configured.
+    Tier A remains local only for explicit development/low-risk workflows. Tier B
+    uses the dedicated Docker worker in production. Tier C is deliberately
+    fail-closed in production until a real Firecracker/microVM worker is configured.
     """
     tier_value = str(state.shared_data.get("sandbox_tier", SandboxTier.A_GIT_WORKTREE.value)).upper()
     repo_path = state.repo_path
@@ -51,6 +51,11 @@ def sandbox_for_state(state: Any) -> BaseSandbox:
             memory_mb=8192,
             read_only_root=True,
             allow_local_fallback=False,
+        )
+
+    if production:
+        raise RuntimeError(
+            "Production Tier A host execution is disabled. Select Tier B with an approved sandbox worker or Tier C once available."
         )
 
     return LocalProcessSandbox(repo_path)
