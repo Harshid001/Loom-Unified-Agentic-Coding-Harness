@@ -1,7 +1,8 @@
 """Fail-closed production configuration validation."""
 
-from pathlib import Path
+# ruff: noqa: I001
 import os
+from pathlib import Path
 
 
 PRODUCTION_REQUIRED = (
