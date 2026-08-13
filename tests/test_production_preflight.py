@@ -3,7 +3,25 @@ from pathlib import Path
 from scripts.production_preflight import validate_artifacts, validate_environment
 
 
-def test_production_environment_rejects_missing_required_values(monkeypatch):
+def _set_complete_environment(monkeypatch, environment: str = "production") -> None:
+    monkeypatch.setenv("LOOM_ENV", environment)
+    required = {
+        "API_KEY": "real-api-key",
+        "DASHBOARD_AUTH_TOKEN": "real-dashboard-token",
+        "ALLOWED_REPO_ROOTS": "/var/repos",
+        "DATABASE_URL": "postgresql://loom:secret@db/loom",
+        "REDIS_URL": "redis://redis:6379/0",
+        "LOOM_FIRECRACKER_WORKER_URL": "http://firecracker-worker:8101",
+        "LOOM_FIRECRACKER_WORKER_TOKEN": "real-worker-token",
+        "LOOM_BACKUP_ENCRYPTION_KEY": "real-backup-key",
+    }
+    for name, value in required.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("LOOM_TOKEN_ADMIN_ENABLED", "false")
+    monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false")
+
+
+def test_deployment_environment_rejects_missing_required_values(monkeypatch):
     monkeypatch.setenv("LOOM_ENV", "production")
     for name in (
         "API_KEY",
@@ -25,20 +43,14 @@ def test_production_environment_rejects_missing_required_values(monkeypatch):
     assert any("LOOM_FIRECRACKER_WORKER_URL" in error for error in errors)
 
 
+def test_staging_environment_accepts_complete_configuration(monkeypatch):
+    _set_complete_environment(monkeypatch, "staging")
+
+    assert validate_environment() == []
+
+
 def test_production_environment_rejects_insecure_flags(monkeypatch):
-    monkeypatch.setenv("LOOM_ENV", "production")
-    required = {
-        "API_KEY": "real-api-key",
-        "DASHBOARD_AUTH_TOKEN": "real-dashboard-token",
-        "ALLOWED_REPO_ROOTS": "/var/repos",
-        "DATABASE_URL": "postgresql://loom:secret@db/loom",
-        "REDIS_URL": "redis://redis:6379/0",
-        "LOOM_FIRECRACKER_WORKER_URL": "http://firecracker-worker:8101",
-        "LOOM_FIRECRACKER_WORKER_TOKEN": "real-worker-token",
-        "LOOM_BACKUP_ENCRYPTION_KEY": "real-backup-key",
-    }
-    for name, value in required.items():
-        monkeypatch.setenv(name, value)
+    _set_complete_environment(monkeypatch)
     monkeypatch.setenv("LOOM_TOKEN_ADMIN_ENABLED", "true")
     monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
 
@@ -49,23 +61,17 @@ def test_production_environment_rejects_insecure_flags(monkeypatch):
 
 
 def test_production_environment_accepts_complete_configuration(monkeypatch):
-    monkeypatch.setenv("LOOM_ENV", "production")
-    required = {
-        "API_KEY": "real-api-key",
-        "DASHBOARD_AUTH_TOKEN": "real-dashboard-token",
-        "ALLOWED_REPO_ROOTS": "/var/repos",
-        "DATABASE_URL": "postgresql://loom:secret@db/loom",
-        "REDIS_URL": "redis://redis:6379/0",
-        "LOOM_FIRECRACKER_WORKER_URL": "http://firecracker-worker:8101",
-        "LOOM_FIRECRACKER_WORKER_TOKEN": "real-worker-token",
-        "LOOM_BACKUP_ENCRYPTION_KEY": "real-backup-key",
-    }
-    for name, value in required.items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.setenv("LOOM_TOKEN_ADMIN_ENABLED", "false")
-    monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false")
+    _set_complete_environment(monkeypatch)
 
     assert validate_environment() == []
+
+
+def test_deployment_environment_rejects_unknown_environment(monkeypatch):
+    _set_complete_environment(monkeypatch, "development")
+
+    errors = validate_environment()
+
+    assert any("LOOM_ENV" in error for error in errors)
 
 
 def test_required_repository_artifacts_exist(tmp_path: Path):
