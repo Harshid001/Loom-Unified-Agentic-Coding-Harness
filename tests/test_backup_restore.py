@@ -38,7 +38,7 @@ def test_compute_sha256_is_stable(tmp_path):
 
 
 def test_encrypted_backup_round_trip(tmp_path, monkeypatch):
-    loom_home = tmp_path / "loom"
+    loom_home = tmp_path / ".loom"
     loom_home.mkdir()
     (loom_home / "records.db").write_bytes(b"record-data")
     evidence = loom_home / "evidence"
@@ -47,12 +47,10 @@ def test_encrypted_backup_round_trip(tmp_path, monkeypatch):
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOOM_EVIDENCE_DIR", str(evidence))
-    monkeypatch.setenv("LOOM_BACKUP_ENCRYPTION_KEY", "QmN2Z0w4Wk1QYjVfN0t5dXh5c2h2Yl9pZlN5aHZfZ2h3d2pQb1E9PQ==")
 
-    # Use a valid Fernet key generated deterministically from bytes for the test.
     from cryptography.fernet import Fernet
-    key = Fernet.generate_key().decode()
-    monkeypatch.setenv("LOOM_BACKUP_ENCRYPTION_KEY", key)
+
+    monkeypatch.setenv("LOOM_BACKUP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
     backup = create_backup(tmp_path / "backups")
     assert backup.suffix == ".enc"
