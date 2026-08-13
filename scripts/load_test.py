@@ -2,7 +2,7 @@
 
 Example:
     python scripts/load_test.py --base-url http://localhost:8000 --api-key "$API_KEY" \
-        --concurrency 20 --requests 100
+        --repo-path /var/repos/example --concurrency 20 --requests 100
 """
 
 from __future__ import annotations
@@ -23,12 +23,18 @@ class Result:
     error: str = ""
 
 
-async def run_request(client: httpx.AsyncClient, url: str, headers: dict[str, str], issue: str) -> Result:
+async def run_request(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    issue: str,
+    repo_path: str,
+) -> Result:
     started = time.perf_counter()
     try:
         response = await client.post(
             f"{url.rstrip('/')}/api/v1/run",
-            json={"issue": issue, "repo_path": ".", "mock": True, "async_mode": True},
+            json={"issue": issue, "repo_path": repo_path, "mock": True, "async_mode": True},
             headers=headers,
         )
         return Result(time.perf_counter() - started, response.status_code, "")
@@ -43,7 +49,7 @@ async def main_async(args: argparse.Namespace) -> int:
     async with httpx.AsyncClient(timeout=args.timeout) as client:
         async def limited(index: int) -> Result:
             async with semaphore:
-                return await run_request(client, args.base_url, headers, f"load-test-{index}")
+                return await run_request(client, args.base_url, headers, f"load-test-{index}", args.repo_path)
 
         started = time.perf_counter()
         results = await asyncio.gather(*(limited(i) for i in range(args.requests)))
@@ -76,6 +82,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Load test the Loom run API")
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--api-key", required=True)
+    parser.add_argument("--repo-path", required=True, help="Repository path allowed by production ALLOWED_REPO_ROOTS")
     parser.add_argument("--concurrency", type=int, default=10)
     parser.add_argument("--requests", type=int, default=50)
     parser.add_argument("--timeout", type=float, default=30.0)
