@@ -111,7 +111,7 @@ async def run(args: argparse.Namespace) -> int:
             "min_throughput_rps": args.min_throughput,
         },
         "status": "passed" if not failures else "failed",
-        "failures": failures,
+        "failure_reasons": failures,
         "transport_errors": [item.error for item in results if item.status == 0 and item.error][:10],
         "samples": [asdict(item) for item in results[:10]],
     }
