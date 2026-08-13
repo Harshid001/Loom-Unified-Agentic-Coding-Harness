@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.routing import APIRoute
 
 from loom.api import server as server_module
 from loom.business.models import RunRecord
@@ -95,8 +96,9 @@ def install_production_queue(app: FastAPI) -> None:
         raise RuntimeError("Production execution requires REDIS_URL")
 
     for route in app.routes:
-        if getattr(route, "path", None) in {"/api/v1/run", "/api/run"}:
+        if not isinstance(route, APIRoute):
+            continue
+        if route.path in {"/api/v1/run", "/api/run"}:
             route.endpoint = _production_create_run
-            if hasattr(route, "dependant"):
-                route.dependant.call = _production_create_run
+            route.dependant.call = _production_create_run
     app.state.durable_jobs_installed = True
