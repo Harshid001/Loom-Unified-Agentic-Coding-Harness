@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Depends, FastAPI
 
@@ -24,9 +24,16 @@ def install_distributed_health(app: FastAPI, verify_auth: Any) -> None:
             return {"status": "unhealthy", "redis": "unreachable", "queue": "unavailable"}
 
         queue = JobQueue(coordinator)
-        pending = await coordinator.client.xpending(queue.STREAM, queue.GROUP)
+        pending_raw = cast(Any, await coordinator.client.xpending(queue.STREAM, queue.GROUP))
         queue_length = await coordinator.client.xlen(queue.STREAM)
-        consumer_groups = await coordinator.client.xinfo_consumers(queue.STREAM, queue.GROUP)
+        consumer_groups = cast(Any, await coordinator.client.xinfo_consumers(queue.STREAM, queue.GROUP))
+
+        if isinstance(pending_raw, dict):
+            pending_count = int(pending_raw.get("pending", 0))
+        elif isinstance(pending_raw, (list, tuple)) and pending_raw:
+            pending_count = int(pending_raw[0])
+        else:
+            pending_count = 0
 
         active_workers = 0
         now = time.time()
@@ -41,8 +48,8 @@ def install_distributed_health(app: FastAPI, verify_auth: Any) -> None:
             "redis": "ok",
             "queue": {
                 "length": int(queue_length),
-                "pending": int(pending[0]) if pending else 0,
-                "consumers": len(consumer_groups),
+                "pending": pending_count,
+                "consumers": len(consumer_groups) if isinstance(consumer_groups, list) else 0,
                 "active_workers": active_workers,
             },
         }
