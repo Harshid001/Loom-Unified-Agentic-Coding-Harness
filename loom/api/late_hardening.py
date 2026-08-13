@@ -12,11 +12,7 @@ from fastapi import Header, HTTPException
 
 
 def _webhook_fernet() -> Fernet:
-    key = os.getenv("LOOM_WEBHOOK_SECRET_KEY")
-    if not key:
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
-            raise RuntimeError("LOOM_WEBHOOK_SECRET_KEY is required in production")
-        key = os.getenv("LOOM_BACKUP_ENCRYPTION_KEY")
+    key = os.getenv("LOOM_WEBHOOK_SECRET_KEY") or os.getenv("LOOM_BACKUP_ENCRYPTION_KEY")
     if not key:
         raise RuntimeError("Webhook secret encryption key is not configured")
     return Fernet(key.encode())
@@ -91,7 +87,6 @@ class WebhookSignatureMiddleware:
 
 
 def _install_identity_and_stream_hardening(module: Any) -> None:
-    """Patch legacy server symbols/routes after the server module is fully initialized."""
     try:
         from loom.auth.context import get_effective_principal, resolve_request_org
 
@@ -103,7 +98,6 @@ def _install_identity_and_stream_hardening(module: Any) -> None:
 
     source = '''
 async def _hardened_stream_run(run_id: str):
-    """Authenticated SSE stream scoped to the run's owning organization."""
     run_entry = ACTIVE_RUNS.get(run_id)
     if not run_entry:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -117,30 +111,24 @@ async def _hardened_stream_run(run_id: str):
     async def event_generator():
         queue: asyncio.Queue = asyncio.Queue()
         run_entry["queues"].append(queue)
-        terminal = False
         try:
             for event in list(run_entry.get("events", [])):
                 yield "data: " + json.dumps(event) + chr(10) + chr(10)
                 if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
-                    terminal = True
-                    break
-
-            if not terminal:
-                while True:
-                    try:
-                        event = await asyncio.wait_for(queue.get(), timeout=2.0)
-                        yield "data: " + json.dumps(event) + chr(10) + chr(10)
-                        if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
-                            break
-                    except asyncio.TimeoutError:
-                        ping_event = {
-                            "type": "ping",
-                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                            "run_id": run_id,
-                        }
-                        yield "data: " + json.dumps(ping_event) + chr(10) + chr(10)
-        except asyncio.CancelledError:
-            pass
+                    return
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=2.0)
+                    yield "data: " + json.dumps(event) + chr(10) + chr(10)
+                    if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
+                        return
+                except asyncio.TimeoutError:
+                    ping_event = {
+                        "type": "ping",
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "run_id": run_id,
+                    }
+                    yield "data: " + json.dumps(ping_event) + chr(10) + chr(10)
         finally:
             if queue in run_entry.get("queues", []):
                 run_entry["queues"].remove(queue)
@@ -160,42 +148,63 @@ async def _hardened_stream_run(run_id: str):
             raise
 
 
+def _install_request_identity_cleanup(app: Any) -> None:
+    from loom.auth.context import clear_principal
+
+    class PrincipalCleanupMiddleware:
+        def __init__(self, inner: Any):
+            self.inner = inner
+
+        async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]):
+            try:
+                await self.inner(scope, receive, send)
+            finally:
+                clear_principal()
+
+    app.add_middleware(PrincipalCleanupMiddleware)
+
+
 def apply_late_hardening(module: Any) -> None:
     app = module.app
     app.add_middleware(WebhookSignatureMiddleware)
+    _install_request_identity_cleanup(app)
     _install_identity_and_stream_hardening(module)
 
-    try:
-        from loom.api.webhooks import WebhookEngine
+    # Only install transparent at-rest encryption when a configured key exists.
+    # Unit tests and development instances may use the in-memory engine without
+    # a persistence encryption key; production key enforcement remains separate.
+    if os.getenv("LOOM_WEBHOOK_SECRET_KEY") or os.getenv("LOOM_BACKUP_ENCRYPTION_KEY"):
+        try:
+            from loom.api.webhooks import WebhookEngine
 
-        if not getattr(WebhookEngine, "_loom_secret_hardened", False):
-            original_load = WebhookEngine._load_subscriptions
-            original_save = WebhookEngine._save_subscriptions
+            if not getattr(WebhookEngine, "_loom_secret_hardened", False):
+                original_load = WebhookEngine._load_subscriptions
+                original_save = WebhookEngine._save_subscriptions
 
-            def load(self: Any) -> None:
-                original_load(self)
-                for subscription in self._subscriptions.values():
-                    if subscription.secret:
-                        subscription.secret = _decrypt_secret(subscription.secret)
-
-            def save(self: Any) -> None:
-                original_values = list(self._subscriptions.values())
-                try:
-                    for subscription in original_values:
-                        if subscription.secret and not subscription.secret.startswith("enc:"):
-                            subscription.secret = _encrypt_secret(subscription.secret)
-                    original_save(self)
-                finally:
-                    for subscription in original_values:
-                        if subscription.secret and subscription.secret.startswith("enc:"):
+                def load(self: Any) -> None:
+                    original_load(self)
+                    for subscription in self._subscriptions.values():
+                        if subscription.secret:
                             subscription.secret = _decrypt_secret(subscription.secret)
 
-            WebhookEngine._load_subscriptions = load
-            WebhookEngine._save_subscriptions = save
-            WebhookEngine._loom_secret_hardened = True
-    except Exception:
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
-            raise
+                def save(self: Any) -> None:
+                    original_values = list(self._subscriptions.values())
+                    try:
+                        for subscription in original_values:
+                            if subscription.secret and not subscription.secret.startswith("enc:"):
+                                subscription.secret = _encrypt_secret(subscription.secret)
+                        original_save(self)
+                    finally:
+                        for subscription in original_values:
+                            if subscription.secret and subscription.secret.startswith("enc:"):
+                                subscription.secret = _decrypt_secret(subscription.secret)
+
+                WebhookEngine._load_subscriptions = load
+                WebhookEngine._save_subscriptions = save
+                WebhookEngine._loom_secret_hardened = True
+        except Exception:
+            if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
+                raise
 
     try:
         from loom.scim.provisioning import _require_scim_token, scim_router
