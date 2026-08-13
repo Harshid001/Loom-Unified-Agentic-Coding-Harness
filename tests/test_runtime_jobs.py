@@ -1,5 +1,4 @@
 from dataclasses import asdict
-from pathlib import Path
 
 import pytest
 
