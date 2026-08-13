@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from cryptography.fernet import Fernet
 from fastapi import Header, HTTPException
@@ -97,9 +97,10 @@ def apply_late_hardening(module: Any) -> None:
     try:
         from loom.api.webhooks import WebhookEngine
 
-        if not getattr(WebhookEngine, "_loom_secret_hardened", False):
-            original_load = WebhookEngine._load_subscriptions
-            original_save = WebhookEngine._save_subscriptions
+        engine_cls = cast(Any, WebhookEngine)
+        if not getattr(engine_cls, "_loom_secret_hardened", False):
+            original_load = engine_cls._load_subscriptions
+            original_save = engine_cls._save_subscriptions
 
             def load(self: Any) -> None:
                 original_load(self)
@@ -119,9 +120,9 @@ def apply_late_hardening(module: Any) -> None:
                         if subscription.secret and subscription.secret.startswith("enc:"):
                             subscription.secret = _decrypt_secret(subscription.secret)
 
-            WebhookEngine._load_subscriptions = load
-            WebhookEngine._save_subscriptions = save
-            WebhookEngine._loom_secret_hardened = True
+            setattr(engine_cls, "_load_subscriptions", load)
+            setattr(engine_cls, "_save_subscriptions", save)
+            setattr(engine_cls, "_loom_secret_hardened", True)
     except Exception:
         if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
             raise
