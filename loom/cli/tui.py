@@ -65,7 +65,7 @@ def launch_tui() -> None:
                         status = "VERIFIED"
                     elif status == "UNKNOWN":
                         nodes = data.get("nodes", {})
-                        status = "FAILED" if any(n.get("status") == "failed" for n in nodes.values()) else "EXECUTED"
+                        status = "FAILED" if any(node.get("status") == "failed" for node in nodes.values()) else "EXECUTED"
                     issue = (data.get("issue_description") or "")[:28]
                     cost = data.get("shared_data", {}).get("cost_report", {}).get("total_cost_usd", 0.0)
                     table.add_row(run_id, status, issue, f"${float(cost):.4f}", key=run_id)

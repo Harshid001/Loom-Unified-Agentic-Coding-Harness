@@ -1,4 +1,5 @@
 """Runtime adapter for the terminal UI."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,6 +22,7 @@ class RuntimeEvent:
     level: str = "info"
     message: str = ""
     data: dict[str, Any] | None = None
+
 
 class TUIRuntime:
     def __init__(self, emit: Callable[[RuntimeEvent], None]):
