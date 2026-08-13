@@ -54,12 +54,31 @@ jobs:
     environment: ${{ inputs.target_environment }}
     timeout-minutes: 60
     steps:
+      - name: Validate release reference policy
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "${TARGET_ENVIRONMENT}" == "production" && ! "${RELEASE_REF}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "Production releases must use an immutable 40-character commit SHA." >&2
+            exit 1
+          fi
+
       - name: Checkout exact release under test
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.release_ref }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify immutable production checkout
+        if: ${{ inputs.target_environment == 'production' }}
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${RELEASE_REF}"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -86,12 +105,13 @@ jobs:
           import time
 
           metadata = {
-              "schema_version": 1,
+              "schema_version": 2,
               "timestamp": time.time(),
               "environment": os.environ["TARGET_ENVIRONMENT"],
               "requested_ref": os.environ["RELEASE_REF"],
               "resolved_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               "base_url": os.environ["BASE_URL"],
+              "immutable_release_required": os.environ["TARGET_ENVIRONMENT"] == "production",
               "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
               "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
           }
@@ -103,24 +123,24 @@ jobs:
       - name: Deployment preflight
         env:
           LOOM_ENV: ${{ inputs.target_environment }}
-          API_KEY: ${{ secrets.LOOM_API_KEY || secrets.LOOM_PROD_API_KEY }}
-          DASHBOARD_AUTH_TOKEN: ${{ secrets.LOOM_DASHBOARD_AUTH_TOKEN || secrets.LOOM_PROD_DASHBOARD_AUTH_TOKEN }}
-          ALLOWED_REPO_ROOTS: ${{ secrets.LOOM_ALLOWED_REPO_ROOTS || secrets.LOOM_PROD_ALLOWED_REPO_ROOTS }}
-          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL || secrets.LOOM_PROD_DATABASE_URL }}
-          REDIS_URL: ${{ secrets.LOOM_REDIS_URL || secrets.LOOM_PROD_REDIS_URL }}
-          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_FIRECRACKER_WORKER_URL || secrets.LOOM_PROD_FIRECRACKER_WORKER_URL }}
-          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_FIRECRACKER_WORKER_TOKEN || secrets.LOOM_PROD_FIRECRACKER_WORKER_TOKEN }}
-          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY || secrets.LOOM_PROD_BACKUP_ENCRYPTION_KEY }}
+          API_KEY: ${{ secrets.LOOM_API_KEY }}
+          DASHBOARD_AUTH_TOKEN: ${{ secrets.LOOM_DASHBOARD_AUTH_TOKEN }}
+          ALLOWED_REPO_ROOTS: ${{ secrets.LOOM_ALLOWED_REPO_ROOTS }}
+          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.LOOM_REDIS_URL }}
+          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_FIRECRACKER_WORKER_URL }}
+          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_FIRECRACKER_WORKER_TOKEN }}
+          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY }}
           LOOM_TOKEN_ADMIN_ENABLED: "false"
           RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
         run: python scripts/production_preflight.py
 
       - name: Verify PostgreSQL migrations
         env:
-          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL || secrets.LOOM_PROD_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL }}
         run: python scripts/postgres_migrate.py --database-url "${DATABASE_URL}"
 
-      - name: Repository production gate tests
+      - name: Repository deployment gate tests
         run: python -m pytest tests/test_production_preflight.py tests/test_production_gate_tools.py --timeout=60 --timeout_method=thread
 
       - name: API liveness/readiness evidence
@@ -132,7 +152,7 @@ jobs:
         if: ${{ inputs.run_load_test }}
         env:
           BASE_URL: ${{ inputs.base_url }}
-          API_KEY: ${{ secrets.LOOM_API_KEY || secrets.LOOM_PROD_API_KEY }}
+          API_KEY: ${{ secrets.LOOM_API_KEY }}
         run: |
           python scripts/load_slo_gate.py \
             --base-url "${BASE_URL}" \
@@ -149,8 +169,8 @@ jobs:
       - name: Firecracker worker gate
         if: ${{ inputs.run_firecracker_e2e }}
         env:
-          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_FIRECRACKER_WORKER_URL || secrets.LOOM_PROD_FIRECRACKER_WORKER_URL }}
-          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_FIRECRACKER_WORKER_TOKEN || secrets.LOOM_PROD_FIRECRACKER_WORKER_TOKEN }}
+          LOOM_FIRECRACKER_WORKER_URL: ${{ secrets.LOOM_FIRECRACKER_WORKER_URL }}
+          LOOM_FIRECRACKER_WORKER_TOKEN: ${{ secrets.LOOM_FIRECRACKER_WORKER_TOKEN }}
           LOOM_FIRECRACKER_TEST_REPO: ${{ inputs.repo_path }}
         run: bash scripts/e2e_firecracker_validation.sh
 
@@ -158,8 +178,8 @@ jobs:
         if: ${{ inputs.run_restore_drill }}
         env:
           LOOM_ENV: ${{ inputs.target_environment }}
-          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL || secrets.LOOM_PROD_DATABASE_URL }}
-          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY || secrets.LOOM_PROD_BACKUP_ENCRYPTION_KEY }}
+          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL }}
+          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY }}
         run: |
           python scripts/restore_drill.py \
             --backup-dir "$RUNNER_TEMP/loom-backups" \
