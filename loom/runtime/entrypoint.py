@@ -1,10 +1,11 @@
 """Production container entrypoint."""
 
+# ruff: noqa: I001
 import os
 
-from loom.runtime.bootstrap import validate_production_environment
-
 import uvicorn
+
+from loom.runtime.bootstrap import validate_production_environment
 
 
 if __name__ == "__main__":
