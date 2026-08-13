@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 
 from loom.auth.api_tokens import ApiTokenStore
-from loom.auth.context import clear_principal, get_effective_principal
+from loom.auth.context import clear_principal, get_effective_principal, set_principal, AuthenticatedPrincipal
 from loom.business.entitlements import EntitlementService
 from loom.business.models import Membership, MembershipRole, Organization, OrgTier
 from loom.business.rbac import Action, RBACEnforcer
@@ -74,3 +74,12 @@ def test_shared_api_key_uses_fixed_service_identity(monkeypatch):
     assert principal.user_id == "service_user"
     assert principal.org_id == "service_org"
     assert principal.auth_method == "api_key"
+
+
+def test_production_request_org_ignores_forged_header(monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "production")
+    set_principal(AuthenticatedPrincipal(user_id="alice", org_id="org_a", token_id="tok_a", auth_method="api_token"))
+
+    from loom.api.server import _request_org_id
+
+    assert _request_org_id("org_b") == "org_a"
