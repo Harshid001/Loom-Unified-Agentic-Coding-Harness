@@ -9,6 +9,7 @@ import { DagTab } from '../components/DagTab';
 import { DiffTab } from '../components/DiffTab';
 import { AblationsTab } from '../components/AblationsTab';
 import { LiveBox } from '../components/LiveBox';
+import { ApiKeyModal } from '../components/ApiKeyModal';
 
 const AVAILABLE_MODELS = [
   'claude-3-5-sonnet-20241022',
@@ -22,11 +23,13 @@ const AVAILABLE_MODELS = [
 export default function LoomDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'dag' | 'diff' | 'ablations'>('overview');
   const [isLiveBoxOpen, setIsLiveBoxOpen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0]);
   const [newIssue, setNewIssue] = useState('');
   const [repoPath, setRepoPath] = useState('.');
   const [mockMode, setMockMode] = useState(true);
   const [notification, setNotification] = useState<string | null>(null);
+
 
   const {
     selectedRun,

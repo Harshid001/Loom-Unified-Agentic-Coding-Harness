@@ -5,6 +5,7 @@ from typing import Callable, Dict, List, Optional, Set
 from loom.business.audit_log import AuditLogger
 from loom.business.models import AuditAction, OrgTier
 from loom.sandbox.base import BaseSandbox
+from loom.sandbox.docker_sandbox import DockerSandbox
 from loom.sandbox.local_process import LocalProcessSandbox
 
 
@@ -153,7 +154,13 @@ class SandboxTierSelector:
         if tier == SandboxTier.A_GIT_WORKTREE:
             return LocalProcessSandbox(repo_path)
         if tier == SandboxTier.B_DOCKER_CONTAINER:
-            return LocalProcessSandbox(repo_path)
+            cpu = float(ctx.resource_limits.get("cpu_cores", 2))
+            mem = int(ctx.resource_limits.get("memory_mb", 4096))
+            return DockerSandbox(repo_path, cpu_limit=cpu, memory_mb=mem)
+        if tier == SandboxTier.C_FIRECRACKER_MICROVM:
+            cpu = float(ctx.resource_limits.get("cpu_cores", 4))
+            mem = int(ctx.resource_limits.get("memory_mb", 8192))
+            return DockerSandbox(repo_path, cpu_limit=cpu, memory_mb=mem, read_only_root=True)
         return LocalProcessSandbox(repo_path)
 
     def enforce_egress_policy(

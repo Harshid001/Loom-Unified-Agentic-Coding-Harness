@@ -44,6 +44,7 @@ except ImportError:
 
 from loom.adapters.router import ModelRouter
 from loom.api.webhooks import WebhookEventType, get_webhook_engine
+from loom.auth.api_tokens import get_api_token_store
 from loom.business.entitlements import EntitlementService
 from loom.business.models import (
     FeatureKey,
@@ -59,6 +60,7 @@ from loom.memory.store import TieredMemoryStore
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
 from loom.sandbox.local_process import LocalProcessSandbox
+from loom.scim.provisioning import scim_router
 from loom.telemetry.cost_tracker import CostTracker
 from loom.telemetry.tracer import TelemetryTracer
 from loom.verification.bundle import EvidenceBundler
@@ -70,6 +72,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+app.include_router(scim_router)
+
 
 # PRD-001: Hardened CORS configuration
 raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
@@ -158,17 +163,38 @@ async def limit_request_body_size(request: Request, call_next):
     return await call_next(request)
 
 
+def is_dev_mode() -> bool:
+    env = os.getenv("LOOM_ENV", "development").lower()
+    dev_flag = os.getenv("DEV_MODE", "").lower()
+    if env in ("prod", "production") or dev_flag in ("false", "0", "no"):
+        return False
+    return env == "development" or dev_flag in ("true", "1", "yes")
+
+
 def get_required_api_key() -> Optional[str]:
     return os.getenv("API_KEY")
 
 
 async def verify_api_key(x_api_key: Optional[str] = Header(None)):
     required_key = get_required_api_key()
+    if required_key and x_api_key and secrets.compare_digest(x_api_key, required_key):
+        return x_api_key
+
+    if x_api_key:
+        token_store = get_api_token_store()
+        record = token_store.verify(x_api_key)
+        if record is not None:
+            return x_api_key
+
     if not required_key:
-        return x_api_key or "dev_key"
-    if not x_api_key or not secrets.compare_digest(x_api_key, required_key):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing X-API-Key header")
-    return x_api_key
+        if is_dev_mode():
+            return x_api_key or "dev_key"
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API_KEY environment variable is not configured. Production mode requires API_KEY or valid auth token.",
+        )
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing X-API-Key header")
 
 
 ACTIVE_RUNS: Dict[str, Dict[str, Any]] = {}
@@ -179,6 +205,12 @@ def _evidence_dir() -> Path:
     if raw:
         return Path(raw)
     return Path.home() / ".loom" / "evidence"
+
+
+class TokenCreateRequest(BaseModel):
+    user_id: Optional[str] = "dev_user"
+    org_id: Optional[str] = "default"
+    label: Optional[str] = "cli"
 
 
 class RunRequest(BaseModel):
@@ -197,7 +229,64 @@ class ControlRequest(BaseModel):
     snapshot_id: Optional[str] = None
 
 
+@app.post("/api/v1/auth/tokens")
+@app.post("/api/auth/tokens")
+def issue_api_token(req: TokenCreateRequest):
+    token_store = get_api_token_store()
+    record, raw_token = token_store.issue(
+        user_id=req.user_id or "dev_user",
+        org_id=req.org_id or "default",
+        label=req.label or "cli",
+    )
+    return {
+        "token": raw_token,
+        "token_id": record.id,
+        "user_id": record.user_id,
+        "org_id": record.org_id,
+        "label": record.label,
+        "prefix": record.prefix,
+        "created_at": record.created_at,
+    }
+
+
+@app.get("/api/v1/auth/tokens")
+@app.get("/api/auth/tokens")
+def list_api_tokens(
+    user_id: Optional[str] = None,
+    x_api_key: str = Depends(verify_api_key),
+):
+    token_store = get_api_token_store()
+    records = [
+        {
+            "id": r.id,
+            "user_id": r.user_id,
+            "org_id": r.org_id,
+            "label": r.label,
+            "prefix": r.prefix,
+            "active": r.active,
+            "created_at": r.created_at,
+        }
+        for r in token_store._records.values()
+        if r.active and (user_id is None or r.user_id == user_id)
+    ]
+    return records
+
+
+@app.delete("/api/v1/auth/tokens/{token_id}")
+@app.delete("/api/auth/tokens/{token_id}")
+def revoke_api_token(
+    token_id: str,
+    x_api_key: str = Depends(verify_api_key),
+):
+    token_store = get_api_token_store()
+    success = token_store.revoke(token_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Token not found or already revoked")
+    return {"revoked": True, "token_id": token_id}
+
+
 # PRD-015: Prometheus Metrics Endpoint
+
 @app.get("/metrics")
 def metrics():
     if not PROMETHEUS_AVAILABLE:
@@ -376,6 +465,11 @@ async def create_run(
         roots = [Path(r.strip()).resolve() for r in allowed_roots.split(",") if r.strip()]
         if not any(r in raw_path.parents or r == raw_path for r in roots):
             raise HTTPException(status_code=403, detail="repo_path is not within allowed repository roots")
+    elif not is_dev_mode():
+        raise HTTPException(
+            status_code=403,
+            detail="ALLOWED_REPO_ROOTS environment variable must be configured in production mode to restrict repository access.",
+        )
 
     repo_path = str(raw_path)
     run_id = f"run_{uuid.uuid4().hex[:8]}"

@@ -5,6 +5,7 @@ from loom.api.server import app
 from loom.api.webhooks import get_webhook_engine, reset_webhook_engine
 from loom.business.usage_ledger import get_usage_ledger, reset_usage_ledger
 from loom.db.records_store import get_run_record_store, reset_run_record_store
+from loom.scim.provisioning import get_scim_provisioner, reset_scim_provisioner
 
 client = TestClient(app)
 
@@ -19,6 +20,9 @@ def setup_api_key_env(monkeypatch, tmp_path):
     get_webhook_engine(str(tmp_path / "webhooks"))
     reset_run_record_store()
     get_run_record_store(str(tmp_path / "records.db"))
+    reset_scim_provisioner()
+    get_scim_provisioner(str(tmp_path / "scim"))
+
 
 
 def test_liveness_health():
@@ -316,3 +320,109 @@ def test_run_records_endpoint():
 def test_run_records_unknown_run_returns_404():
     res = client.get("/api/v1/runs/nonexistent_records_123/records", headers={"X-API-Key": "test-api-key"})
     assert res.status_code == 404
+
+
+def test_scim_users_unauthenticated_returns_401(monkeypatch):
+    monkeypatch.setenv("SCIM_TOKEN", "scim-test-secret")
+    res = client.get("/scim/v2/Users")
+    assert res.status_code == 401
+
+
+def test_scim_users_disabled_returns_503(monkeypatch):
+    monkeypatch.delenv("SCIM_TOKEN", raising=False)
+    res = client.get("/scim/v2/Users")
+    assert res.status_code == 503
+
+
+
+
+def test_scim_users_crud_authenticated(monkeypatch):
+    monkeypatch.setenv("SCIM_TOKEN", "scim-test-secret")
+    headers = {"Authorization": "Bearer scim-test-secret"}
+
+    # List empty users
+    res = client.get("/scim/v2/Users", headers=headers)
+    assert res.status_code == 200
+    assert "Resources" in res.json()
+
+    # Create user
+    user_payload = {
+        "orgId": "org_scim_test",
+        "urn:ietf:params:scim:schemas:core:2.0:User": {
+            "userName": "bob_builder",
+            "displayName": "Bob Builder",
+            "emails": [{"value": "bob@example.com", "primary": True}],
+            "active": True,
+        },
+    }
+    create_res = client.post("/scim/v2/Users", json=user_payload, headers=headers)
+    assert create_res.status_code == 200
+    created_user = create_res.json()
+    assert created_user["userName"] == "bob_builder"
+    user_id = created_user["id"]
+
+    # Get user by ID
+    get_res = client.get(f"/scim/v2/Users/{user_id}", headers=headers)
+    assert get_res.status_code == 200
+    assert get_res.json()["id"] == user_id
+
+    # Delete user
+    del_res = client.delete(f"/scim/v2/Users/{user_id}", headers=headers)
+    assert del_res.status_code == 204
+
+
+def test_issue_and_authenticate_with_api_token(monkeypatch):
+    monkeypatch.setenv("API_KEY", "env-secret-key")
+
+    # Issue API token
+    issue_res = client.post(
+        "/api/v1/auth/tokens",
+        json={"user_id": "alice_dev", "label": "test-key"},
+    )
+    assert issue_res.status_code == 200
+    issued_data = issue_res.json()
+    token = issued_data["token"]
+    token_id = issued_data["token_id"]
+
+    # Use issued token to authenticate list_runs endpoint
+    runs_res = client.get("/api/v1/runs", headers={"X-API-Key": token})
+    assert runs_res.status_code == 200
+
+    # List tokens
+    list_res = client.get("/api/v1/auth/tokens", headers={"X-API-Key": token})
+    assert list_res.status_code == 200
+    assert any(t["id"] == token_id for t in list_res.json())
+
+    # Revoke token
+    del_res = client.delete(f"/api/v1/auth/tokens/{token_id}", headers={"X-API-Key": "env-secret-key"})
+    assert del_res.status_code == 200
+    assert del_res.json()["revoked"] is True
+
+    # Confirm revoked token can no longer authenticate
+    revoked_res = client.get("/api/v1/runs", headers={"X-API-Key": token})
+    assert revoked_res.status_code == 401
+
+
+def test_production_auth_fail_closed(monkeypatch):
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.setenv("LOOM_ENV", "production")
+
+    res = client.get("/api/v1/runs")
+    assert res.status_code == 401
+    assert "API_KEY environment variable is not configured" in res.json()["detail"]
+
+
+def test_production_allowed_repo_roots_required(monkeypatch):
+    monkeypatch.setenv("LOOM_ENV", "production")
+    monkeypatch.delenv("ALLOWED_REPO_ROOTS", raising=False)
+
+    res = client.post(
+        "/api/v1/run",
+        json={"issue": "test issue", "repo_path": "."},
+        headers={"X-API-Key": "test-api-key"},
+    )
+    assert res.status_code == 403
+    assert "ALLOWED_REPO_ROOTS environment variable must be configured" in res.json()["detail"]
+
+
+

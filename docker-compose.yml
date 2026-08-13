@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - LOOM_ENV=production
+      - API_KEY=${API_KEY}
+      - DATABASE_URL=postgresql://loom:loompass@postgres:5432/loom
+      - ALLOWED_REPO_ROOTS=/workspace
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - evidence_data:/app/.loom/evidence
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=loom
+      - POSTGRES_PASSWORD=loompass
+      - POSTGRES_DB=loom
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loom"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  evidence_data:

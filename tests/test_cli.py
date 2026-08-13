@@ -63,3 +63,36 @@ def test_cli_fix():
         assert "Repository Intelligence Map" in result.stdout
         assert "Active Issue Set" in result.stdout
         assert "Loom Harness Execution Complete" in result.stdout
+
+
+def test_cli_token_commands(tmp_path, monkeypatch):
+    from loom.auth.api_tokens import reset_api_token_store
+
+    reset_api_token_store()
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    # 1. Create token
+    create_res = runner.invoke(app, ["token-create", "--label", "test_cli_key", "--user-id", "cli_user"])
+    assert create_res.exit_code == 0
+    assert "Loom API Key Generated" in create_res.stdout
+
+    # Extract token_id from stdout output (e.g. "Token ID │ tok_...")
+    import re
+
+    match = re.search(r"tok_[a-f0-9]+", create_res.stdout)
+    assert match is not None
+    token_id = match.group(0)
+
+    # 2. List tokens
+    list_res = runner.invoke(app, ["token-list"])
+    assert list_res.exit_code == 0
+    assert "Active Loom API Keys" in list_res.stdout
+    assert "test_cli_key" in list_res.stdout
+
+    # 3. Revoke token
+    revoke_res = runner.invoke(app, ["token-revoke", token_id])
+    assert revoke_res.exit_code == 0
+    assert "Successfully revoked API key" in revoke_res.stdout
+
+
+

@@ -854,7 +854,75 @@ def browser(
     asyncio.run(_run())
 
 
+@app.command(name="token-create")
+def create_token(
+    user_id: str = typer.Option("dev_user", "--user-id", "-u", help="User ID for the API key"),
+    label: str = typer.Option("cli_key", "--label", "-l", help="Label description for the API key"),
+    org_id: str = typer.Option("default", "--org-id", "-o", help="Organization ID"),
+):
+    """Generate and issue a new Loom API key."""
+    from loom.auth.api_tokens import get_api_token_store
+
+    store = get_api_token_store()
+    record, raw_token = store.issue(user_id=user_id, org_id=org_id, label=label)
+
+    table = Table(title="Loom API Key Generated")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Token Secret", f"[bold yellow]{raw_token}[/bold yellow]")
+    table.add_row("Token ID", record.id)
+    table.add_row("User ID", record.user_id)
+    table.add_row("Org ID", record.org_id)
+    table.add_row("Label", record.label)
+    table.add_row("Prefix", record.prefix)
+    console.print(table)
+    console.print("[dim]Copy this token secret now — it will not be shown again.[/dim]")
+
+
+@app.command(name="token-list")
+def list_tokens(
+    user_id: Optional[str] = typer.Option(None, "--user-id", "-u", help="Filter by User ID"),
+):
+    """List active API keys."""
+    from loom.auth.api_tokens import get_api_token_store
+
+    store = get_api_token_store()
+    records = [r for r in store._records.values() if r.active and (user_id is None or r.user_id == user_id)]
+
+    if not records:
+        console.print("[yellow]No active API keys found.[/yellow]")
+        return
+
+    table = Table(title="Active Loom API Keys")
+    table.add_column("ID", style="cyan")
+    table.add_column("Label", style="green")
+    table.add_column("User ID", style="magenta")
+    table.add_column("Prefix", style="yellow")
+    table.add_column("Created At", style="dim")
+
+    for r in records:
+        table.add_row(r.id, r.label, r.user_id, f"{r.prefix}...", str(r.created_at))
+
+    console.print(table)
+
+
+@app.command(name="token-revoke")
+def revoke_token(
+    token_id: str = typer.Argument(..., help="ID of the token to revoke"),
+):
+    """Revoke an existing API key."""
+    from loom.auth.api_tokens import get_api_token_store
+
+    store = get_api_token_store()
+    success = store.revoke(token_id)
+    if success:
+        console.print(f"[bold green]Successfully revoked API key {token_id}.[/bold green]")
+    else:
+        console.print(f"[bold red]Token {token_id} not found or already revoked.[/bold red]")
+
+
 @app.callback(invoke_without_command=True)
+
 def default_callback(ctx: typer.Context):
     """Launch the TUI dashboard when no subcommand is given."""
     if ctx.invoked_subcommand is None:

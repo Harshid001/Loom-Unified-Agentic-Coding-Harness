@@ -1,17 +1,25 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Layers, Cpu, Search, Activity, Settings, ChevronDown } from 'lucide-react';
+import { Layers, Cpu, Search, Activity, Settings, ChevronDown, Key } from 'lucide-react';
 
 interface HeaderProps {
   modelName: string;
   availableModels: string[];
   onModelChange: (model: string) => void;
   onOpenLiveBox: () => void;
+  onOpenApiKeyModal?: () => void;
   runCount: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ modelName, availableModels, onModelChange, onOpenLiveBox, runCount }) => {
+export const Header: React.FC<HeaderProps> = ({
+  modelName,
+  availableModels,
+  onModelChange,
+  onOpenLiveBox,
+  onOpenApiKeyModal,
+  runCount,
+}) => {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
 
   return (
@@ -37,6 +45,17 @@ export const Header: React.FC<HeaderProps> = ({ modelName, availableModels, onMo
           <Activity className="h-3.5 w-3.5 text-emerald-400" />
           <span className="font-mono">{runCount} runs</span>
         </div>
+
+        {onOpenApiKeyModal && (
+          <button
+            onClick={onOpenApiKeyModal}
+            className="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg hover:border-indigo-500/50 hover:text-white transition font-medium"
+            title="Manage API Keys"
+          >
+            <Key className="h-3.5 w-3.5 text-indigo-400" />
+            <span>API Key</span>
+          </button>
+        )}
 
         <div className="relative">
           <button

@@ -1,4 +1,14 @@
 import { NextRequest } from 'next/server';
+import crypto from 'crypto';
+
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 /**
  * Validates request authorization header against DASHBOARD_AUTH_TOKEN environment variable (or default).
@@ -21,7 +31,7 @@ export function validateRequestAuth(req: NextRequest): { isAuthorized: boolean; 
   }
 
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (token !== authToken) {
+  if (!safeCompare(token, authToken)) {
     return { isAuthorized: false, reason: 'Invalid authorization token' };
   }
 
