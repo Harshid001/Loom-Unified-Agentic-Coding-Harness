@@ -7,6 +7,7 @@ import logging
 import os
 
 from loom.runtime.executor import execute_run_job
+from loom.runtime.failure_policy import classify_failure, should_retry
 from loom.runtime.job_queue import JobQueue, RunJob
 
 logger = logging.getLogger("loom.runtime.worker")
@@ -37,9 +38,15 @@ class RunWorker:
                 await self.queue.mark_finished(job, "succeeded")
                 await self.queue.ack(claimed.message_id)
             except Exception as exc:
+                failure_class = classify_failure(exc)
                 next_attempt = job.attempts + 1
-                logger.exception("Run %s failed on attempt %s", job.run_id, next_attempt)
-                if next_attempt >= self.max_attempts:
+                logger.exception(
+                    "Run %s failed on attempt %s with class %s",
+                    job.run_id,
+                    next_attempt,
+                    failure_class.value,
+                )
+                if not should_retry(exc) or next_attempt >= self.max_attempts:
                     await self.queue.mark_finished(job, "dead_letter", str(exc))
                     await self.queue.ack(claimed.message_id)
                 else:
