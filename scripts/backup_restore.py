@@ -34,7 +34,11 @@ def _production() -> bool:
 
 def _loom_home() -> Path:
     override = os.getenv("LOOM_HOME")
-    return Path(override).expanduser() if override else Path.home() / ".loom"
+    if override:
+        return Path(override).expanduser()
+    home_override = os.getenv("HOME")
+    home = Path(home_override) if home_override else Path.home()
+    return home / ".loom"
 
 
 def _database_args(env_url: str) -> tuple[list[str], dict[str, str]]:

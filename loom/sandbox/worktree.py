@@ -8,7 +8,7 @@ from typing import Dict
 
 logger = logging.getLogger("loom.sandbox.worktree")
 
-_LABEL_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+_LABEL_RE = re.compile(r"^[A-Za-z0-9 ._\-()#+,]{1,80}$")
 
 
 def _safe_snapshot_label(label: str) -> str:
@@ -16,6 +16,11 @@ def _safe_snapshot_label(label: str) -> str:
     if not _LABEL_RE.fullmatch(value) or value in {".", ".."}:
         raise ValueError("Invalid snapshot label")
     return value
+
+
+def _snapshot_slug(label: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-")
+    return slug or "snapshot"
 
 
 class WorktreeManager:
@@ -27,7 +32,7 @@ class WorktreeManager:
 
     def create_snapshot(self, label: str) -> str:
         safe_label = _safe_snapshot_label(label)
-        snapshot_id = f"snap_{int(time.time())}_{safe_label}"
+        snapshot_id = f"snap_{int(time.time())}_{_snapshot_slug(safe_label)}"
         snapshot_dir = (self.repo_path / ".loom_snapshots" / snapshot_id).resolve()
         snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
         if snapshots_root not in snapshot_dir.parents:

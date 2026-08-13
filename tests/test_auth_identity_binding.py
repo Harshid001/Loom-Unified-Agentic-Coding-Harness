@@ -87,6 +87,7 @@ def test_production_request_org_ignores_forged_header(monkeypatch):
 def test_production_token_mint_requires_authentication(monkeypatch):
     monkeypatch.setenv("LOOM_ENV", "production")
     monkeypatch.setenv("API_KEY", "server-secret")
+    monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
 
     from fastapi.testclient import TestClient
 
@@ -101,6 +102,7 @@ def test_stream_requires_authentication_and_org_scope(monkeypatch):
     monkeypatch.setenv("API_KEY", "server-secret")
     monkeypatch.setenv("API_KEY_ORG_ID", "org_a")
     monkeypatch.setenv("API_KEY_USER_ID", "alice")
+    monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
 
     from fastapi.testclient import TestClient
 

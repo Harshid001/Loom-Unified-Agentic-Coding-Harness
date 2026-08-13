@@ -533,7 +533,13 @@ class TaskGraph:
 
         # Final status is derived from the verification result and merge decision.
         # MERGED is impossible unless verification passed and auto-merge was selected.
-        if self.run_status in (RunStatus.FAILED, RunStatus.ROLLED_BACK):
+        # Guard-set terminal statuses (commit gateway, rollback) are preserved.
+        if self.run_status in (
+            RunStatus.FAILED,
+            RunStatus.ROLLED_BACK,
+            RunStatus.SECURITY_HOLD,
+            RunStatus.CONFLICT_RESOLUTION,
+        ):
             pass
         elif merge_decision["security_hold"]:
             self.run_status = RunStatus.SECURITY_HOLD
@@ -563,7 +569,7 @@ class TaskGraph:
             self._fire_webhook(WebhookEventType.RUN_FAILED, {"merge_decision": merge_decision})
         elif self.run_status == RunStatus.EVIDENCE_REVIEW:
             self._fire_webhook(
-                WebhookEventType.RUN_FAILED,
+                WebhookEventType.RUN_COMPLETED,
                 {"merge_decision": merge_decision, "reason": "human_review_required"},
             )
         else:

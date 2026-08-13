@@ -442,7 +442,7 @@ async def resolve_org_id(
 
 
 _entitlements = EntitlementService()
-_default_org = Organization(name="Default", tier=OrgTier.SOLO)
+_default_org = Organization(id="default", name="Default", tier=OrgTier.SOLO)
 _entitlements.register_org(_default_org)
 _default_membership = Membership(user_id="dev_user", org_id=_default_org.id, role=MembershipRole.OWNER)
 _entitlements.add_membership(_default_membership)
@@ -620,11 +620,17 @@ async def stream_run_events(run_id: str):
     async def event_generator():
         queue: asyncio.Queue = asyncio.Queue()
         run_entry["queues"].append(queue)
+        done = False
         for event in list(run_entry.get("events", [])):
             yield f"data: {json.dumps(event)}\n\n"
+            if event.get("type") == "status_change" and event.get("data", {}).get("status") in (
+                "completed",
+                "failed",
+            ):
+                done = True
 
         try:
-            while True:
+            while not done:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=2.0)
                     yield f"data: {json.dumps(event)}\n\n"

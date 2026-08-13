@@ -308,6 +308,7 @@ def test_run_records_endpoint():
         "security_hold",
         "conflict_resolution",
         "rolled_back",
+        "evidence_review",
     )
     steps = data["steps"]
     assert len(steps) >= 5
@@ -378,6 +379,7 @@ def test_issue_and_authenticate_with_api_token(monkeypatch):
     issue_res = client.post(
         "/api/v1/auth/tokens",
         json={"user_id": "alice_dev", "label": "test-key"},
+        headers={"X-API-Key": "env-secret-key"},
     )
     assert issue_res.status_code == 200
     issued_data = issue_res.json()
