@@ -2,11 +2,22 @@ from pathlib import Path
 
 import pytest
 
-from loom.business.billing_provider import BillingEvent, BillingProviderError, apply_billing_event, settle_pending_plan_change
-from loom.business.models import BillingStatus, OrgTier, Organization
+from loom.business.billing_provider import (
+    BillingEvent,
+    BillingProviderError,
+    apply_billing_event,
+    settle_pending_plan_change,
+)
+from loom.business.models import BillingStatus, Organization, OrgTier
 from loom.control_plane.tokens import TokenPrincipal, _check_admin
 from loom.memory.vector_sync import MemoryRecord, merge_records
-from loom.runtime.run_state_store import InvalidRunTransition, RunState, RunStateRecord, heartbeat, transition
+from loom.runtime.run_state_store import (
+    InvalidRunTransition,
+    RunState,
+    RunStateRecord,
+    heartbeat,
+    transition,
+)
 from loom.sandbox.firecracker_sandbox import FirecrackerSandbox
 
 
