@@ -8,6 +8,7 @@ rate limiting, SSRF validation, webhook signature validation, and removal of fab
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import hmac
 import ipaddress
@@ -324,6 +325,7 @@ def harden_server_module(module: Any) -> None:
             continue
 
         if path.endswith("/ast"):
+            @functools.wraps(endpoint)  # type: ignore[arg-type]
             async def ast_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
                 run_id = kwargs.get("run_id") or (args[0] if args else "")
                 checkpoint = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
@@ -336,6 +338,7 @@ def harden_server_module(module: Any) -> None:
             route.endpoint = ast_guard
 
         elif path.endswith("/runs"):
+            @functools.wraps(endpoint)  # type: ignore[arg-type]
             async def list_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
                 limit = int(kwargs.get("limit", 50))
                 offset = max(int(kwargs.get("offset", 0)), 0)
@@ -353,6 +356,7 @@ def harden_server_module(module: Any) -> None:
             route.endpoint = list_guard
 
         elif "run/{run_id}" in path or "runs/{run_id}" in path:
+            @functools.wraps(endpoint)  # type: ignore[arg-type]
             async def run_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
                 run_id = kwargs.get("run_id") or (args[0] if args else "")
                 principal = module.get_effective_principal()
@@ -363,6 +367,7 @@ def harden_server_module(module: Any) -> None:
             route.endpoint = run_guard
 
         elif path.endswith("/run"):
+            @functools.wraps(endpoint)  # type: ignore[arg-type]
             async def create_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
                 req = kwargs.get("req")
                 production = os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
@@ -372,6 +377,7 @@ def harden_server_module(module: Any) -> None:
             route.endpoint = create_guard
 
         elif "integrations/slack/notify" in path:
+            @functools.wraps(endpoint)  # type: ignore[arg-type]
             async def slack_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
                 req = kwargs.get("req")
                 if req is not None:

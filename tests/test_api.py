@@ -177,10 +177,14 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
 
     import httpx
 
+    from loom.api.server import _entitlements
     from loom.api.webhooks import WebhookEventType, WebhookSubscription
     from loom.business.audit_log import get_audit_logger, reset_audit_logger
-    from loom.business.models import AuditAction
+    from loom.business.models import AuditAction, Membership, MembershipRole, RunRecord
     from loom.orchestrator.state import OrchestratorState
+
+    _entitlements.add_membership(Membership(user_id="dev_user", org_id="org_ci_report", role=MembershipRole.ADMIN))
+    get_run_record_store().record_run(RunRecord(run_id="run_ci_report", org_id="org_ci_report", issue_text="ci report test"))
 
     monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
     monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
@@ -257,10 +261,14 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
 def test_ci_report_no_rollback_without_ci_failure(tmp_path, monkeypatch):
     from pathlib import Path
 
+    from loom.api.server import _entitlements
+    from loom.business.models import Membership, MembershipRole, RunRecord
     from loom.orchestrator.state import OrchestratorState
 
     monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
     monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
+    _entitlements.add_membership(Membership(user_id="dev_user", org_id="org_ci_report", role=MembershipRole.ADMIN))
+    get_run_record_store().record_run(RunRecord(run_id="run_ci_ok", org_id="org_ci_report", issue_text="ci ok"))
 
     state = OrchestratorState(
         run_id="run_ci_ok",

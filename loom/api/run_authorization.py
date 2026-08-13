@@ -1,18 +1,34 @@
 """Centralized run-level authorization for tenant-isolated API routes."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.dependencies.utils import get_dependant, get_flat_dependant, get_parameterless_sub_dependant
 
-from loom.auth.context import require_authenticated_principal
+from loom.auth.context import AuthenticatedPrincipal, require_authenticated_principal
+from loom.business.audit_log import get_audit_logger
+from loom.business.entitlements import EntitlementService
+from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
-from loom.db.records_store import get_run_record_store
+from loom.db.records_store import RunRecordStore, get_run_record_store
+
+
+@dataclass(frozen=True)
+class AuthorizationContext:
+    principal: AuthenticatedPrincipal
+    entitlements: EntitlementService
+    records_store: RunRecordStore
+
 
 _RUN_ACTIONS: dict[tuple[str, str], Action] = {
     ("GET", "/runs/{run_id}"): Action.VIEW_RUN,
     ("GET", "/runs/{run_id}/evidence"): Action.VIEW_RUN,
     ("GET", "/runs/{run_id}/records"): Action.VIEW_RUN,
+    ("GET", "/runs/{run_id}/ast"): Action.VIEW_RUN,
+    ("POST", "/run/control"): Action.TRIGGER_RUN,
     ("GET", "/stream/{run_id}"): Action.VIEW_RUN,
     ("POST", "/runs/{run_id}/rollback"): Action.ROLLBACK_RUN,
     ("POST", "/rollback/{run_id}"): Action.ROLLBACK_RUN,
@@ -20,15 +36,54 @@ _RUN_ACTIONS: dict[tuple[str, str], Action] = {
 }
 
 
-def require_run_access(run_id: str, action: Action, *, module: Any) -> Any:
+def require_run_access(
+    run_id: str,
+    action: Action,
+    *,
+    context: AuthorizationContext | None = None,
+    module: Any | None = None,
+) -> Any:
     """Resolve a run from the authoritative record store and authorize its tenant."""
-    principal = require_authenticated_principal()
-    run = get_run_record_store().get_run(run_id)
-    if run is None or run.org_id != principal.org_id:
+    if context is None:
+        principal = require_authenticated_principal()
+        entitlements: EntitlementService = (getattr(module, "_entitlements", None) if module else None) or EntitlementService()
+        records_store = get_run_record_store()
+        context = AuthorizationContext(
+            principal=principal,
+            entitlements=entitlements,
+            records_store=records_store,
+        )
+
+    run = context.records_store.get_run(run_id)
+
+    # Fail-closed check: missing run, missing/empty org_id, or cross-tenant access attempt
+    if run is None or not getattr(run, "org_id", None) or run.org_id != context.principal.org_id:
+        if run is not None:
+            # Audit log cross-tenant security violation internally
+            try:
+                get_audit_logger().record(
+                    org_id=context.principal.org_id,
+                    actor_id=context.principal.user_id,
+                    action=AuditAction.RUN_AUTHORIZATION_DENIED,
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
 
-    role = module._entitlements.get_role(principal.org_id, principal.user_id)
-    RBACEnforcer(role).authorize(action, resource=f"org:{run.org_id}")
+    role = context.entitlements.get_role(context.principal.org_id, context.principal.user_id)
+    try:
+        RBACEnforcer(role).authorize(action, resource=f"org:{run.org_id}")
+    except HTTPException:
+        try:
+            get_audit_logger().record(
+                org_id=context.principal.org_id,
+                actor_id=context.principal.user_id,
+                action=AuditAction.RUN_AUTHORIZATION_DENIED,
+            )
+        except Exception:
+            pass
+        raise
+
     return run
 
 
@@ -46,32 +101,34 @@ def _route_action(method: str, path: str) -> Action | None:
 
 
 def install_run_authorization(module: Any) -> None:
-    """Install run authorization as FastAPI dependencies without replacing endpoints."""
+    """Install run authorization as FastAPI dependencies idempotently without replacing endpoints."""
     app = module.app
 
     for route in list(getattr(app, "routes", [])):
         endpoint = getattr(route, "endpoint", None)
         path = getattr(route, "path", "")
         methods = {str(method).upper() for method in (getattr(route, "methods", None) or set())}
-        action = next((_route_action(method, path) for method in methods), None)
+        action = next((_route_action(method, path) for method in methods if _route_action(method, path) is not None), None)
         if endpoint is None or action is None:
             continue
 
         marker = "_loom_run_authorized"
-        if getattr(endpoint, marker, False):
+        if getattr(route, marker, False):
             continue
 
-        async def authorize_run_dependency(
-            run_id: str,
-            _auth: Any = Depends(module.verify_api_key),
-            *,
-            __action: Action = action,
-        ) -> None:
-            require_run_access(run_id, __action, module=module)
+        def _make_auth_dep(target_action: Action):
+            async def authorize_run_dependency(
+                run_id: str,
+                _auth: Any = Depends(module.verify_api_key),
+            ) -> None:
+                require_run_access(run_id, target_action, module=module)
 
-        setattr(authorize_run_dependency, marker, True)
+            return authorize_run_dependency
+
+        auth_dep = _make_auth_dep(action)
+
         dependencies = list(getattr(route, "dependencies", []) or [])
-        dependencies.append(Depends(authorize_run_dependency))
+        dependencies.append(Depends(auth_dep))
         route.dependencies = dependencies
         path_format = getattr(route, "path_format", route.path)
         route.dependant = get_dependant(path=path_format, call=route.endpoint, scope="function")
@@ -82,4 +139,7 @@ def install_run_authorization(module: Any) -> None:
             )
         if hasattr(route, "_flat_dependant"):
             route._flat_dependant = get_flat_dependant(route.dependant)
-        setattr(endpoint, marker, True)
+        if hasattr(route, "get_route_handler"):
+            from fastapi.routing import request_response
+            route.app = request_response(route.get_route_handler())
+        setattr(route, marker, True)
