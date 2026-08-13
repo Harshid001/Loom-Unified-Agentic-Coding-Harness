@@ -51,21 +51,14 @@ RBAC_MATRIX: Dict[MembershipRole, Set[Action]] = {
         Action.INVITE_MEMBERS,
         Action.REMOVE_MEMBERS,
     },
-    MembershipRole.DEVELOPER: {
-        Action.TRIGGER_RUN,
-    },
-    MembershipRole.REVIEWER: {
-        Action.APPROVE_AUTO_MERGE_OVERRIDE,
-    },
+    MembershipRole.DEVELOPER: {Action.TRIGGER_RUN},
+    MembershipRole.REVIEWER: {Action.APPROVE_AUTO_MERGE_OVERRIDE},
     MembershipRole.BILLING_ADMIN: {
         Action.VIEW_BILLING,
         Action.MODIFY_BILLING,
         Action.MODIFY_QUOTA_POLICY,
     },
-    MembershipRole.AUDITOR: {
-        Action.EXPORT_EVIDENCE,
-        Action.EXPORT_AUDIT_LOG,
-    },
+    MembershipRole.AUDITOR: {Action.EXPORT_EVIDENCE, Action.EXPORT_AUDIT_LOG},
 }
 
 
@@ -87,13 +80,7 @@ class RBACEnforcer:
                 ),
             )
 
-        # In production, the credential's organization is authoritative. Explicit
-        # development mode retains legacy resource-header compatibility for local workflows.
-        secure_runtime = not (
-            os.getenv("LOOM_ENV", "production").lower() == "development"
-            and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
-        )
-        if secure_runtime and resource.startswith("org:"):
+        if _secure_runtime() and resource.startswith("org:"):
             resource_org = resource.split(":", 1)[1]
             principal = get_effective_principal()
             if resource_org != principal.org_id:
@@ -109,3 +96,44 @@ class RBACEnforcer:
     @property
     def permissions(self) -> Set[Action]:
         return set(self._permissions)
+
+
+def _secure_runtime() -> bool:
+    return not (
+        os.getenv("LOOM_ENV", "production").lower() == "development"
+        and os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}
+    )
+
+
+def require_permission(user_id: str, org_id: str, role: str | MembershipRole, permission: str) -> bool:
+    """Authorize a legacy permission request while binding identity to the verified credential."""
+    principal = get_effective_principal()
+    if _secure_runtime() and (user_id != principal.user_id or org_id != principal.org_id):
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Identity is not authorized for the authenticated credential",
+        )
+
+    try:
+        role_value = role if isinstance(role, MembershipRole) else MembershipRole(str(role).lower())
+    except ValueError as exc:
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Invalid membership role") from exc
+
+    if permission == "runs:read":
+        return True
+
+    action_map = {
+        "runs:write": Action.TRIGGER_RUN,
+        "runs:trigger": Action.TRIGGER_RUN,
+        "entitlements:modify": Action.MODIFY_ENTITLEMENTS,
+        "quota:modify": Action.MODIFY_QUOTA_POLICY,
+        "sandbox:configure": Action.CONFIGURE_SANDBOX,
+        "evidence:export": Action.EXPORT_EVIDENCE,
+        "audit:export": Action.EXPORT_AUDIT_LOG,
+        "billing:read": Action.VIEW_BILLING,
+        "billing:write": Action.MODIFY_BILLING,
+    }
+    action = action_map.get(permission)
+    if action is None or action not in RBAC_MATRIX.get(role_value, set()):
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=f"Permission denied: {permission}")
+    return True

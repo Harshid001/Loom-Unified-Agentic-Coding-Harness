@@ -1,5 +1,7 @@
 """Policy for commands produced by the agentic verification pipeline."""
 
+from __future__ import annotations
+
 import re
 import shlex
 from pathlib import PurePosixPath

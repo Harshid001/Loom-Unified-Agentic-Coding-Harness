@@ -42,7 +42,9 @@ class VerifierAgent(BaseAgent):
                 validate_verification_commands(test_cmds)
             except CommandPolicyError as exc:
                 state.verification_passed = False
-                verification_output: Dict[str, Any] = {
+                state.shared_data["confidence_score"] = 0.0
+                state.shared_data["verification_decision"] = "security_hold"
+                state.shared_data["verification_output"] = {
                     "overall_success": False,
                     "build_passed": False,
                     "tests_passed": False,
@@ -54,10 +56,7 @@ class VerifierAgent(BaseAgent):
                     "confidence_score": 0.0,
                     "decision": "security_hold",
                 }
-                state.shared_data["confidence_score"] = 0.0
-                state.shared_data["verification_decision"] = "security_hold"
-                state.shared_data["verification_output"] = verification_output
-                return verification_output
+                return state.shared_data["verification_output"]
 
         res, _repro = runner.full_verification_pipeline(
             test_commands=test_cmds,
@@ -73,7 +72,7 @@ class VerifierAgent(BaseAgent):
         state.shared_data["sast_findings"] = [f.model_dump() for f in res.sast_findings]
         state.shared_data["sast_severity"] = res.sast_severity.value
 
-        verifier_output: Dict[str, Any] = {
+        verifier_output = {
             "overall_success": res.overall_success,
             "build_passed": res.build_passed,
             "tests_passed": res.tests_passed,

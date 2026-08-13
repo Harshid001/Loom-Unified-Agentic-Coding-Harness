@@ -197,7 +197,7 @@ class RedisRateLimiter:
         self.limit = limit
         self.window = window_seconds
         self._local: dict[str, RateLimitState] = defaultdict(lambda: RateLimitState(deque()))
-        self._redis = None
+        self._redis: Any | None = None
 
     async def _client(self) -> Any:
         if self._redis is not None:
@@ -245,16 +245,33 @@ class RedisRateLimiter:
 def install_rate_limiter(app: Any) -> None:
     limiter = RedisRateLimiter(int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")))
 
+    def local_allow(key: str) -> bool:
+        now = time.time()
+        state = limiter._local[key]
+        while state.timestamps and now - state.timestamps[0] >= limiter.window:
+            state.timestamps.popleft()
+        if len(state.timestamps) >= limiter.limit:
+            return False
+        state.timestamps.append(now)
+        return True
+
     @app.middleware("http")
     async def production_rate_limit(request: Any, call_next: Callable[..., Awaitable[Any]]) -> Any:
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
         try:
             ip = trusted_client_ip(request.scope)
-            principal = "anonymous"
-            auth = request.headers.get("authorization") or request.headers.get("x-api-key")
-            if auth:
-                principal = auth[-16:]
+            auth = request.headers.get("authorization") or request.headers.get("x-api-key") or request.headers.get("x-dashboard-auth")
+            principal = auth[-16:] if auth else "anonymous"
+
+            # Authentication must remain authoritative: unauthenticated requests are
+            # locally rate-limited, then passed to FastAPI so protected routes return 401/403.
+            if not auth:
+                local_key = f"unauth:{ip}:{request.url.path}"
+                if not local_allow(local_key):
+                    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+                return await call_next(request)
+
             key = f"{ip}:{principal}:{request.url.path}"
             if not await limiter.allow(key):
                 return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})

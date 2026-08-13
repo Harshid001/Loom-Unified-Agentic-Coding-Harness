@@ -24,7 +24,6 @@ def setup_api_key_env(monkeypatch, tmp_path):
     get_scim_provisioner(str(tmp_path / "scim"))
 
 
-
 def test_liveness_health():
     res = client.get("/api/v1/health/liveness")
     assert res.status_code == 200
@@ -304,11 +303,11 @@ def test_run_records_endpoint():
     assert data["run"]["run_id"] == run_id
     assert data["run"]["status"] in (
         "merged",
+        "evidence_review",
         "failed",
         "security_hold",
         "conflict_resolution",
         "rolled_back",
-        "evidence_review",
     )
     steps = data["steps"]
     assert len(steps) >= 5
@@ -333,8 +332,6 @@ def test_scim_users_disabled_returns_503(monkeypatch):
     monkeypatch.delenv("SCIM_TOKEN", raising=False)
     res = client.get("/scim/v2/Users")
     assert res.status_code == 503
-
-
 
 
 def test_scim_users_crud_authenticated(monkeypatch):
@@ -375,7 +372,7 @@ def test_scim_users_crud_authenticated(monkeypatch):
 def test_issue_and_authenticate_with_api_token(monkeypatch):
     monkeypatch.setenv("API_KEY", "env-secret-key")
 
-    # Issue API token
+    # Issue API token through the authenticated shared API key.
     issue_res = client.post(
         "/api/v1/auth/tokens",
         json={"user_id": "alice_dev", "label": "test-key"},
@@ -416,6 +413,7 @@ def test_production_auth_fail_closed(monkeypatch):
 
 def test_production_allowed_repo_roots_required(monkeypatch):
     monkeypatch.setenv("LOOM_ENV", "production")
+    monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
     monkeypatch.delenv("ALLOWED_REPO_ROOTS", raising=False)
 
     res = client.post(
@@ -425,6 +423,5 @@ def test_production_allowed_repo_roots_required(monkeypatch):
     )
     assert res.status_code == 403
     assert "ALLOWED_REPO_ROOTS environment variable must be configured" in res.json()["detail"]
-
 
 

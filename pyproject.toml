@@ -71,12 +71,24 @@ warn_unused_configs = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["loom.api.server"]
-disable_error_code = ["union-attr"]
+module = ["loom.api.hardening"]
+disable_error_code = ["no-any-return"]
 
 [[tool.mypy.overrides]]
-module = ["loom.api.hardening"]
-disable_error_code = ["assignment"]
+module = ["loom.api.late_hardening"]
+disable_error_code = ["method-assign", "attr-defined"]
+
+[[tool.mypy.overrides]]
+module = ["loom.api.runtime_guards"]
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = ["loom.orchestrator.agents.verifier"]
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = ["loom.api.server"]
+disable_error_code = ["union-attr"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

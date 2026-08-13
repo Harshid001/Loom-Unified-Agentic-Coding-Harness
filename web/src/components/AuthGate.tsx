@@ -1,27 +1,31 @@
 "use client";
 
-import { FormEvent, useState } from 'react';
+import type { FormEvent, ReactNode } from 'react';
+import { useState } from 'react';
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
+export function AuthGate({ children }: { children: ReactNode }) {
   const [token, setToken] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function login(event: FormEvent) {
+  async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setChecking(true);
     setError(null);
+
     try {
-      const res = await fetch('/api/auth/login', {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
         throw new Error(body.detail || 'Authentication failed');
       }
+
       setAuthenticated(true);
       setToken('');
     } catch (err) {

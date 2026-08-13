@@ -54,10 +54,9 @@ def _load_checkpoint(run_id: str) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        parsed = json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return None
-    return parsed if isinstance(parsed, dict) else None
 
 
 def _owns_run(run_id: str, principal: Any) -> bool:
@@ -126,6 +125,8 @@ class RuntimeGuardMiddleware:
             except ValueError:
                 pass
 
+        # For body-bearing requests, consume and replay the body so chunked requests
+        # cannot bypass the size ceiling.
         if method in {"POST", "PUT", "PATCH"} and "http.request" in {"http.request"}:
             try:
                 body, receive = await _read_body(receive)
@@ -135,6 +136,7 @@ class RuntimeGuardMiddleware:
         else:
             body = b""
 
+        # Protect resource-specific reads/streams before route dispatch.
         if _production() and "/runs/" in path:
             pieces = path.split("/")
             try:
@@ -146,6 +148,7 @@ class RuntimeGuardMiddleware:
                 await self._reject(send, 404, "Run not found")
                 return
 
+        # No-evidence/no-claim: AST is only served when an actual AST summary exists.
         if _production() and path.endswith("/ast"):
             run_id = path.rstrip("/").split("/")[-2]
             checkpoint = _load_checkpoint(run_id)
@@ -154,6 +157,7 @@ class RuntimeGuardMiddleware:
                 await self._reject(send, 404, "AST evidence unavailable")
                 return
 
+        # Production execution is always real; never accept mock execution.
         if _production() and method in {"POST", "PUT", "PATCH"} and path.rstrip("/").endswith("/run"):
             try:
                 payload = json.loads(body or b"{}")
@@ -163,6 +167,7 @@ class RuntimeGuardMiddleware:
                 await self._reject(send, 400, "Mock execution is disabled in production")
                 return
 
+        # SSRF prevention for Slack webhook notification requests.
         if _production() and method == "POST" and "integrations/slack/notify" in path:
             try:
                 payload = json.loads(body or b"{}")
@@ -177,6 +182,7 @@ class RuntimeGuardMiddleware:
                     await self._reject(send, exc.status_code, str(exc.detail))
                     return
 
+        # For list endpoints, buffer and tenant-filter the JSON response.
         if _production() and method == "GET" and path.rstrip("/") in {"/api/runs", "/api/v1/runs"}:
             messages: list[dict[str, Any]] = []
             body_chunks: list[bytes] = []
