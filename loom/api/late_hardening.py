@@ -177,7 +177,7 @@ def _install_request_identity_cleanup(app: Any) -> None:
 def _patch_terminal_webhooks() -> None:
     try:
         from loom.api.webhooks import WebhookEventType
-        from loom.orchestrator.task_graph import TaskGraph, RunStatus
+        from loom.orchestrator.task_graph import RunStatus, TaskGraph
 
         if getattr(TaskGraph, "_loom_terminal_webhooks_patched", False):
             return
