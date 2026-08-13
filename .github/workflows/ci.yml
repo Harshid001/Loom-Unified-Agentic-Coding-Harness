@@ -97,11 +97,7 @@ jobs:
           export DASHBOARD_AUTH_TOKEN=ci-dashboard-token
           export POSTGRES_PASSWORD=ci-postgres-password
           export SANDBOX_WORKER_TOKEN=ci-worker-token
-          export LOOM_BACKUP_ENCRYPTION_KEY=$(python - <<'PY'
-          from cryptography.fernet import Fernet
-          print(Fernet.generate_key().decode())
-          PY
-          )
+          export LOOM_BACKUP_ENCRYPTION_KEY=$(python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())")
           export DOCKER_GID=$(getent group docker | cut -d: -f3 || echo 999)
           docker compose config --quiet
 
