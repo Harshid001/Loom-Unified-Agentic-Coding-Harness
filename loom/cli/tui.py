@@ -6,7 +6,6 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
 
 from loom.cli.tui_controller import ControllerEvent, TUIRunController
 from loom.repo_intel.mapper import RepoMapper
@@ -15,7 +14,20 @@ _HAS_TEXTUAL = False
 try:
     from textual.app import App, ComposeResult
     from textual.containers import Container, Horizontal, Vertical
-    from textual.widgets import Button, DataTable, Footer, Header, Input, Label, ProgressBar, RichLog, Static, TabbedContent, TabPane
+    from textual.widgets import (
+        Button,
+        DataTable,
+        Footer,
+        Header,
+        Input,
+        Label,
+        ProgressBar,
+        RichLog,
+        Static,
+        TabbedContent,
+        TabPane,
+    )
+
     _HAS_TEXTUAL = True
 except ImportError:
     pass
@@ -53,7 +65,7 @@ def launch_tui() -> None:
                         status = "VERIFIED"
                     elif status == "UNKNOWN":
                         nodes = data.get("nodes", {})
-                        status = "FAILED" if any(n.get("status") == "failed" for n in nodes.values()) else "EXECUTED"
+                        status = "FAILED" if any(node.get("status") == "failed" for node in nodes.values()) else "EXECUTED"
                     issue = (data.get("issue_description") or "")[:28]
                     cost = data.get("shared_data", {}).get("cost_report", {}).get("total_cost_usd", 0.0)
                     table.add_row(run_id, status, issue, f"${float(cost):.4f}", key=run_id)
@@ -182,7 +194,7 @@ def launch_tui() -> None:
                 else:
                     prefix = "     "
                 log.write(prefix + line)
-            files = sum(1 for l in diff_text.splitlines() if l.startswith("+++ "))
+            files = sum(1 for line in diff_text.splitlines() if line.startswith("+++ "))
             self.query_one("#diff-summary", Static).update(f"Files: {files}   Added: +{added}   Removed: -{deleted}")
 
     class ASTDrawer(Vertical):
