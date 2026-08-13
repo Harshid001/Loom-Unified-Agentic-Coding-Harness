@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from cryptography.fernet import Fernet
 from fastapi import Header, HTTPException
@@ -33,7 +34,66 @@ def _decrypt_secret(secret: str | None) -> str | None:
     return _webhook_fernet().decrypt(secret[4:].encode()).decode()
 
 
+class WebhookSignatureMiddleware:
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if not ("/integrations/github/webhook" in path or "/integrations/gitlab/webhook" in path):
+            await self.app(scope, receive, send)
+            return
+
+        headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope.get("headers", [])}
+        chunks: list[bytes] = []
+        more = True
+        while more:
+            message = await receive()
+            if message.get("type") != "http.request":
+                continue
+            chunks.append(message.get("body", b"") or b"")
+            more = bool(message.get("more_body"))
+        body = b"".join(chunks)
+
+        valid = False
+        production = os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
+        if "/github/" in path:
+            secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+            signature = headers.get("x-hub-signature-256", "")
+            if secret:
+                expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+                valid = hmac.compare_digest(signature, expected)
+            else:
+                valid = not production
+        else:
+            secret = os.getenv("GITLAB_WEBHOOK_SECRET")
+            token = headers.get("x-gitlab-token", "")
+            valid = hmac.compare_digest(token, secret) if secret else not production
+
+        if not valid:
+            await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json")]})
+            await send({"type": "http.response.body", "body": b'{"detail":"Invalid webhook signature"}'})
+            return
+
+        sent = False
+
+        async def replay_receive() -> dict[str, Any]:
+            nonlocal sent
+            if sent:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay_receive, send)
+
+
 def apply_late_hardening(module: Any) -> None:
+    app = module.app
+    app.add_middleware(WebhookSignatureMiddleware)
+
     try:
         from loom.api.webhooks import WebhookEngine
 
