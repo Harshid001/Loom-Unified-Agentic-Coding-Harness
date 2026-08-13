@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from loom.sandbox.firecracker_sandbox import FirecrackerSandbox
-from loom.sandbox.factory import sandbox_for_state
 from loom.orchestrator.state import OrchestratorState
+from loom.sandbox.factory import sandbox_for_state
+from loom.sandbox.firecracker_sandbox import FirecrackerSandbox
 
 
 def test_production_tier_a_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
