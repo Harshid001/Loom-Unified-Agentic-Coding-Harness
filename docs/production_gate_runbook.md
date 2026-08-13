@@ -38,13 +38,44 @@ The workflow records the resolved commit SHA in `release-metadata.json`, runs de
 A successful staging run should retain:
 
 - `release-metadata.json`
+- `postgres-health-evidence.json`
+- `redis-health-evidence.json`
 - `release-health-evidence.json`
 - `load-slo-evidence.json`
 - `restore-drill-report.json`
 
-Review the resolved release SHA, API health, error rate, p95/p99 latency, throughput and restore results before approving production.
+Review the resolved release SHA, API health, database/cache health, error rate, p95/p99 latency, throughput and restore results before approving production.
 
-## 4. Production promotion
+## 4. Controlled staging fault-injection
+
+Fault injection is intentionally unavailable in production. The harness requires all three controls:
+
+```text
+LOOM_ENV=staging
+FAULT_INJECTION_ENABLED=true
+--confirm-staging
+```
+
+Use `scripts/fault_injection.py` with an explicit disruption command and an explicit recovery command. The commands should target only the staging topology and should be reviewed before execution.
+
+Example procedure:
+
+```bash
+export LOOM_ENV=staging
+export FAULT_INJECTION_ENABLED=true
+python scripts/fault_injection.py \
+  --scenario redis-outage \
+  --disrupt-command '<staging-only command that stops Redis>' \
+  --recover-command '<staging-only command that starts Redis>' \
+  --confirm-staging \
+  --evidence redis-fault-recovery.json
+```
+
+The script records disruption/recovery exit codes, durations and bounded command output. A failed recovery causes a non-zero exit status. Never pass production credentials, production hostnames or production service names to this utility.
+
+Recommended scenarios are Redis outage, worker crash, API restart and database connectivity interruption. Each scenario should demonstrate that state remains consistent and that the service returns to normal operation within the agreed recovery objective.
+
+## 5. Production promotion
 
 Run the same workflow with:
 
@@ -55,10 +86,10 @@ Run the same workflow with:
 
 The production gate rejects branch names and tags. Do not promote a different commit between staging and production validation.
 
-## 5. Failure handling
+## 6. Failure handling
 
 Any failed gate keeps deployment approval blocked. Investigate the failure and rerun the exact release candidate after remediation. Do not convert a failed deployment gate into a warning by disabling the corresponding workflow input for production.
 
-## 6. What this workflow does not prove
+## 7. What this workflow does not prove
 
 The repository cannot prove target-environment facts by itself. Production approval still requires an actual Linux/KVM Firecracker host, operational off-site backup scheduling, controlled failure injection, canary/rollback testing and browser-level verification against the deployed dashboard.
