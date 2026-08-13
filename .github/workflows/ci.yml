@@ -131,3 +131,4 @@ jobs:
           pip install -e .
           loom version
           loom init --path .
+          python -c "from loom.runtime.job_queue import RunJob; from loom.runtime.worker import RunWorker; print(RunJob.__name__, RunWorker.__name__)"
