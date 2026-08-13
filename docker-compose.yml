@@ -61,6 +61,33 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev
 
+  backup-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "scripts.backup_scheduler"]
+    environment:
+      LOOM_ENV: production
+      DATABASE_URL: postgresql://loom:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/loom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      LOOM_BACKUP_ENCRYPTION_KEY: ${LOOM_BACKUP_ENCRYPTION_KEY:?LOOM_BACKUP_ENCRYPTION_KEY is required}
+      LOOM_EVIDENCE_DIR: /home/loomuser/.loom/evidence
+      LOOM_BACKUP_S3_BUCKET: ${LOOM_BACKUP_S3_BUCKET:?LOOM_BACKUP_S3_BUCKET is required}
+      LOOM_BACKUP_S3_PREFIX: ${LOOM_BACKUP_S3_PREFIX:-loom/backups}
+      LOOM_BACKUP_S3_ENDPOINT_URL: ${LOOM_BACKUP_S3_ENDPOINT_URL:-}
+      LOOM_BACKUP_INTERVAL_SECONDS: ${LOOM_BACKUP_INTERVAL_SECONDS:-3600}
+      LOOM_BACKUP_RETENTION_COUNT: ${LOOM_BACKUP_RETENTION_COUNT:-24}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    volumes:
+      - loom_runtime:/home/loomuser/.loom
+      - evidence_data:/home/loomuser/.loom/evidence
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
