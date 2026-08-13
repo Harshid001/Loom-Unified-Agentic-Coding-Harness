@@ -43,6 +43,14 @@ def _route_action(method: str, path: str) -> Action | None:
     return _RUN_ACTIONS.get((method.upper(), path))
 
 
+def _set_route_callable(route: Any, endpoint: Any) -> None:
+    """Update both FastAPI's public endpoint and its resolved dependency callable."""
+    route.endpoint = endpoint
+    dependant = getattr(route, "dependant", None)
+    if dependant is not None:
+        dependant.call = endpoint
+
+
 def install_run_authorization(module: Any) -> None:
     """Wrap only run-scoped routes after FastAPI routes have been registered."""
     app = module.app
@@ -71,7 +79,7 @@ def install_run_authorization(module: Any) -> None:
             guarded_async.__name__ = getattr(endpoint, "__name__", "guarded_run_endpoint")
             guarded_async.__doc__ = getattr(endpoint, "__doc__", None)
             guarded_async._loom_run_authorized = True
-            route.endpoint = guarded_async
+            _set_route_callable(route, guarded_async)
         else:
             def guarded_sync(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
                 run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
@@ -81,7 +89,7 @@ def install_run_authorization(module: Any) -> None:
             guarded_sync.__name__ = getattr(endpoint, "__name__", "guarded_run_endpoint")
             guarded_sync.__doc__ = getattr(endpoint, "__doc__", None)
             guarded_sync._loom_run_authorized = True
-            route.endpoint = guarded_sync
+            _set_route_callable(route, guarded_sync)
 
 
 def _normalize_path(path: str) -> str:
