@@ -12,6 +12,8 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException
 
+MAX_BODY_BYTES = 10 * 1024 * 1024
+
 
 def _production() -> bool:
     return os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
@@ -33,13 +35,12 @@ def _principal_from_headers(headers: dict[str, str]) -> Any | None:
     configured = os.getenv("API_KEY")
     try:
         from loom.auth.api_tokens import get_api_token_store
-        from loom.auth.context import get_service_principal
+        from loom.auth.context import get_effective_principal, get_service_principal
 
         if configured and token == configured:
             return get_service_principal()
         record = get_api_token_store().verify(token)
         if record is not None:
-            from loom.auth.context import get_effective_principal
             return get_effective_principal()
     except Exception:
         return None
@@ -71,12 +72,18 @@ def _owns_run(run_id: str, principal: Any) -> bool:
 
 async def _read_body(receive: Callable[..., Awaitable[dict[str, Any]]]) -> tuple[bytes, Callable[..., Awaitable[dict[str, Any]]]]:
     chunks: list[bytes] = []
+    total = 0
     more = True
     while more:
         message = await receive()
         if message.get("type") != "http.request":
-            return b"".join(chunks), _replay_receive(b"".join(chunks), message)
-        chunks.append(message.get("body", b"") or b"")
+            body = b"".join(chunks)
+            return body, _replay_receive(body, message)
+        chunk = message.get("body", b"") or b""
+        total += len(chunk)
+        if total > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Request payload exceeds maximum allowed size")
+        chunks.append(chunk)
         more = bool(message.get("more_body"))
     body = b"".join(chunks)
     return body, _replay_receive(body)
@@ -109,6 +116,26 @@ class RuntimeGuardMiddleware:
         method = scope.get("method", "GET").upper()
         principal = _principal_from_headers(headers) if _production() else None
 
+        content_length = headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_BODY_BYTES:
+                    await self._reject(send, 413, "Request payload exceeds maximum allowed size")
+                    return
+            except ValueError:
+                pass
+
+        # For body-bearing requests, consume and replay the body so chunked requests
+        # cannot bypass the size ceiling.
+        if method in {"POST", "PUT", "PATCH"} and "http.request" in {"http.request"}:
+            try:
+                body, receive = await _read_body(receive)
+            except HTTPException as exc:
+                await self._reject(send, exc.status_code, str(exc.detail))
+                return
+        else:
+            body = b""
+
         # Protect resource-specific reads/streams before route dispatch.
         if _production() and "/runs/" in path:
             pieces = path.split("/")
@@ -132,7 +159,6 @@ class RuntimeGuardMiddleware:
 
         # Production execution is always real; never accept mock execution.
         if _production() and method in {"POST", "PUT", "PATCH"} and path.rstrip("/").endswith("/run"):
-            body, replay = await _read_body(receive)
             try:
                 payload = json.loads(body or b"{}")
             except json.JSONDecodeError:
@@ -140,11 +166,9 @@ class RuntimeGuardMiddleware:
             if bool(payload.get("mock")):
                 await self._reject(send, 400, "Mock execution is disabled in production")
                 return
-            receive = replay
 
         # SSRF prevention for Slack webhook notification requests.
         if _production() and method == "POST" and "integrations/slack/notify" in path:
-            body, replay = await _read_body(receive)
             try:
                 payload = json.loads(body or b"{}")
             except json.JSONDecodeError:
@@ -157,7 +181,6 @@ class RuntimeGuardMiddleware:
                 except HTTPException as exc:
                     await self._reject(send, exc.status_code, str(exc.detail))
                     return
-            receive = replay
 
         # For list endpoints, buffer and tenant-filter the JSON response.
         if _production() and method == "GET" and path.rstrip("/") in {"/api/runs", "/api/v1/runs"}:
