@@ -7,7 +7,7 @@ import os
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from typing import Any, Optional
+from typing import Optional
 
 from loom.infra.distributed import RedisCoordinator
 
