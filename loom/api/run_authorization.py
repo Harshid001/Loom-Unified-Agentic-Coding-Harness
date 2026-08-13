@@ -75,7 +75,7 @@ def install_run_authorization(module: Any) -> None:
 
             guarded_async.__name__ = getattr(endpoint, "__name__", "guarded_run_endpoint")
             guarded_async.__doc__ = getattr(endpoint, "__doc__", None)
-            guarded_async._loom_run_authorized = True
+            setattr(guarded_async, "_loom_run_authorized", True)
             _set_route_callable(route, guarded_async)
         else:
             def guarded_sync(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
@@ -85,7 +85,7 @@ def install_run_authorization(module: Any) -> None:
 
             guarded_sync.__name__ = getattr(endpoint, "__name__", "guarded_run_endpoint")
             guarded_sync.__doc__ = getattr(endpoint, "__doc__", None)
-            guarded_sync._loom_run_authorized = True
+            setattr(guarded_sync, "_loom_run_authorized", True)
             _set_route_callable(route, guarded_sync)
 
 
