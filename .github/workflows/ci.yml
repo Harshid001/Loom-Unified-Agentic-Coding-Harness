@@ -2,9 +2,21 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master, prod-hardening-90plus, production-readiness/remediation ]
+    branches:
+      - main
+      - master
+      - prod-hardening-90plus
+      - production-readiness/remediation
+      - 'agent/**'
   pull_request:
     branches: [ main, master ]
+
+concurrency:
+  group: loom-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   backend-tests:
