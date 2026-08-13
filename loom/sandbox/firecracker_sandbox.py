@@ -8,7 +8,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
 import httpx
 
@@ -30,7 +30,7 @@ class FirecrackerSandbox(BaseSandbox):
 
     def __init__(self, repo_path: str, worker_url: Optional[str] = None, worker_token: Optional[str] = None):
         self.repo_path = Path(repo_path).resolve()
-        self.worker_url = (worker_url or os.getenv("LOOM_FIRECRACKER_WORKER_URL", "")).rstrip("/")
+        self.worker_url: str = worker_url or os.getenv("LOOM_FIRECRACKER_WORKER_URL") or ""
         self.worker_token = worker_token or os.getenv("LOOM_FIRECRACKER_WORKER_TOKEN") or os.getenv("SANDBOX_WORKER_TOKEN")
         self.worktree_manager = WorktreeManager(str(self.repo_path))
 
@@ -49,15 +49,15 @@ class FirecrackerSandbox(BaseSandbox):
         if not self.repo_path.is_dir():
             raise FirecrackerUnavailable(f"Repository path does not exist: {self.repo_path}")
 
-    def _remote(self, payload: dict[str, object]) -> CommandResult:
+    def _remote(self, payload: dict[str, object], timeout: int) -> CommandResult:
         assert self.worker_url and self.worker_token
         started = time.time()
         headers = {"Authorization": f"Bearer {self.worker_token}"}
         try:
-            with httpx.Client(timeout=float(payload["timeout"]) + 15) as client:
+            with httpx.Client(timeout=float(timeout) + 15) as client:
                 response = client.post(f"{self.worker_url}/execute", json=payload, headers=headers)
                 response.raise_for_status()
-                data = cast(dict[str, object], response.json())
+                data = cast(dict[str, Any], response.json())
             return CommandResult(
                 command=str(data.get("command", "")),
                 exit_code=int(data.get("exit_code", 1)),
@@ -68,7 +68,7 @@ class FirecrackerSandbox(BaseSandbox):
             )
         except httpx.HTTPError as exc:
             return CommandResult(
-                command=" ".join(str(x) for x in payload.get("argv", [])),
+                command=" ".join(str(x) for x in cast(List[str], payload.get("argv", []))),
                 exit_code=125,
                 stdout="",
                 stderr=f"Firecracker worker request failed: {exc}",
@@ -76,7 +76,7 @@ class FirecrackerSandbox(BaseSandbox):
                 timed_out=False,
             )
 
-    def _dev_harness(self, payload: dict[str, object], command: str) -> CommandResult:
+    def _dev_harness(self, payload: dict[str, object], command: str, timeout: int) -> CommandResult:
         worker = os.getenv("LOOM_FIRECRACKER_WORKER_CMD")
         if not worker:
             raise FirecrackerUnavailable("Firecracker worker command is not configured")
@@ -87,12 +87,12 @@ class FirecrackerSandbox(BaseSandbox):
                 input=json.dumps(payload),
                 text=True,
                 capture_output=True,
-                timeout=int(payload["timeout"]) + 10,
+                timeout=timeout + 10,
                 check=False,
             )
             if result.returncode != 0:
                 return CommandResult(command=command, exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr, duration_seconds=round(time.time() - started, 3))
-            data = json.loads(result.stdout or "{}")
+            data = cast(dict[str, Any], json.loads(result.stdout or "{}"))
             return CommandResult(
                 command=str(data.get("command", command)),
                 exit_code=int(data.get("exit_code", 1)),
@@ -130,8 +130,8 @@ class FirecrackerSandbox(BaseSandbox):
             "network": False,
         }
         if self.worker_url:
-            return self._remote(payload)
-        return self._dev_harness(payload, command)
+            return self._remote(payload, timeout)
+        return self._dev_harness(payload, command, timeout)
 
     def create_snapshot(self, label: str) -> str:
         return self.worktree_manager.create_snapshot(label)
