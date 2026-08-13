@@ -174,6 +174,32 @@ def _install_request_identity_cleanup(app: Any) -> None:
     app.add_middleware(PrincipalCleanupMiddleware)
 
 
+def _normalize_default_org(module: Any) -> None:
+    """Make the bootstrap organization use the canonical public id ``default``."""
+    try:
+        entitlements = module._entitlements
+        default_org = module._default_org
+        old_id = default_org.id
+        if old_id == "default":
+            return
+
+        memberships = entitlements.memberships_dict().pop(old_id, {})
+        entitlements._orgs.pop(old_id, None)
+        default_org.id = "default"
+        entitlements.register_org(default_org)
+
+        for membership in memberships.values():
+            membership.org_id = "default"
+            entitlements.add_membership(membership)
+
+        default_membership = getattr(module, "_default_membership", None)
+        if default_membership is not None:
+            default_membership.org_id = "default"
+    except Exception:
+        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
+            raise
+
+
 def _patch_terminal_webhooks() -> None:
     try:
         from loom.api.webhooks import WebhookEventType
@@ -210,6 +236,7 @@ def _patch_terminal_webhooks() -> None:
 
 def apply_late_hardening(module: Any) -> None:
     app = module.app
+    _normalize_default_org(module)
     app.add_middleware(WebhookSignatureMiddleware)
     _install_request_identity_cleanup(app)
     _install_identity_and_stream_hardening(module)
