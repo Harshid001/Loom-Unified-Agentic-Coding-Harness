@@ -34,7 +34,7 @@ class ClaimedJob:
 
 
 class JobQueue:
-    """Redis Streams queue with consumer groups and explicit job state."""
+    """Redis Streams queue with consumer groups, leases, and crash recovery."""
 
     STREAM = "loom:jobs"
     GROUP = "loom-workers"
@@ -61,15 +61,36 @@ class JobQueue:
         await self.ensure_group()
         payload = json.dumps(asdict(job), separators=(",", ":"), default=str)
         await self.coordinator.client.xadd(self.STREAM, {"job": payload}, maxlen=100000, approximate=True)
+        key = f"loom:job:{job.job_id}"
         await self.coordinator.client.hset(
-            f"loom:job:{job.job_id}",
+            key,
             mapping={"run_id": job.run_id, "status": "queued", "attempts": job.attempts, "created_at": job.created_at},
         )
-        await self.coordinator.client.expire(f"loom:job:{job.job_id}", 7 * 24 * 3600)
+        await self.coordinator.client.expire(key, 7 * 24 * 3600)
         return job.job_id
 
     async def claim(self, block_ms: int = 5000) -> Optional[ClaimedJob]:
         await self.ensure_group()
+        # Recover work abandoned by a dead worker before reading new messages.
+        try:
+            claimed = await self.coordinator.client.xautoclaim(
+                self.STREAM,
+                self.GROUP,
+                self.consumer,
+                min_idle_time=self.visibility_timeout * 1000,
+                start_id="0-0",
+                count=1,
+            )
+            messages = claimed[1] if isinstance(claimed, (list, tuple)) and len(claimed) > 1 else []
+            if messages:
+                message_id, values = messages[0]
+                raw = values.get("job")
+                if raw:
+                    return ClaimedJob(job=RunJob(**json.loads(raw)), message_id=message_id)
+        except Exception:
+            # Compatibility with Redis versions/client implementations without XAUTOCLAIM.
+            pass
+
         result = await self.coordinator.client.xreadgroup(
             self.GROUP,
             self.consumer,
@@ -85,9 +106,7 @@ class JobQueue:
         if not raw:
             await self.ack(message_id)
             return None
-        data: dict[str, Any] = json.loads(raw)
-        job = RunJob(**data)
-        return ClaimedJob(job=job, message_id=message_id)
+        return ClaimedJob(job=RunJob(**json.loads(raw)), message_id=message_id)
 
     async def ack(self, message_id: str) -> None:
         await self.coordinator.client.xack(self.STREAM, self.GROUP, message_id)
