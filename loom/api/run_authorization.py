@@ -1,13 +1,14 @@
 """Centralized run-level authorization for tenant-isolated API routes."""
 
-import asyncio
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
+from fastapi.dependencies.utils import get_dependant
 
 from loom.auth.context import require_authenticated_principal
 from loom.business.rbac import Action, RBACEnforcer
 from loom.db.records_store import get_run_record_store
+
 
 _RUN_ACTIONS: dict[tuple[str, str], Action] = {
     ("GET", "/runs/{run_id}"): Action.VIEW_RUN,
@@ -21,11 +22,7 @@ _RUN_ACTIONS: dict[tuple[str, str], Action] = {
 
 
 def require_run_access(run_id: str, action: Action, *, module: Any) -> Any:
-    """Resolve a run from the authoritative record store and authorize its tenant.
-
-    Missing and cross-tenant runs deliberately collapse to the same 404 response so
-    an authenticated principal cannot use a run id as a tenant-discovery oracle.
-    """
+    """Resolve a run from the authoritative record store and authorize its tenant."""
     principal = require_authenticated_principal()
     run = get_run_record_store().get_run(run_id)
     if run is None or run.org_id != principal.org_id:
@@ -36,64 +33,46 @@ def require_run_access(run_id: str, action: Action, *, module: Any) -> Any:
     return run
 
 
-def _route_action(method: str, path: str) -> Action | None:
-    return _RUN_ACTIONS.get((method.upper(), path))
-
-
-def _set_route_callable(route: Any, endpoint: Any) -> None:
-    """Update both FastAPI's public endpoint and its resolved dependency callable."""
-    route.endpoint = endpoint
-    dependant = getattr(route, "dependant", None)
-    if dependant is not None:
-        dependant.call = endpoint
-
-
-def install_run_authorization(module: Any) -> None:
-    """Wrap only run-scoped routes after FastAPI routes have been registered."""
-    app = module.app
-
-    for route in list(getattr(app, "routes", [])):
-        path = getattr(route, "path", "")
-        endpoint = getattr(route, "endpoint", None)
-        methods = {str(method).upper() for method in (getattr(route, "methods", None) or set())}
-        action = None
-        for method in methods:
-            candidate = _route_action(method, _normalize_path(path))
-            if candidate is not None:
-                action = candidate
-                break
-        if endpoint is None or action is None:
-            continue
-        if getattr(endpoint, "_loom_run_authorized", False):
-            continue
-
-        if asyncio.iscoroutinefunction(endpoint):
-            async def guarded_async(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
-                run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
-                require_run_access(run_id, __action, module=module)
-                return await __endpoint(*args, **kwargs)
-
-            guarded_async.__name__ = getattr(endpoint, "__name__", "guarded_run_endpoint")
-            guarded_async.__doc__ = getattr(endpoint, "__doc__", None)
-            setattr(guarded_async, "_loom_run_authorized", True)
-            _set_route_callable(route, guarded_async)
-        else:
-            def guarded_sync(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
-                run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
-                require_run_access(run_id, __action, module=module)
-                return __endpoint(*args, **kwargs)
-
-            guarded_sync.__name__ = getattr(endpoint, "__name__", "guarded_run_endpoint")
-            guarded_sync.__doc__ = getattr(endpoint, "__doc__", None)
-            setattr(guarded_sync, "_loom_run_authorized", True)
-            _set_route_callable(route, guarded_sync)
-
-
 def _normalize_path(path: str) -> str:
-    """Map versioned and legacy route prefixes onto one authorization table."""
     normalized = path
     for prefix in ("/api/v1", "/api", "/v1"):
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix) :]
             break
     return normalized or "/"
+
+
+def _route_action(method: str, path: str) -> Action | None:
+    return _RUN_ACTIONS.get((method.upper(), _normalize_path(path)))
+
+
+def install_run_authorization(module: Any) -> None:
+    """Install run authorization as FastAPI dependencies without replacing endpoints."""
+    app = module.app
+
+    for route in list(getattr(app, "routes", [])):
+        endpoint = getattr(route, "endpoint", None)
+        path = getattr(route, "path", "")
+        methods = {str(method).upper() for method in (getattr(route, "methods", None) or set())}
+        action = next((_route_action(method, path) for method in methods), None)
+        if endpoint is None or action is None:
+            continue
+
+        marker = "_loom_run_authorized"
+        if getattr(endpoint, marker, False):
+            continue
+
+        async def authorize_run_dependency(
+            run_id: str,
+            _auth: Any = Depends(module.verify_api_key),
+            *,
+            __action: Action = action,
+        ) -> None:
+            require_run_access(run_id, __action, module=module)
+
+        setattr(authorize_run_dependency, marker, True)
+        dependencies = list(getattr(route, "dependencies", []) or [])
+        dependencies.append(Depends(authorize_run_dependency))
+        route.dependencies = dependencies
+        route.dependant = get_dependant(path=route.path, call=route.endpoint, dependencies=dependencies)
+        setattr(endpoint, marker, True)
