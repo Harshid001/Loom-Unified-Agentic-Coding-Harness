@@ -26,9 +26,8 @@ class _FakeStore:
 
 
 class _FakeModule:
-    def __init__(self, role: MembershipRole, store: _FakeStore):
+    def __init__(self, role: MembershipRole):
         self._entitlements = _FakeEntitlements(role)
-        self._store = store
 
 
 def _set_principal(org_id: str = "org-a", user_id: str = "user-a") -> None:
@@ -36,8 +35,8 @@ def _set_principal(org_id: str = "org-a", user_id: str = "user-a") -> None:
     set_principal(AuthenticatedPrincipal(user_id=user_id, org_id=org_id, auth_method="test"))
 
 
-def _run(org_id: str = "org-a") -> RunRecord:
-    return RunRecord(run_id="run-1", org_id=org_id, issue_text="test")
+def _run(run_id: str, org_id: str) -> RunRecord:
+    return RunRecord(run_id=run_id, org_id=org_id, issue_text="test")
 
 
 def test_route_action_matrix() -> None:
@@ -51,21 +50,21 @@ def test_route_action_matrix() -> None:
 
 def test_org_a_can_access_own_run(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_principal("org-a", "user-a")
-    store = _FakeStore({"run-a": _run("org-a")})
+    store = _FakeStore({"run-a": _run("run-a", "org-a")})
     monkeypatch.setattr("loom.api.run_authorization.get_run_record_store", lambda: store)
 
-    run = require_run_access("run-a", Action.VIEW_RUN, module=_FakeModule(MembershipRole.DEVELOPER, store))
+    run = require_run_access("run-a", Action.VIEW_RUN, module=_FakeModule(MembershipRole.DEVELOPER))
     assert run.org_id == "org-a"
     clear_principal()
 
 
 def test_org_a_cannot_access_org_b_run(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_principal("org-a", "user-a")
-    store = _FakeStore({"run-b": _run("org-b")})
+    store = _FakeStore({"run-b": _run("run-b", "org-b")})
     monkeypatch.setattr("loom.api.run_authorization.get_run_record_store", lambda: store)
 
     with pytest.raises(HTTPException) as exc:
-        require_run_access("run-b", Action.VIEW_RUN, module=_FakeModule(MembershipRole.DEVELOPER, store))
+        require_run_access("run-b", Action.VIEW_RUN, module=_FakeModule(MembershipRole.DEVELOPER))
     assert exc.value.status_code == 404
     clear_principal()
 
@@ -73,31 +72,31 @@ def test_org_a_cannot_access_org_b_run(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize("action", [Action.VIEW_RUN, Action.ROLLBACK_RUN, Action.REPORT_CI])
 def test_org_a_cannot_access_org_b_for_any_run_action(action: Action, monkeypatch: pytest.MonkeyPatch) -> None:
     _set_principal("org-a", "user-a")
-    store = _FakeStore({"run-b": _run("org-b")})
+    store = _FakeStore({"run-b": _run("run-b", "org-b")})
     monkeypatch.setattr("loom.api.run_authorization.get_run_record_store", lambda: store)
 
     with pytest.raises(HTTPException) as exc:
-        require_run_access("run-b", action, module=_FakeModule(MembershipRole.OWNER, store))
+        require_run_access("run-b", action, module=_FakeModule(MembershipRole.OWNER))
     assert exc.value.status_code == 404
     clear_principal()
 
 
 def test_unauthenticated_is_401(monkeypatch: pytest.MonkeyPatch) -> None:
     clear_principal()
-    store = _FakeStore({"run-a": _run("org-a")})
+    store = _FakeStore({"run-a": _run("run-a", "org-a")})
     monkeypatch.setattr("loom.api.run_authorization.get_run_record_store", lambda: store)
 
     with pytest.raises(HTTPException) as exc:
-        require_run_access("run-a", Action.VIEW_RUN, module=_FakeModule(MembershipRole.OWNER, store))
+        require_run_access("run-a", Action.VIEW_RUN, module=_FakeModule(MembershipRole.OWNER))
     assert exc.value.status_code == 401
 
 
 def test_insufficient_role_is_403(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_principal("org-a", "user-a")
-    store = _FakeStore({"run-a": _run("org-a")})
+    store = _FakeStore({"run-a": _run("run-a", "org-a")})
     monkeypatch.setattr("loom.api.run_authorization.get_run_record_store", lambda: store)
 
     with pytest.raises(HTTPException) as exc:
-        require_run_access("run-a", Action.ROLLBACK_RUN, module=_FakeModule(MembershipRole.DEVELOPER, store))
+        require_run_access("run-a", Action.ROLLBACK_RUN, module=_FakeModule(MembershipRole.DEVELOPER))
     assert exc.value.status_code == 403
     clear_principal()
