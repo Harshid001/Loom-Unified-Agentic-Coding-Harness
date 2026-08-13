@@ -38,18 +38,17 @@ def test_probe_until_healthy_retries_until_success(monkeypatch):
 
 
 def test_recovery_probe_requires_health_success(monkeypatch):
-    responses = iter(
-        [
-            (0, "disrupted", 0.01),
-            (0, "restarted", 0.01),
-            (1, "still unhealthy", 0.01),
-            (1, "still unhealthy", 0.01),
-        ]
-    )
-    monkeypatch.setattr(
-        "scripts.recovery_probe.run_command",
-        lambda command, timeout: next(responses),
-    )
+    calls = {"count": 0}
+
+    def fake_run_command(command, timeout):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return 0, "disrupted", 0.01
+        if calls["count"] == 2:
+            return 0, "restarted", 0.01
+        return 1, "still unhealthy", 0.01
+
+    monkeypatch.setattr("scripts.recovery_probe.run_command", fake_run_command)
     monkeypatch.setattr("scripts.recovery_probe.time.sleep", lambda _: None)
 
     evidence = execute(
@@ -66,6 +65,7 @@ def test_recovery_probe_requires_health_success(monkeypatch):
     assert evidence["status"] == "failed"
     assert evidence["recovery"]["exit_code"] == 0
     assert evidence["health_probe"]["passed"] is False
+    assert calls["count"] >= 3
 
 
 def test_recovery_probe_passes_only_after_health_recovers(monkeypatch):
