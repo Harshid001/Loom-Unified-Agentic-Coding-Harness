@@ -85,6 +85,26 @@ jobs:
       - name: Build production container
         run: docker build --pull --tag loom-ci:${{ github.sha }} .
 
+  compose-validation:
+    name: Production Compose Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate production Compose file
+        run: |
+          export API_KEY=ci-api-key
+          export DASHBOARD_AUTH_TOKEN=ci-dashboard-token
+          export POSTGRES_PASSWORD=ci-postgres-password
+          export SANDBOX_WORKER_TOKEN=ci-worker-token
+          export LOOM_BACKUP_ENCRYPTION_KEY=$(python - <<'PY'
+          from cryptography.fernet import Fernet
+          print(Fernet.generate_key().decode())
+          PY
+          )
+          export DOCKER_GID=$(getent group docker | cut -d: -f3 || echo 999)
+          docker compose config --quiet
+
   native-smoke:
     name: Native Server & CLI Smoke Test
     runs-on: ubuntu-latest
