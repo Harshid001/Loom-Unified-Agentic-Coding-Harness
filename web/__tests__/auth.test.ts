@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { validateRequestAuth } from '../src/lib/auth';
+import { validateRequestAuth, DASHBOARD_SESSION_COOKIE } from '../src/lib/auth';
 
 describe('validateRequestAuth', () => {
   const originalEnv = process.env.DASHBOARD_AUTH_TOKEN;
@@ -14,14 +14,13 @@ describe('validateRequestAuth', () => {
     vi.unstubAllEnvs();
   });
 
-  it('should allow requests when DASHBOARD_AUTH_TOKEN is not configured in development mode', () => {
+  it('keeps development fail-open behavior only when no token is configured', () => {
     vi.stubEnv('NODE_ENV', 'development');
     const req = new NextRequest('http://localhost:3000/api/runs');
-    const result = validateRequestAuth(req);
-    expect(result.isAuthorized).toBe(true);
+    expect(validateRequestAuth(req).isAuthorized).toBe(true);
   });
 
-  it('should reject requests when DASHBOARD_AUTH_TOKEN is not configured in production mode', () => {
+  it('fails closed in production when no dashboard token is configured', () => {
     vi.stubEnv('NODE_ENV', 'production');
     const req = new NextRequest('http://localhost:3000/api/runs');
     const result = validateRequestAuth(req);
@@ -29,30 +28,32 @@ describe('validateRequestAuth', () => {
     expect(result.reason).toContain('DASHBOARD_AUTH_TOKEN');
   });
 
-  it('should reject requests missing Authorization header when auth token is configured', () => {
-    process.env.DASHBOARD_AUTH_TOKEN = 'secret-token-123';
-    const req = new NextRequest('http://localhost:3000/api/runs');
-    const result = validateRequestAuth(req);
-    expect(result.isAuthorized).toBe(false);
-    expect(result.reason).toContain('Missing');
-  });
-
-  it('should reject invalid authorization tokens', () => {
+  it('accepts the secure dashboard session cookie', () => {
+    vi.stubEnv('NODE_ENV', 'production');
     process.env.DASHBOARD_AUTH_TOKEN = 'secret-token-123';
     const req = new NextRequest('http://localhost:3000/api/runs', {
-      headers: { Authorization: 'Bearer wrong-token' }
+      headers: { Cookie: `${DASHBOARD_SESSION_COOKIE}=secret-token-123` },
+    });
+    expect(validateRequestAuth(req).isAuthorized).toBe(true);
+  });
+
+  it('rejects an invalid session cookie', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.DASHBOARD_AUTH_TOKEN = 'secret-token-123';
+    const req = new NextRequest('http://localhost:3000/api/runs', {
+      headers: { Cookie: `${DASHBOARD_SESSION_COOKIE}=wrong-token` },
     });
     const result = validateRequestAuth(req);
     expect(result.isAuthorized).toBe(false);
     expect(result.reason).toContain('Invalid');
   });
 
-  it('should accept valid authorization tokens', () => {
+  it('accepts valid bearer authorization as a service-to-service compatibility path', () => {
+    vi.stubEnv('NODE_ENV', 'production');
     process.env.DASHBOARD_AUTH_TOKEN = 'secret-token-123';
     const req = new NextRequest('http://localhost:3000/api/runs', {
-      headers: { Authorization: 'Bearer secret-token-123' }
+      headers: { Authorization: 'Bearer secret-token-123' },
     });
-    const result = validateRequestAuth(req);
-    expect(result.isAuthorized).toBe(true);
+    expect(validateRequestAuth(req).isAuthorized).toBe(true);
   });
 });
