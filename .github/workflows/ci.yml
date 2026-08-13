@@ -39,6 +39,18 @@ jobs:
           pip install -e ".[dev]"
           pip install "ruff==0.16.2" "mypy==2.3.0" "pip-audit==2.10.1" "redis==8.1.0"
       - name: Production configuration schema preflight
+        env:
+          LOOM_ENV: production
+          API_KEY: ci-placeholder-api-key
+          DASHBOARD_AUTH_TOKEN: ci-placeholder-dashboard-token
+          ALLOWED_REPO_ROOTS: /workspace
+          DATABASE_URL: postgresql://loom:ci-placeholder@localhost:5432/loom
+          REDIS_URL: redis://localhost:6379/0
+          LOOM_FIRECRACKER_WORKER_URL: http://firecracker-worker:8101
+          LOOM_FIRECRACKER_WORKER_TOKEN: ci-placeholder-firecracker-token
+          LOOM_BACKUP_ENCRYPTION_KEY: ci-placeholder-backup-key
+          LOOM_TOKEN_ADMIN_ENABLED: "false"
+          RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
         run: python scripts/production_preflight.py --allow-placeholders
       - name: Dependency Vulnerability Audit
         run: pip-audit --skip-editable
