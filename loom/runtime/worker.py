@@ -7,7 +7,7 @@ import logging
 import os
 
 from loom.runtime.executor import execute_run_job
-from loom.runtime.job_queue import JobQueue
+from loom.runtime.job_queue import JobQueue, RunJob
 
 logger = logging.getLogger("loom.runtime.worker")
 
@@ -45,7 +45,7 @@ class RunWorker:
                 else:
                     await self.queue.mark_finished(job, "retrying", str(exc))
                     await self.queue.enqueue(
-                        type(job)(
+                        RunJob(
                             job_id=job.job_id,
                             run_id=job.run_id,
                             org_id=job.org_id,
@@ -67,10 +67,10 @@ class RunWorker:
                 except asyncio.CancelledError:
                     pass
 
-    async def _heartbeat(self, job: object) -> None:
+    async def _heartbeat(self, job: RunJob) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_seconds)
-            await self.queue.heartbeat(job)  # type: ignore[arg-type]
+            await self.queue.heartbeat(job)
 
 
 async def main() -> None:
