@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Loom API & Sandbox Worker
+# Multi-stage Dockerfile for Loom API and Sandbox Worker
 FROM python:3.11-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     postgresql-client \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
