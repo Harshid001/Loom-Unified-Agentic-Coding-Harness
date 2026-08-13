@@ -50,7 +50,12 @@ class APIHardeningMiddleware:
         self.app = app
         self.max_body_bytes = max_body_bytes
 
-    async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]):
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[..., Awaitable[dict[str, Any]]],
+        send: Callable[..., Awaitable[None]],
+    ):
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
@@ -136,11 +141,10 @@ def valid_api_credential(headers: dict[str, str]) -> bool:
     if configured and token == configured:
         return True
     try:
-        from secrets import compare_digest
         from loom.auth.api_tokens import get_api_token_store
 
         record = get_api_token_store().verify(token)
-        return record is not None and compare_digest(record.token_hash, record.token_hash)
+        return record is not None
     except Exception:
         return False
 
@@ -170,6 +174,7 @@ class RedisRateLimiter:
             return None
         try:
             from redis.asyncio import from_url
+
             self._redis = from_url(url, decode_responses=True)
             return self._redis
         except Exception:
@@ -188,7 +193,10 @@ class RedisRateLimiter:
                 if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
                     raise ProductionSecurityError("Rate-limit Redis is unavailable in production")
 
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"} and os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() not in {"1", "true", "yes"}:
+        if (
+            os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
+            and os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() not in {"1", "true", "yes"}
+        ):
             raise ProductionSecurityError("REDIS_URL is required for production rate limiting")
 
         now = time.time()
@@ -245,6 +253,7 @@ def validate_webhook_url(url: str, allow_hosts: set[str] | None = None) -> None:
 def run_org_id(run_id: str) -> str | None:
     try:
         from loom.orchestrator.state import OrchestratorState
+
         state = OrchestratorState.load_checkpoint(run_id)
         if state is None:
             return None
