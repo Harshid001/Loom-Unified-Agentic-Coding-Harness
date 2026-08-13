@@ -11,7 +11,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, cast
 
 import httpx
 
@@ -81,10 +81,34 @@ class FirecrackerVM:
         self._write_meta({"pid": self.process.pid})
         try:
             self._wait_api()
-            self._put("/boot-source", {"kernel_image_path": str(self.config.kernel), "boot_args": "console=ttyS0 reboot=k panic=1 pci=off"})
-            self._put("/drives/rootfs", {"drive_id": "rootfs", "path_on_host": str(rootfs), "is_root_device": True, "is_read_only": False})
-            self._put("/machine-config", {"vcpu_count": self.config.vcpus, "mem_size_mib": self.config.memory_mb, "smt": False})
-            self._put("/vsock", {"vsock_id": "guest-vsock", "guest_cid": self.config.guest_cid, "uds_path": str(self.vsock_socket)})
+            self._put(
+                "/boot-source",
+                {
+                    "kernel_image_path": str(self.config.kernel),
+                    "boot_args": "console=ttyS0 reboot=k panic=1 pci=off",
+                },
+            )
+            self._put(
+                "/drives/rootfs",
+                {
+                    "drive_id": "rootfs",
+                    "path_on_host": str(rootfs),
+                    "is_root_device": True,
+                    "is_read_only": False,
+                },
+            )
+            self._put(
+                "/machine-config",
+                {"vcpu_count": self.config.vcpus, "mem_size_mib": self.config.memory_mb, "smt": False},
+            )
+            self._put(
+                "/vsock",
+                {
+                    "vsock_id": "guest-vsock",
+                    "guest_cid": self.config.guest_cid,
+                    "uds_path": str(self.vsock_socket),
+                },
+            )
             self._put("/actions", {"action_type": "InstanceStart"})
             self._wait_guest()
         except Exception:
@@ -139,16 +163,23 @@ class FirecrackerVM:
             if not part:
                 raise FirecrackerVMError("guest closed connection")
             data.extend(part)
-        return json.loads(bytes(data).decode())
+        return cast(dict[str, Any], json.loads(bytes(data).decode()))
 
     def sync_repository(self, repo: Path) -> None:
         archive = self.dir / "repo.tar"
-        subprocess.run(["tar", "--format=posix", "--exclude=.loom_snapshots", "-cf", str(archive), "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["tar", "--format=posix", "--exclude=.loom_snapshots", "-cf", str(archive), "."],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as sock:
             sock.settimeout(60)
             sock.connect((self.config.guest_cid, self.config.guest_port))
-            sock.sendall((json.dumps({"op": "sync_workspace", "size": archive.stat().st_size, "sha256": digest}) + "\n").encode())
+            sock.sendall(
+                (json.dumps({"op": "sync_workspace", "size": archive.stat().st_size, "sha256": digest}) + "\n").encode()
+            )
             with archive.open("rb") as src:
                 for chunk in iter(lambda: src.read(65536), b""):
                     sock.sendall(chunk)
