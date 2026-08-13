@@ -13,6 +13,7 @@ from loom.db.records_store import get_run_record_store
 from loom.infra.distributed import RedisCoordinator
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
+from loom.runtime.budget import RunBudget, cost_from_summary, tokens_from_summary
 from loom.telemetry.cost_tracker import CostTracker
 from loom.telemetry.tracer import TelemetryTracer
 from loom.verification.bundle import EvidenceBundler
@@ -55,6 +56,7 @@ async def execute_run_job(job: Any) -> OrchestratorState:
     records_store = get_run_record_store()
     evidence = EvidenceBundler()
     coordinator = RedisCoordinator()
+    budget = RunBudget.from_env()
 
     async def publish(event_type: str, step_name: str, data: dict[str, Any]) -> None:
         if coordinator.enabled:
@@ -107,6 +109,41 @@ async def execute_run_job(job: Any) -> OrchestratorState:
 
     resume_from = _resume_node(state, graph.NODE_SEQUENCE) if checkpoint is not None else None
     started = time.time()
+    stop_watchdog = asyncio.Event()
+
+    async def enforce_budget() -> None:
+        """Poll hard runtime limits and cancel between agent boundaries when exceeded."""
+        while not stop_watchdog.is_set():
+            await asyncio.sleep(1.0)
+            elapsed = time.time() - started
+            summary = cost_tracker.get_summary()
+            cost = cost_from_summary(summary)
+            tokens = tokens_from_summary(summary)
+
+            reason: Optional[str] = None
+            if budget.max_duration_seconds is not None and elapsed >= budget.max_duration_seconds:
+                reason = f"maximum run duration of {budget.max_duration_seconds:.0f}s exceeded"
+            elif budget.max_cost_usd is not None and cost >= budget.max_cost_usd:
+                reason = f"maximum run cost of ${budget.max_cost_usd:.4f} exceeded"
+            elif budget.max_tokens is not None and tokens >= budget.max_tokens:
+                reason = f"maximum run token budget of {budget.max_tokens} exceeded"
+
+            if reason:
+                state.shared_data["budget_exceeded"] = True
+                state.shared_data["budget_exceeded_reason"] = reason
+                graph.cancel()
+                await publish("budget_exceeded", "pipeline", {"reason": reason})
+                return
+
+    watchdog = asyncio.create_task(enforce_budget()) if any(
+        value is not None
+        for value in (
+            budget.max_duration_seconds,
+            budget.max_cost_usd,
+            budget.max_tokens,
+        )
+    ) else None
+
     try:
         if coordinator.enabled:
             await coordinator.update_run_status(job.run_id, "running")
@@ -114,6 +151,8 @@ async def execute_run_job(job: Any) -> OrchestratorState:
         final_state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
         if coordinator.enabled:
             status = "completed" if final_state.verification_passed else "failed"
+            if final_state.shared_data.get("budget_exceeded"):
+                status = "failed"
             await coordinator.update_run_status(job.run_id, status)
         return final_state
     except Exception as exc:
@@ -124,4 +163,11 @@ async def execute_run_job(job: Any) -> OrchestratorState:
             await coordinator.update_run_status(job.run_id, "failed")
         raise
     finally:
+        stop_watchdog.set()
+        if watchdog is not None:
+            watchdog.cancel()
+            try:
+                await watchdog
+            except asyncio.CancelledError:
+                pass
         await coordinator.close()
