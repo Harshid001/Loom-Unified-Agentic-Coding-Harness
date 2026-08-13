@@ -8,7 +8,7 @@ from typing import Dict
 
 logger = logging.getLogger("loom.sandbox.worktree")
 
-_LABEL_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+_LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$")
 
 
 def _safe_snapshot_label(label: str) -> str:
