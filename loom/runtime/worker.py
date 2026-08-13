@@ -26,7 +26,7 @@ class RunWorker:
             raise RuntimeError("Production worker requires REDIS_URL")
         await self.queue.ensure_group()
         logger.info("Loom worker %s started", self.queue.consumer)
-        worker_heartbeat = asyncio.create_task(self._worker_heartbeat())
+        idle_heartbeat = asyncio.create_task(self._idle_heartbeat())
         try:
             while not self._stop:
                 claimed = await self.queue.claim(self.poll_ms)
@@ -76,16 +76,16 @@ class RunWorker:
                     except asyncio.CancelledError:
                         pass
         finally:
-            worker_heartbeat.cancel()
+            idle_heartbeat.cancel()
             try:
-                await worker_heartbeat
+                await idle_heartbeat
             except asyncio.CancelledError:
                 pass
 
-    async def _worker_heartbeat(self) -> None:
+    async def _idle_heartbeat(self) -> None:
         while True:
             await self.queue.mark_worker_heartbeat()
-            await asyncio.sleep(max(5, self.heartbeat_seconds))
+            await asyncio.sleep(self.heartbeat_seconds)
 
     async def _heartbeat(self, job: RunJob) -> None:
         while True:
