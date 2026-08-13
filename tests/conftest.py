@@ -1,4 +1,4 @@
-import os
+import os  # noqa: I001
 
 
 # Tests exercise the development behavior explicitly; production/runtime code
