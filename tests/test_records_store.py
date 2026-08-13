@@ -134,7 +134,7 @@ async def test_task_graph_writes_records(tmp_path):
     run = records_store.get_run(run_id)
     assert run is not None
     assert run.org_id == "org_graph"
-    assert run.status == "merged"
+    assert run.status == "evidence_review"
     assert run.model_sequence and run.model_sequence[0] == "mock"
     assert run.cost_usd > 0
 
