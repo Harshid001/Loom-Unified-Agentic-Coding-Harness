@@ -190,7 +190,13 @@ def _patch_terminal_webhooks() -> None:
             original_fire(self, event_type, data)
 
         def record(self: Any) -> None:
-            if self.state.shared_data.get("verification_decision") == "security_hold":
+            commit_gateway = self.state.shared_data.get("commit_gateway") or {}
+            security_hold = (
+                self.state.shared_data.get("verification_decision") == "security_hold"
+                or commit_gateway.get("status") == "security_hold"
+                or bool(self.state.shared_data.get("security_hold_reason"))
+            )
+            if security_hold:
                 self.run_status = RunStatus.SECURITY_HOLD
             original_record(self)
 
