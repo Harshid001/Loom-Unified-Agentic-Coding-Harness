@@ -2,9 +2,9 @@
 
 import os
 
-import uvicorn
-
 from loom.runtime.bootstrap import validate_production_environment
+
+import uvicorn
 
 
 if __name__ == "__main__":
