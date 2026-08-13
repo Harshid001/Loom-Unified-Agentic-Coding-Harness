@@ -24,10 +24,12 @@ class _ServerLoader(importlib.abc.Loader):
         self._wrapped.exec_module(module)
         from loom.api.hardening import harden_server_module
         from loom.api.late_hardening import apply_late_hardening
+        from loom.api.run_authorization import install_run_authorization
         from loom.api.runtime_guards import install_runtime_guards
 
         harden_server_module(module)
         apply_late_hardening(module)
+        install_run_authorization(module)
         install_runtime_guards(module.app)
         for finder in list(sys.meta_path):
             if isinstance(finder, _ServerFinder):
