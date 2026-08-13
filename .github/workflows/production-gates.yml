@@ -3,6 +3,19 @@ name: Production Release Gates
 on:
   workflow_dispatch:
     inputs:
+      target_environment:
+        description: "Protected deployment environment whose secrets and approval rules should be used"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      release_ref:
+        description: "Exact branch, tag or commit SHA to validate"
+        required: true
+        default: main
+        type: string
       base_url:
         description: "Staging/production API base URL"
         required: true
@@ -30,24 +43,62 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: loom-production-gates-${{ inputs.target_environment }}-${{ inputs.release_ref }}
+  cancel-in-progress: false
+
 jobs:
   release-gates:
     name: Production Deployment Gates
     runs-on: ubuntu-latest
-    environment: production
-    timeout-minutes: 45
+    environment: ${{ inputs.target_environment }}
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact release under test
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_ref }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install runtime tooling
         run: |
           python -m pip install --upgrade pip setuptools
           pip install -e .
           pip install pytest pytest-timeout httpx
+
+      - name: Record release metadata
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
+          RELEASE_REF: ${{ inputs.release_ref }}
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import time
+
+          metadata = {
+              "schema_version": 1,
+              "timestamp": time.time(),
+              "environment": os.environ["TARGET_ENVIRONMENT"],
+              "requested_ref": os.environ["RELEASE_REF"],
+              "resolved_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "base_url": os.environ["BASE_URL"],
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+              "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+          }
+          with open("release-metadata.json", "w", encoding="utf-8") as handle:
+              json.dump(metadata, handle, indent=2)
+          print(json.dumps(metadata, indent=2))
+          PY
 
       - name: Production preflight
         env:
@@ -63,6 +114,11 @@ jobs:
           LOOM_TOKEN_ADMIN_ENABLED: "false"
           RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
         run: python scripts/production_preflight.py
+
+      - name: Verify PostgreSQL migrations
+        env:
+          DATABASE_URL: ${{ secrets.LOOM_PROD_DATABASE_URL }}
+        run: python scripts/postgres_migrate.py --database-url "${DATABASE_URL}"
 
       - name: Repository production gate tests
         run: python -m pytest tests/test_production_preflight.py tests/test_production_gate_tools.py --timeout=60 --timeout_method=thread
@@ -87,7 +143,8 @@ jobs:
             --max-error-rate 0.01 \
             --max-p95 0.50 \
             --max-p99 1.00 \
-            --min-throughput 10
+            --min-throughput 10 \
+            --evidence load-slo-evidence.json
 
       - name: Firecracker worker gate
         if: ${{ inputs.run_firecracker_e2e }}
@@ -102,7 +159,7 @@ jobs:
         env:
           LOOM_ENV: production
           DATABASE_URL: ${{ secrets.LOOM_PROD_DATABASE_URL }}
-          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_PROD_BACKUP_ENCRYPTION_KEY }}
+          LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY || secrets.LOOM_PROD_BACKUP_ENCRYPTION_KEY }}
         run: |
           python scripts/restore_drill.py \
             --backup-dir "$RUNNER_TEMP/loom-backups" \
@@ -115,6 +172,8 @@ jobs:
         with:
           name: production-release-gates-${{ github.run_id }}
           path: |
+            release-metadata.json
             release-health-evidence.json
+            load-slo-evidence.json
             ${{ runner.temp }}/restore-drill-report.json
           if-no-files-found: ignore
