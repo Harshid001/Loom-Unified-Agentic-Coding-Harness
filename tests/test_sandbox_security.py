@@ -1,27 +1,23 @@
+from pathlib import Path
+
 import pytest
 
-from loom.orchestrator.state import OrchestratorState
-from loom.sandbox.docker_sandbox import DockerSandbox
+from loom.sandbox.firecracker_sandbox import FirecrackerSandbox
 from loom.sandbox.factory import sandbox_for_state
+from loom.orchestrator.state import OrchestratorState
 
 
-def _state(tier: str) -> OrchestratorState:
-    state = OrchestratorState(run_id=f"run_{tier}", repo_path="/tmp/repo", issue_description="sandbox")
-    state.shared_data["sandbox_tier"] = tier
-    return state
-
-
-def test_production_tier_a_is_rejected(monkeypatch):
+def test_production_tier_a_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LOOM_ENV", "production")
-    with pytest.raises(RuntimeError, match="Tier A"):
-        sandbox_for_state(_state("A"))
+    state = OrchestratorState(run_id="run_test", repo_path=str(tmp_path), issue_description="test")
+    state.shared_data["sandbox_tier"] = "A"
+    with pytest.raises(RuntimeError, match="Production Tier A host execution is disabled"):
+        sandbox_for_state(state)
 
 
-def test_docker_network_is_disabled_by_default(tmp_path):
-    monkeypatch = pytest.MonkeyPatch()
-    try:
-        monkeypatch.setenv("LOOM_ENV", "production")
-        sandbox = DockerSandbox(str(tmp_path))
-        assert sandbox.allow_network is False
-    finally:
-        monkeypatch.undo()
+def test_firecracker_fails_closed_without_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("LOOM_FIRECRACKER_WORKER_URL", raising=False)
+    monkeypatch.delenv("LOOM_FIRECRACKER_WORKER_CMD", raising=False)
+    result = FirecrackerSandbox(str(tmp_path)).run_command(["python", "-c", "print(1)"])
+    assert result.exit_code == 125
+    assert "LOOM_FIRECRACKER_WORKER_URL" in result.stderr
