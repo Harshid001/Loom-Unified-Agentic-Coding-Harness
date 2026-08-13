@@ -2,12 +2,14 @@
 
 This module is intentionally isolated from business logic. It protects the existing
 API surface with tenant guards, production-only policy checks, request limits,
-rate limiting, SSRF validation, and removal of fabricated telemetry.
+rate limiting, SSRF validation, webhook signature validation, and removal of fabricated telemetry.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import ipaddress
 import os
 import socket
@@ -147,6 +149,29 @@ def valid_api_credential(headers: dict[str, str]) -> bool:
         return record is not None
     except Exception:
         return False
+
+
+def verify_webhook_signature(path: str, headers: dict[str, str], body: bytes) -> bool:
+    """Verify inbound GitHub or GitLab webhook signatures with constant-time comparison."""
+    normalized_path = path.lower()
+    normalized_headers = {str(key).lower(): str(value) for key, value in headers.items()}
+
+    if "/github/" in normalized_path and normalized_path.endswith("/webhook"):
+        secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+        signature = normalized_headers.get("x-hub-signature-256", "")
+        if not secret or not signature.startswith("sha256="):
+            return False
+        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(signature, expected)
+
+    if "/gitlab/" in normalized_path and normalized_path.endswith("/webhook"):
+        secret = os.getenv("GITLAB_WEBHOOK_SECRET")
+        token = normalized_headers.get("x-gitlab-token", "")
+        if not secret:
+            return False
+        return hmac.compare_digest(token, secret)
+
+    return False
 
 
 def trusted_client_ip(scope: dict[str, Any]) -> str:
