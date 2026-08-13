@@ -6,7 +6,7 @@ import json
 import os
 import time
 import uuid
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
 from loom.infra.distributed import RedisCoordinator
@@ -27,8 +27,14 @@ class RunJob:
     attempts: int = 0
 
 
+@dataclass(frozen=True)
+class ClaimedJob:
+    job: RunJob
+    message_id: str
+
+
 class JobQueue:
-    """Redis Streams queue with consumer-group delivery and explicit leases."""
+    """Redis Streams queue with consumer groups and explicit job state."""
 
     STREAM = "loom:jobs"
     GROUP = "loom-workers"
@@ -55,9 +61,14 @@ class JobQueue:
         await self.ensure_group()
         payload = json.dumps(asdict(job), separators=(",", ":"), default=str)
         await self.coordinator.client.xadd(self.STREAM, {"job": payload}, maxlen=100000, approximate=True)
+        await self.coordinator.client.hset(
+            f"loom:job:{job.job_id}",
+            mapping={"run_id": job.run_id, "status": "queued", "attempts": job.attempts, "created_at": job.created_at},
+        )
+        await self.coordinator.client.expire(f"loom:job:{job.job_id}", 7 * 24 * 3600)
         return job.job_id
 
-    async def claim(self, block_ms: int = 5000) -> Optional[RunJob]:
+    async def claim(self, block_ms: int = 5000) -> Optional[ClaimedJob]:
         await self.ensure_group()
         result = await self.coordinator.client.xreadgroup(
             self.GROUP,
@@ -75,21 +86,16 @@ class JobQueue:
             await self.ack(message_id)
             return None
         data: dict[str, Any] = json.loads(raw)
-        return RunJob(**data)
+        job = RunJob(**data)
+        return ClaimedJob(job=job, message_id=message_id)
 
     async def ack(self, message_id: str) -> None:
         await self.coordinator.client.xack(self.STREAM, self.GROUP, message_id)
 
-    async def heartbeat(self, job_id: str) -> None:
-        await self.coordinator.client.hset(
-            f"loom:job:{job_id}",
-            mapping={"heartbeat_at": time.time(), "worker_id": self.consumer},
-        )
-        await self.coordinator.client.expire(f"loom:job:{job_id}", self.visibility_timeout)
-
     async def mark_started(self, job: RunJob) -> None:
+        key = f"loom:job:{job.job_id}"
         await self.coordinator.client.hset(
-            f"loom:job:{job.job_id}",
+            key,
             mapping={
                 "run_id": job.run_id,
                 "status": "running",
@@ -98,4 +104,17 @@ class JobQueue:
                 "started_at": time.time(),
             },
         )
-        await self.coordinator.client.expire(f"loom:job:{job.job_id}", self.visibility_timeout)
+        await self.coordinator.client.expire(key, self.visibility_timeout)
+
+    async def heartbeat(self, job: RunJob) -> None:
+        key = f"loom:job:{job.job_id}"
+        await self.coordinator.client.hset(key, "heartbeat_at", time.time())
+        await self.coordinator.client.expire(key, self.visibility_timeout)
+
+    async def mark_finished(self, job: RunJob, status: str, error: str = "") -> None:
+        key = f"loom:job:{job.job_id}"
+        await self.coordinator.client.hset(
+            key,
+            mapping={"status": status, "completed_at": time.time(), "error": error},
+        )
+        await self.coordinator.client.expire(key, 7 * 24 * 3600)
