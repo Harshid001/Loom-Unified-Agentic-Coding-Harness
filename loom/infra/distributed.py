@@ -125,21 +125,20 @@ class RedisCoordinator:
         if not self.enabled:
             return
         message = json.dumps({"action": action, "payload": payload}, separators=(",", ":"), default=str)
-        await self.client.publish(f"loom:run:{run_id}:control", message)
+        key = f"loom:run:{run_id}:control"
+        await self.client.rpush(key, message)
+        await self.client.expire(key, RUN_TTL_SECONDS)
 
     async def control_stream(self, run_id: str) -> AsyncIterator[dict[str, Any]]:
         if not self.enabled:
             return
-        pubsub = self.client.pubsub()
-        await pubsub.subscribe(f"loom:run:{run_id}:control")
-        try:
-            async for message in pubsub.listen():
-                if message.get("type") != "message":
-                    continue
-                yield json.loads(message["data"])
-        finally:
-            await pubsub.unsubscribe(f"loom:run:{run_id}:control")
-            await pubsub.aclose()
+        key = f"loom:run:{run_id}:control"
+        while True:
+            result = await self.client.blpop(key, timeout=30)
+            if not result:
+                continue
+            _, payload = result
+            yield json.loads(payload)
 
 
 class RedisRateLimiter:
