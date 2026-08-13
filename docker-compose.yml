@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     build:
@@ -8,29 +6,64 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - LOOM_ENV=production
-      - API_KEY=${API_KEY}
-      - DATABASE_URL=postgresql://loom:loompass@postgres:5432/loom
-      - ALLOWED_REPO_ROOTS=/workspace
+      LOOM_ENV: production
+      API_KEY: ${API_KEY:?API_KEY is required}
+      DASHBOARD_AUTH_TOKEN: ${DASHBOARD_AUTH_TOKEN:?DASHBOARD_AUTH_TOKEN is required}
+      DATABASE_URL: postgresql://loom:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/loom
+      ALLOWED_REPO_ROOTS: /workspace
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      LOOM_SANDBOX_WORKER_URL: http://sandbox-worker:8100
+      SANDBOX_WORKER_TOKEN: ${SANDBOX_WORKER_TOKEN:?SANDBOX_WORKER_TOKEN is required}
+      LOOM_BACKUP_ENCRYPTION_KEY: ${LOOM_BACKUP_ENCRYPTION_KEY:?LOOM_BACKUP_ENCRYPTION_KEY is required}
+      LOOM_TOKEN_ADMIN_ENABLED: "false"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/repos:/workspace:rw
       - evidence_data:/app/.loom/evidence
     depends_on:
       postgres:
         condition: service_healthy
+      sandbox-worker:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
+
+  sandbox-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "loom.sandbox.worker"]
+    environment:
+      LOOM_ENV: production
+      SANDBOX_WORKER_TOKEN: ${SANDBOX_WORKER_TOKEN:?SANDBOX_WORKER_TOKEN is required}
+      SANDBOX_HOST_REPO_ROOT: /var/repos
+      SANDBOX_CONTAINER_REPO_ROOT: /workspace
+      SANDBOX_ALLOW_NETWORK: "false"
+      PORT: "8100"
+    expose:
+      - "8100"
+    volumes:
+      - /var/repos:/var/repos:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $${SANDBOX_WORKER_TOKEN}\" http://localhost:8100/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev
 
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=loom
-      - POSTGRES_PASSWORD=loompass
-      - POSTGRES_DB=loom
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: loom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: loom
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U loom"]
+      test: ["CMD-SHELL", "pg_isready -U loom -d loom"]
       interval: 10s
       timeout: 5s
       retries: 5
