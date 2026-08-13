@@ -33,8 +33,20 @@ def _production() -> bool:
 
 
 def _loom_home() -> Path:
+    """Resolve Loom's home directory with explicit environment overrides.
+
+    Priority: LOOM_HOME, then HOME (which Path.home() does not honor on
+    Windows), then the platform default user home.
+    """
     override = os.getenv("LOOM_HOME")
-    return Path(override).expanduser() if override else Path.home() / ".loom"
+    if override:
+        return Path(override).expanduser()
+
+    home_env = os.getenv("HOME")
+    if home_env:
+        return Path(home_env).expanduser() / ".loom"
+
+    return Path.home() / ".loom"
 
 
 def _database_args(env_url: str) -> tuple[list[str], dict[str, str]]:

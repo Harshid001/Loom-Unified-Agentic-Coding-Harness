@@ -1,9 +1,28 @@
 import io
 import tarfile
+from pathlib import Path
 
 import pytest
 
-from scripts.backup_restore import _safe_extract, compute_sha256, create_backup, restore_backup
+from scripts.backup_restore import _loom_home, _safe_extract, compute_sha256, create_backup, restore_backup
+
+
+def test_loom_home_prefers_loom_home_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path / "custom"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert _loom_home() == tmp_path / "custom"
+
+
+def test_loom_home_honors_home_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("LOOM_HOME", raising=False)
+    assert _loom_home() == tmp_path / ".loom"
+
+
+def test_loom_home_defaults_to_user_home(monkeypatch):
+    monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.delenv("LOOM_HOME", raising=False)
+    assert _loom_home() == Path.home() / ".loom"
 
 
 def test_safe_extract_rejects_path_traversal(tmp_path):
