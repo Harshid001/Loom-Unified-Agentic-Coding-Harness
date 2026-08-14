@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, List, Optional
 
+from loom.auth.context import get_effective_principal, in_request_auth_context
 from loom.business.models import (
     AgentStepRecord,
     PatchRecord,
@@ -463,7 +464,23 @@ class RunRecordStore:
             conn.commit()
 
     def get_run(self, run_id: str) -> Optional[RunRecord]:
-        rows = self._select("runs", _RUN_COLUMNS, clause="run_id = ?", params=(run_id,), model_cls=RunRecord)
+        if in_request_auth_context():
+            principal = get_effective_principal()
+            rows = self._select(
+                "runs",
+                _RUN_COLUMNS,
+                clause="run_id = ? AND org_id = ?",
+                params=(run_id, principal.org_id),
+                model_cls=RunRecord,
+            )
+        else:
+            rows = self._select(
+                "runs",
+                _RUN_COLUMNS,
+                clause="run_id = ?",
+                params=(run_id,),
+                model_cls=RunRecord,
+            )
         return rows[0] if rows else None
 
     def list_runs(self, org_id: Optional[str] = None, limit: int = 50, offset: int = 0) -> List[RunRecord]:

@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import time
 from enum import Enum
 from pathlib import Path
@@ -116,6 +117,32 @@ class WebhookEngine:
     def _dead_letter_file(self) -> Path:
         return self._dir / self.DEAD_LETTER_FILE
 
+    def _encrypt_secret(self, secret: Optional[str]) -> Optional[str]:
+        if not secret or secret.startswith("enc:"):
+            return secret
+        key = os.getenv("LOOM_WEBHOOK_SECRET_KEY")
+        if not key:
+            return secret
+        try:
+            from cryptography.fernet import Fernet
+            fernet = Fernet(key.encode() if isinstance(key, str) else key)
+            return "enc:" + fernet.encrypt(secret.encode()).decode()
+        except Exception:
+            return secret
+
+    def _decrypt_secret(self, secret: Optional[str]) -> Optional[str]:
+        if not secret or not secret.startswith("enc:"):
+            return secret
+        key = os.getenv("LOOM_WEBHOOK_SECRET_KEY")
+        if not key:
+            return secret
+        try:
+            from cryptography.fernet import Fernet
+            fernet = Fernet(key.encode() if isinstance(key, str) else key)
+            return fernet.decrypt(secret[4:].encode()).decode()
+        except Exception:
+            return secret
+
     def _load_subscriptions(self):
         path = self._subs_file()
         if not path.exists():
@@ -123,6 +150,8 @@ class WebhookEngine:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
             for s in raw:
+                if s.get("secret"):
+                    s["secret"] = self._decrypt_secret(s.get("secret"))
                 sub = WebhookSubscription(**s)
                 self._subscriptions[sub.id] = sub
         except Exception as exc:
@@ -130,14 +159,14 @@ class WebhookEngine:
 
     def _save_subscriptions(self):
         path = self._subs_file()
+        dumped = []
+        for s in self._subscriptions.values():
+            d = s.model_dump(exclude={"events"}) | {"events": [e.value for e in s.events]}
+            if d.get("secret"):
+                d["secret"] = self._encrypt_secret(d["secret"])
+            dumped.append(d)
         path.write_text(
-            json.dumps(
-                [
-                    s.model_dump(exclude={"events"}) | {"events": [e.value for e in s.events]}
-                    for s in self._subscriptions.values()
-                ],
-                indent=2,
-            ),
+            json.dumps(dumped, indent=2),
             encoding="utf-8",
         )
 

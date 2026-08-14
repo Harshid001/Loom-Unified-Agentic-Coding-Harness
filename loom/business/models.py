@@ -225,6 +225,7 @@ class AuditAction(str, Enum):
     RUN_COMPLETED = "run.completed"
     RUN_FAILED = "run.failed"
     RUN_ROLLED_BACK = "run.rolled_back"
+    RUN_AUTHORIZATION_DENIED = "run.authorization_denied"
     ENTITLEMENT_CHECK = "entitlement.check"
     ENTITLEMENT_DENIED = "entitlement.denied"
     QUOTA_SOFT_WARN = "quota.soft_warn"

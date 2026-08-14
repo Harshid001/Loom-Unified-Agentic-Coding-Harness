@@ -21,6 +21,12 @@ class BaseSandbox(ABC):
         """Run a command inside the sandbox."""
         pass
 
+    def execute(
+        self, cmd: str, cwd: Optional[str] = None, timeout: int = 60, env: Optional[Dict[str, str]] = None
+    ) -> CommandResult:
+        """Alias for run_command."""
+        return self.run_command(cmd, cwd=cwd, timeout=timeout, env=env)
+
     @abstractmethod
     def create_snapshot(self, label: str) -> str:
         """Create a filesystem / Git snapshot."""

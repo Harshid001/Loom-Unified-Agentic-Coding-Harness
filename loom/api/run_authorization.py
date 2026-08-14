@@ -1,20 +1,42 @@
-"""Centralized run-level authorization for tenant-isolated API routes."""
+"""Centralized run-level authorization for tenant-isolated API routes.
+
+PRD-016: The ``install_run_authorization(module)`` runtime route-mutation
+function has been replaced by calling ``require_run_access()`` directly as a
+plain function inside each route handler.  No FastAPI dependency-graph patching
+or sys.meta_path magic is needed.
+
+The ``install_run_authorization`` name is kept as a no-op shim for any call
+sites that have not yet been updated.
+"""
 
 from __future__ import annotations
 
-import os
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException, status
 
-from loom.auth.context import get_principal
+from loom.auth.context import AuthenticatedPrincipal, require_authenticated_principal
+from loom.business.audit_log import get_audit_logger
+from loom.business.entitlements import EntitlementService
+from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
-from loom.db.records_store import get_run_record_store
+from loom.db.records_store import RunRecordStore, get_run_record_store
+
+
+@dataclass(frozen=True)
+class AuthorizationContext:
+    principal: AuthenticatedPrincipal
+    entitlements: EntitlementService
+    records_store: RunRecordStore
+
 
 _RUN_ACTIONS: dict[tuple[str, str], Action] = {
     ("GET", "/runs/{run_id}"): Action.VIEW_RUN,
     ("GET", "/runs/{run_id}/evidence"): Action.VIEW_RUN,
     ("GET", "/runs/{run_id}/records"): Action.VIEW_RUN,
+    ("GET", "/runs/{run_id}/ast"): Action.VIEW_RUN,
+    ("POST", "/run/control"): Action.TRIGGER_RUN,
     ("GET", "/stream/{run_id}"): Action.VIEW_RUN,
     ("POST", "/runs/{run_id}/rollback"): Action.ROLLBACK_RUN,
     ("POST", "/rollback/{run_id}"): Action.ROLLBACK_RUN,
@@ -22,119 +44,77 @@ _RUN_ACTIONS: dict[tuple[str, str], Action] = {
 }
 
 
-def _is_dev_mode() -> bool:
-    env = os.getenv("LOOM_ENV", "development").lower()
-    dev_flag = os.getenv("DEV_MODE", "").lower()
-    if env in ("prod", "production") or dev_flag in ("false", "0", "no"):
-        return False
-    return env == "development" or dev_flag in ("true", "1", "yes")
-
-
-def require_run_access(run_id: str, action: Action, *, module: Any = None) -> Any:
+def require_run_access(
+    run_id: str,
+    action: Action,
+    *,
+    context: AuthorizationContext | None = None,
+    module: Any | None = None,
+) -> Any:
     """Resolve a run from the authoritative record store and authorize its tenant.
 
-    Missing and cross-tenant runs deliberately collapse to the same 404 response so
-    an authenticated principal cannot use a run id as a tenant-discovery oracle.
+    Cross-tenant access is silently converted to 404 to avoid leaking run
+    existence to callers from other organizations.
     """
-    principal = get_principal()
-    if principal is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    if context is None:
+        principal = require_authenticated_principal()
+        entitlements: EntitlementService = (
+            (getattr(module, "_entitlements", None) if module else None) or EntitlementService()
+        )
+        records_store = get_run_record_store()
+        context = AuthorizationContext(
+            principal=principal,
+            entitlements=entitlements,
+            records_store=records_store,
+        )
 
-    org_id = None
-    run = get_run_record_store().get_run(run_id)
-    if run is not None:
-        org_id = run.org_id
-    else:
-        if module is not None and hasattr(module, "ACTIVE_RUNS"):
-            active = getattr(module, "ACTIVE_RUNS", {}).get(run_id)
-            if isinstance(active, dict) and "state" in active:
-                org_id = str(getattr(active["state"], "shared_data", {}).get("org_id", "default"))
-        if org_id is None:
+    run = context.records_store.get_run(run_id)
+
+    # Fail-closed: missing run, missing org_id, or cross-tenant access attempt
+    if run is None or not getattr(run, "org_id", None) or run.org_id != context.principal.org_id:
+        if run is not None:
             try:
-                from loom.orchestrator.state import OrchestratorState
-                chk = OrchestratorState.load_checkpoint(run_id)
-                if chk is not None:
-                    org_id = str(chk.shared_data.get("org_id", "default"))
+                get_audit_logger().record(
+                    org_id=context.principal.org_id,
+                    actor_id=context.principal.user_id,
+                    action=AuditAction.RUN_AUTHORIZATION_DENIED,
+                )
             except Exception:
                 pass
-
-    if org_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
 
-    if principal.org_id != org_id and principal.org_id != "default":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    role = context.entitlements.get_role(context.principal.org_id, context.principal.user_id)
+    try:
+        RBACEnforcer(role).authorize(action, resource=f"org:{run.org_id}")
+    except HTTPException:
+        try:
+            get_audit_logger().record(
+                org_id=context.principal.org_id,
+                actor_id=context.principal.user_id,
+                action=AuditAction.RUN_AUTHORIZATION_DENIED,
+            )
+        except Exception:
+            pass
+        raise
 
-    from loom.business.models import MembershipRole
-
-    if principal.org_id == "default":
-        role = MembershipRole.OWNER
-    else:
-        get_ent = getattr(module, "get_entitlements", None) if module is not None else None
-        entitlements = get_ent() if get_ent is not None else None
-        if entitlements is None:
-            role = getattr(module, "_entitlements", None) and module._entitlements.get_role(org_id, principal.user_id) or MembershipRole.OWNER
-        else:
-            role = entitlements.get_role(org_id, principal.user_id)
-
-    RBACEnforcer(role).authorize(action, resource=f"org:{org_id}")
     return run
 
 
-def _route_action(method: str, path: str) -> Action | None:
-    return _RUN_ACTIONS.get((method.upper(), path))
-
-
-def install_run_authorization(module: Any) -> None:
-    """Inject run-level authorization into matching routes via FastAPI's dependency graph.
-
-    We append a sub-dependant whose sole parameter is ``run_id`` (resolved from the
-    path) to each matching route's ``dependant.dependencies`` list.  This approach
-    leaves the route's own parameter resolution (Pydantic body, query, headers) fully
-    intact — we never touch ``dependant.call``.
-    """
-    from fastapi.dependencies.utils import get_dependant
-
-    app = module.app
-
-    for route in list(getattr(app, "routes", [])):
-        path = getattr(route, "path", "")
-        endpoint = getattr(route, "endpoint", None)
-        methods = {str(method).upper() for method in (getattr(route, "methods", None) or set())}
-        action = None
-        for method in methods:
-            candidate = _route_action(method, _normalize_path(path))
-            if candidate is not None:
-                action = candidate
-                break
-        if endpoint is None or action is None:
-            continue
-        dependant = getattr(route, "dependant", None)
-        if dependant is None:
-            continue
-        # Idempotency guard — avoid double-wrapping if called twice.
-        if getattr(dependant, "_loom_run_authorized", False):
-            continue
-
-        target_action = action
-
-        # Build a closure so each route gets its own (action, module) binding.
-        def _make_checker(act: Action, mod: Any) -> Any:
-            def _auth_check(run_id: str) -> None:
-                require_run_access(run_id, act, module=mod)
-
-            return _auth_check
-
-        checker = _make_checker(target_action, module)
-        sub_dep = get_dependant(path=path, call=checker, use_cache=False)
-        dependant.dependencies.append(sub_dep)
-        setattr(dependant, "_loom_run_authorized", True)
-
-
 def _normalize_path(path: str) -> str:
-    """Map versioned and legacy route prefixes onto one authorization table."""
     normalized = path
     for prefix in ("/api/v1", "/api", "/v1"):
         if normalized.startswith(prefix):
             normalized = normalized[len(prefix) :]
             break
     return normalized or "/"
+
+
+def _route_action(method: str, path: str) -> Action | None:
+    return _RUN_ACTIONS.get((method.upper(), _normalize_path(path)))
+
+
+def install_run_authorization(module: Any) -> None:  # noqa: ARG001
+    """No-op shim.  Authorization is now declared via explicit Depends() in each route.
+
+    Retained to avoid ImportError during the transition period.
+    """

@@ -18,12 +18,34 @@ def _safe_snapshot_label(label: str) -> str:
     return value
 
 
+from dataclasses import dataclass
+
+
+@dataclass
+class Worktree:
+    worktree_path: str
+    snapshot_id: str
+
+
 class WorktreeManager:
     """Manages Git worktree snapshots for zero-risk rollback before patch applications."""
 
     def __init__(self, repo_path: str):
         self.repo_path = Path(repo_path).resolve()
         self.snapshots: Dict[str, str] = {}
+
+    def create_worktree(self, label: str) -> Worktree:
+        snap_id = self.create_snapshot(label)
+        path = self.snapshots[snap_id]
+        return Worktree(worktree_path=path, snapshot_id=snap_id)
+
+    def cleanup_worktree(self, label: str):
+        if label in self.snapshots:
+            self.cleanup_snapshot(label)
+        else:
+            for snap_id in list(self.snapshots.keys()):
+                if label in snap_id:
+                    self.cleanup_snapshot(snap_id)
 
     def create_snapshot(self, label: str) -> str:
         safe_label = _safe_snapshot_label(label)

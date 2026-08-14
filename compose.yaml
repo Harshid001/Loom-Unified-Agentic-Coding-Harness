@@ -56,6 +56,31 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
+  backup-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      LOOM_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      LOOM_BACKUP_ENCRYPTION_KEY: ${LOOM_BACKUP_ENCRYPTION_KEY:?LOOM_BACKUP_ENCRYPTION_KEY is required}
+      LOOM_BACKUP_DIR: /home/loomuser/.loom/backups
+      LOOM_BACKUP_STATUS_FILE: /home/loomuser/.loom/backups/backup-status.json
+      LOOM_BACKUP_INTERVAL_SECONDS: ${LOOM_BACKUP_INTERVAL_SECONDS:-3600}
+      LOOM_BACKUP_RETENTION_COUNT: ${LOOM_BACKUP_RETENTION_COUNT:-24}
+      LOOM_BACKUP_S3_BUCKET: ${LOOM_BACKUP_S3_BUCKET:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+    command: ["python", "scripts/backup_scheduler.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - loom-data:/home/loomuser/.loom
+
 volumes:
   loom-data:
   postgres-data:

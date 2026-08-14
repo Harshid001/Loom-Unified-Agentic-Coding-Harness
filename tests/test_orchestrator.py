@@ -131,10 +131,11 @@ async def test_task_graph_records_merge_decision(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_task_graph_dispatches_lifecycle_webhooks(tmp_path):
+async def test_task_graph_dispatches_lifecycle_webhooks(tmp_path, monkeypatch):
     run_id = "test_run_003"
     state = OrchestratorState(run_id=run_id, repo_path=str(tmp_path), issue_description="Fix null pointer exception")
     state.shared_data["org_id"] = "org_webhook"
+    state.shared_data["mock_mode"] = True
 
     engine = WebhookEngine(storage_dir=str(tmp_path / "webhooks"))
     engine._http = FakeAsyncClient()
@@ -152,6 +153,14 @@ async def test_task_graph_dispatches_lifecycle_webhooks(tmp_path):
             retry_backoff_base_seconds=0.01,
         )
     )
+
+    async def fake_verifier_execute(self, state):
+        state.verification_passed = True
+        state.shared_data["verification_decision"] = "auto_merge"
+        state.shared_data["confidence_score"] = 1.0
+        return {"overall_success": True, "decision": "auto_merge"}
+
+    monkeypatch.setattr(VerifierAgent, "execute", fake_verifier_execute)
 
     bundler = EvidenceBundler(output_dir=str(tmp_path / "evidence"))
     task_graph = TaskGraph(
@@ -184,6 +193,10 @@ async def test_task_graph_dispatches_lifecycle_webhooks(tmp_path):
 async def test_task_graph_security_hold_state(tmp_path, monkeypatch):
     run_id = "test_run_004"
     state = OrchestratorState(run_id=run_id, repo_path=str(tmp_path), issue_description="Fix null pointer exception")
+    state.shared_data["repo_map"] = {"files": []}
+    state.shared_data["onboarding_summary"] = {"files": []}
+    state.reproduction_test = "pytest tests/test_repro.py"
+    state.shared_data["reproduction_evidence"] = {"status": "reproduced"}
 
     async def fake_verifier_execute(self, state):
         state.verification_passed = True
@@ -269,11 +282,24 @@ async def test_evidence_bundle_contains_merge_decision(tmp_path):
 
 @pytest.mark.asyncio
 async def test_task_graph_commit_gateway_security_hold(tmp_path, monkeypatch):
+    from loom.orchestrator.agents.onboarding import OnboardingAgent
     from loom.orchestrator.agents.patcher import PatcherAgent
+    from loom.orchestrator.agents.reproduction import ReproductionAgent
 
     run_id = "test_run_gateway_block"
     state = OrchestratorState(run_id=run_id, repo_path=str(tmp_path), issue_description="Fix auth bypass")
     state.shared_data["org_id"] = "org_gateway_test"
+    state.shared_data["mock_mode"] = True
+
+    async def fake_onboarding(self, state):
+        state.shared_data["repo_map"] = {"files": []}
+        state.shared_data["onboarding_summary"] = {"summary": "ok"}
+        return {"summary": "ok"}
+
+    async def fake_reproduction(self, state):
+        state.reproduction_test = "def test_repro(): pass"
+        state.shared_data["reproduction_evidence"] = {"status": "reproduced"}
+        return {"status": "reproduced"}
 
     async def fake_patcher_gateway_block(self, state):
         state.patch_diff = "--- a/auth/login.py\n+++ b/auth/login.py\n@@ -1,3 +1,3 @@\n-old\n+new\n"
@@ -287,6 +313,8 @@ async def test_task_graph_commit_gateway_security_hold(tmp_path, monkeypatch):
         state.shared_data["security_hold_reason"] = "Sensitive paths blocked by commit gateway: auth/login.py"
         return {"patch_diff": state.patch_diff, "snapshot_id": "snap_gateway_block", "summary": "blocked"}
 
+    monkeypatch.setattr(OnboardingAgent, "execute", fake_onboarding)
+    monkeypatch.setattr(ReproductionAgent, "execute", fake_reproduction)
     monkeypatch.setattr(PatcherAgent, "execute", fake_patcher_gateway_block)
 
     task_graph = TaskGraph(

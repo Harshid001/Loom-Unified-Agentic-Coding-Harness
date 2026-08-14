@@ -10,10 +10,14 @@ from loom.scim.provisioning import get_scim_provisioner, reset_scim_provisioner
 client = TestClient(app)
 
 
+from loom.api.dependencies import reset_entitlements
+
+
 @pytest.fixture(autouse=True)
 def setup_api_key_env(monkeypatch, tmp_path):
     monkeypatch.setenv("API_KEY", "test-api-key")
     monkeypatch.setenv("LOOM_EVIDENCE_DIR", str(tmp_path / "evidence"))
+    reset_entitlements()
     reset_usage_ledger()
     get_usage_ledger(str(tmp_path / "ledger"))
     reset_webhook_engine()
@@ -177,12 +181,17 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
 
     import httpx
 
+    from loom.api.server import _entitlements
     from loom.api.webhooks import WebhookEventType, WebhookSubscription
     from loom.business.audit_log import get_audit_logger, reset_audit_logger
-    from loom.business.models import AuditAction
+    from loom.business.models import AuditAction, Membership, MembershipRole, RunRecord
     from loom.orchestrator.state import OrchestratorState
 
+    _entitlements.add_membership(Membership(user_id="dev_user", org_id="org_ci_report", role=MembershipRole.ADMIN))
+    get_run_record_store().record_run(RunRecord(run_id="run_ci_report", org_id="org_ci_report", issue_text="ci report test"))
+
     monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
+    monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
     reset_audit_logger()
     get_audit_logger(str(tmp_path / "audit"))
 
@@ -256,9 +265,14 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
 def test_ci_report_no_rollback_without_ci_failure(tmp_path, monkeypatch):
     from pathlib import Path
 
+    from loom.api.server import _entitlements
+    from loom.business.models import Membership, MembershipRole, RunRecord
     from loom.orchestrator.state import OrchestratorState
 
     monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
+    monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
+    _entitlements.add_membership(Membership(user_id="dev_user", org_id="org_ci_report", role=MembershipRole.ADMIN))
+    get_run_record_store().record_run(RunRecord(run_id="run_ci_ok", org_id="org_ci_report", issue_text="ci ok"))
 
     state = OrchestratorState(
         run_id="run_ci_ok",

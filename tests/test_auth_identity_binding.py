@@ -88,8 +88,11 @@ def test_stream_requires_authentication_and_org_scope(monkeypatch):
     from fastapi.testclient import TestClient
 
     from loom.api.server import ACTIVE_RUNS, app
+    from loom.business.models import RunRecord
+    from loom.db.records_store import get_run_record_store
     from loom.orchestrator.state import OrchestratorState
 
+    get_run_record_store().record_run(RunRecord(run_id="run_stream_auth", org_id="org_a", issue_text="stream auth"))
     state = OrchestratorState(run_id="run_stream_auth", repo_path="/tmp/repo", issue_description="stream auth")
     state.shared_data["org_id"] = "org_a"
     ACTIVE_RUNS["run_stream_auth"] = {
