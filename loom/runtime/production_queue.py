@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
 
 from loom.api import server as server_module
+from loom.api.routes import iter_routes
 from loom.business.models import RunRecord
 from loom.db.records_store import get_run_record_store
 from loom.runtime.job_queue import JobQueue, RunJob
@@ -95,7 +96,7 @@ def install_production_queue(app: FastAPI) -> None:
     if not server_module.is_dev_mode() and not server_module.os.getenv("REDIS_URL"):
         raise RuntimeError("Production execution requires REDIS_URL")
 
-    for route in app.routes:
+    for route in iter_routes(app):
         if not isinstance(route, APIRoute):
             continue
         if route.path in {"/api/v1/run", "/api/run"}:

@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 
+from loom.api.routes import iter_routes
 from loom.infra.distributed import RedisCoordinator, RedisRateLimiter, RunMetadata
 from loom.runtime.budget import BudgetExceeded, RunBudget, cost_from_summary, tokens_from_summary
 
@@ -244,7 +245,7 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
             detail="Token administration is disabled in production; use the privileged control plane.",
         )
 
-    for route in app.routes:
+    for route in iter_routes(app):
         if not isinstance(route, APIRoute):
             continue
         path = route.path

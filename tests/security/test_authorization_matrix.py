@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 
 from loom.api.app import create_app
 from loom.api.dependencies import get_entitlements, reset_entitlements
+from loom.api.routes import iter_routes
 from loom.business.models import Membership, MembershipRole, RunRecord
 from loom.db.records_store import get_run_record_store, reset_run_record_store
 from loom.orchestrator.state import OrchestratorState
@@ -132,7 +133,7 @@ def seeded_client(matrix_app):
 def test_all_sensitive_routes_are_registered(matrix_app):
     """Assert every expected sensitive endpoint is present in the router."""
     app, _ = matrix_app
-    registered_paths = {getattr(r, "path", "") for r in app.routes}
+    registered_paths = {getattr(r, "path", "") for r in iter_routes(app)}
 
     # Check at least one v1 variant of each pattern exists
     missing = []
@@ -148,7 +149,7 @@ def test_every_protected_route_has_security_dependency(matrix_app):
     """Assert no run-scoped route has zero Depends() declared."""
     app, _ = matrix_app
     no_dep_routes = []
-    for route in app.routes:
+    for route in iter_routes(app):
         path = getattr(route, "path", "")
         if "{run_id}" not in path and "stream" not in path and "rollback" not in path:
             continue

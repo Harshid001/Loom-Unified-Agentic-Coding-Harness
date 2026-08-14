@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from loom.api.dependencies import get_entitlements
+from loom.api.routes import iter_routes
 from loom.api.run_authorization import _route_action, install_run_authorization
 from loom.api.server import _default_org, app
 from loom.api.webhooks import get_webhook_engine, reset_webhook_engine
@@ -97,7 +98,7 @@ def setup_api_env(monkeypatch, tmp_path):
 def test_deterministic_route_action_mapping():
     """Assert all registered run-scoped routes in FastAPI match expected authorization actions."""
     run_routes = []
-    for route in app.routes:
+    for route in iter_routes(app):
         path = getattr(route, "path", "")
         if "{run_id}" in path:
             methods = getattr(route, "methods", set()) or {"GET"}
@@ -120,7 +121,7 @@ def test_double_installation_is_idempotent():
     """Verify that calling install_run_authorization multiple times does not duplicate dependencies."""
     from loom.api import server
     initial_dep_counts = {}
-    for route in app.routes:
+    for route in iter_routes(app):
         path = getattr(route, "path", "")
         if "{run_id}" in path:
             initial_dep_counts[path] = len(getattr(route, "dependencies", []))
@@ -128,7 +129,7 @@ def test_double_installation_is_idempotent():
     install_run_authorization(server)
     install_run_authorization(server)
 
-    for route in app.routes:
+    for route in iter_routes(app):
         path = getattr(route, "path", "")
         if "{run_id}" in path:
             assert len(getattr(route, "dependencies", [])) == initial_dep_counts[path]
