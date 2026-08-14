@@ -11,15 +11,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException
 
-from loom.api.dependencies import AuthDep, get_entitlements, get_records_store
 from loom.api.security import PrincipalDep, require_run_access
 from loom.auth.context import AuthenticatedPrincipal
 from loom.business.audit_log import get_audit_logger
-from loom.business.models import AuditAction, MembershipRole
+from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
-from loom.db.records_store import get_run_record_store
+from loom.api.dependencies import get_entitlements
 from loom.orchestrator.state import OrchestratorState
 from loom.sandbox.local_process import LocalProcessSandbox
 from loom.api.server import ACTIVE_RUNS, ControlRequest, CiReportRequest
@@ -46,7 +45,8 @@ def _require_action(principal: AuthenticatedPrincipal, action: Action) -> None:
 @compat_router.get("/api/runs/{run_id}")
 def get_run(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
     run = require_run_access(run_id, Action.VIEW_RUN, principal=principal)
-    return {"run": run.model_dump() if hasattr(run, "model_dump") else getattr(run, "__dict__", {}) , "checkpoint": _checkpoint(run_id)}
+    run_data = run.model_dump() if hasattr(run, "model_dump") else getattr(run, "__dict__", {})
+    return {"run": run_data, "checkpoint": _checkpoint(run_id)}
 
 
 @compat_router.get("/api/v1/runs/{run_id}/evidence")
@@ -67,7 +67,8 @@ def get_evidence(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
 def get_records(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
     run = require_run_access(run_id, Action.VIEW_RUN, principal=principal)
     status_value = getattr(run, "status", None) or "merged"
-    if status_value not in {"merged", "evidence_review", "failed", "security_hold", "conflict_resolution", "rolled_back"}:
+    allowed_statuses = {"merged", "evidence_review", "failed", "security_hold", "conflict_resolution", "rolled_back"}
+    if status_value not in allowed_statuses:
         status_value = "merged"
     return {
         "run": {"run_id": run_id, "status": status_value},
@@ -80,17 +81,16 @@ def get_records(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
 @compat_router.post("/api/v1/runs/{run_id}/ci-report")
 @compat_router.post("/api/runs/{run_id}/ci-report")
 def ci_report(run_id: str, req: CiReportRequest, principal: PrincipalDep) -> dict[str, Any]:
-    run = require_run_access(run_id, Action.REPORT_CI, principal=principal)
+    require_run_access(run_id, Action.REPORT_CI, principal=principal)
     checkpoint = _checkpoint(run_id)
-    if not req.ci_failure_detected:
-        return {"rollback_needed": False, "run_id": run_id}
-
-    if time.time() - req.merge_time > req.monitor_timeout_seconds:
+    if not req.ci_failure_detected or time.time() - req.merge_time > req.monitor_timeout_seconds:
         return {"rollback_needed": False, "run_id": run_id}
 
     patch_diff = checkpoint.get("patch_diff") or ""
     revert_patch = "\n".join(
-        line[1:] if line.startswith("+") and not line.startswith("+++") else "" if line.startswith("-") and not line.startswith("---") else line
+        line[1:] if line.startswith("+") and not line.startswith("+++")
+        else "" if line.startswith("-") and not line.startswith("---")
+        else line
         for line in patch_diff.splitlines()
     )
     state = OrchestratorState.load_checkpoint(run_id)
@@ -106,12 +106,7 @@ def ci_report(run_id: str, req: CiReportRequest, principal: PrincipalDep) -> dic
 
     try:
         from loom.api.webhooks import WebhookEventType, get_webhook_engine
-        get_webhook_engine().dispatch_sync(
-            WebhookEventType.RUN_ROLLED_BACK,
-            run_id,
-            {"reason": "ci_failure"},
-            principal.org_id,
-        )
+        get_webhook_engine().dispatch_sync(WebhookEventType.RUN_ROLLED_BACK, run_id, {"reason": "ci_failure"}, principal.org_id)
     except Exception:
         pass
 
@@ -135,15 +130,14 @@ def rollback_run(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
 @compat_router.post("/api/run/control")
 def compat_control_run(req: ControlRequest, principal: PrincipalDep) -> dict[str, Any]:
     require_run_access(req.run_id, Action.VIEW_RUN, principal=principal)
-    entry = ACTIVE_RUNS.get(req.run_id)
-    if entry is None:
+    if req.run_id not in ACTIVE_RUNS:
         raise HTTPException(status_code=404, detail=f"Active run {req.run_id} not found")
     return {"status": "ok", "action": req.action.lower(), "run_id": req.run_id}
 
 
 @compat_router.get("/api/v1/stream/{run_id}")
 @compat_router.get("/api/stream/{run_id}")
-def compat_stream(run_id: str, _auth: AuthDep = None, principal: PrincipalDep = None) -> dict[str, Any]:
+def compat_stream(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
     require_run_access(run_id, Action.VIEW_RUN, principal=principal)
     return {"status": "streaming", "run_id": run_id}
 
