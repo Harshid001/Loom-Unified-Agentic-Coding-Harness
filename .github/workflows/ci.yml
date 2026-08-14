@@ -49,9 +49,10 @@ jobs:
           ALLOWED_REPO_ROOTS: /workspace
           DATABASE_URL: postgresql://loom:ci-placeholder@localhost:5432/loom
           REDIS_URL: redis://localhost:6379/0
-          LOOM_FIRECRACKER_WORKER_URL: http://firecracker-worker:8101
+          LOOM_FIRECRACKER_WORKER_URL: https://firecracker-worker:8101
           LOOM_FIRECRACKER_WORKER_TOKEN: ci-placeholder-firecracker-token
           LOOM_BACKUP_ENCRYPTION_KEY: ci-placeholder-backup-key
+          LOOM_WEBHOOK_SECRET_KEY: ci-placeholder-webhook-key
           LOOM_TOKEN_ADMIN_ENABLED: "false"
           RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
         run: python scripts/production_preflight.py --allow-placeholders
@@ -62,7 +63,7 @@ jobs:
       - name: Run Type Checker
         run: mypy loom/ --ignore-missing-imports
       - name: Run Security Regression Tests
-        run: python -m pytest tests/test_security_bootstrap.py tests/test_auth_identity_binding.py tests/test_verification_state.py tests/test_usage_ledger_restart.py tests/test_command_policy.py tests/test_sandbox_security.py tests/test_production_hardening.py tests/test_webhook_secret_encryption.py tests/test_db_migrations.py tests/test_api_tokens.py --timeout=60 --timeout_method=thread
+        run: python -m pytest tests/test_security_bootstrap.py tests/test_auth_identity_binding.py tests/test_verification_state.py tests/test_usage_ledger_restart.py tests/test_command_policy.py tests/test_sandbox_security.py tests/test_production_hardening.py tests/test_webhook_secret_encryption.py tests/test_db_migrations.py tests/test_api_tokens.py tests/test_job_queue_leases.py --timeout=60 --timeout_method=thread
       - name: Run Full Test Suite with Coverage
         run: python -m pytest --timeout=60 --timeout_method=thread
 
