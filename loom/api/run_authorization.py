@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import functools
 import os
 from typing import Any
 
@@ -86,17 +84,16 @@ def _route_action(method: str, path: str) -> Action | None:
     return _RUN_ACTIONS.get((method.upper(), path))
 
 
-def _set_route_callable(route: Any, endpoint: Any) -> None:
-    """Update both FastAPI's public endpoint and its resolved dependency callable."""
-    route.endpoint = endpoint
-    dependant = getattr(route, "dependant", None)
-    if dependant is not None:
-        dependant.call = endpoint
-        dependant.is_coroutine = asyncio.iscoroutinefunction(endpoint)
-
-
 def install_run_authorization(module: Any) -> None:
-    """Wrap only run-scoped routes after FastAPI routes have been registered."""
+    """Inject run-level authorization into matching routes via FastAPI's dependency graph.
+
+    We append a sub-dependant whose sole parameter is ``run_id`` (resolved from the
+    path) to each matching route's ``dependant.dependencies`` list.  This approach
+    leaves the route's own parameter resolution (Pydantic body, query, headers) fully
+    intact — we never touch ``dependant.call``.
+    """
+    from fastapi.dependencies.utils import get_dependant
+
     app = module.app
 
     for route in list(getattr(app, "routes", [])):
@@ -111,27 +108,26 @@ def install_run_authorization(module: Any) -> None:
                 break
         if endpoint is None or action is None:
             continue
-        if getattr(endpoint, "_loom_run_authorized", False):
+        dependant = getattr(route, "dependant", None)
+        if dependant is None:
+            continue
+        # Idempotency guard — avoid double-wrapping if called twice.
+        if getattr(dependant, "_loom_run_authorized", False):
             continue
 
-        if asyncio.iscoroutinefunction(endpoint):
-            @functools.wraps(endpoint)
-            async def guarded_async(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
-                run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
-                require_run_access(run_id, __action, module=module)
-                return await __endpoint(*args, **kwargs)
+        target_action = action
 
-            guarded_async._loom_run_authorized = True
-            _set_route_callable(route, guarded_async)
-        else:
-            @functools.wraps(endpoint)
-            def guarded_sync(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
-                run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
-                require_run_access(run_id, __action, module=module)
-                return __endpoint(*args, **kwargs)
+        # Build a closure so each route gets its own (action, module) binding.
+        def _make_checker(act: Action, mod: Any) -> Any:
+            def _auth_check(run_id: str) -> None:
+                require_run_access(run_id, act, module=mod)
 
-            guarded_sync._loom_run_authorized = True
-            _set_route_callable(route, guarded_sync)
+            return _auth_check
+
+        checker = _make_checker(target_action, module)
+        sub_dep = get_dependant(path=path, call=checker, use_cache=False)
+        dependant.dependencies.append(sub_dep)
+        setattr(dependant, "_loom_run_authorized", True)
 
 
 def _normalize_path(path: str) -> str:

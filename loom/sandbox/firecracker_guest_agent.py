@@ -44,9 +44,9 @@ def _safe_extract(tar_path: Path, destination: Path) -> None:
 def _apply_limits(timeout: int) -> None:
     if resource is None:
         return
-    resource.setrlimit(resource.RLIMIT_CPU, (max(1, timeout), max(1, timeout + 1)))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))
-    resource.setrlimit(resource.RLIMIT_NPROC, (512, 512))
+    resource.setrlimit(resource.RLIMIT_CPU, (max(1, timeout), max(1, timeout + 1)))  # type: ignore[attr-defined]
+    resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))  # type: ignore[attr-defined]
+    resource.setrlimit(resource.RLIMIT_NPROC, (512, 512))  # type: ignore[attr-defined]
 
 
 def _validate_env(env: Dict[str, str]) -> Dict[str, str]:
@@ -105,7 +105,7 @@ def _exec(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     except subprocess.TimeoutExpired:
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
         except (ProcessLookupError, PermissionError, OSError):
             pass
         stdout, stderr = process.communicate(timeout=2)
@@ -162,8 +162,8 @@ def _handle(sock: socket.socket) -> None:
 
 def serve(port: int = DEFAULT_PORT) -> None:
     WORKSPACE.mkdir(parents=True, exist_ok=True)
-    with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as server:
-        server.bind((socket.VMADDR_CID_ANY, port))
+    with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as server:  # type: ignore[attr-defined]
+        server.bind((socket.VMADDR_CID_ANY, port))  # type: ignore[attr-defined]
         server.listen(16)
         while True:
             conn, _ = server.accept()

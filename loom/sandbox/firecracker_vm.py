@@ -144,7 +144,7 @@ class FirecrackerVM:
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             try:
-                with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as sock:
+                with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as sock:  # type: ignore[attr-defined]
                     sock.settimeout(1)
                     sock.connect((self.config.guest_cid, self.config.guest_port))
                     sock.sendall(b'{"op":"health"}\n')
@@ -174,7 +174,7 @@ class FirecrackerVM:
             capture_output=True,
         )
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as sock:
+        with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as sock:  # type: ignore[attr-defined]
             sock.settimeout(60)
             sock.connect((self.config.guest_cid, self.config.guest_port))
             sock.sendall(
@@ -190,7 +190,7 @@ class FirecrackerVM:
 
     def exec(self, argv: Iterable[str], cwd: str, timeout: int, env: Dict[str, str]) -> dict[str, Any]:
         payload = {"op": "exec", "argv": list(argv), "cwd": cwd, "timeout": timeout, "env": env}
-        with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as sock:
+        with socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM) as sock:  # type: ignore[attr-defined]
             sock.settimeout(timeout + 5)
             sock.connect((self.config.guest_cid, self.config.guest_port))
             sock.sendall((json.dumps(payload) + "\n").encode())
@@ -199,11 +199,11 @@ class FirecrackerVM:
     def destroy(self) -> None:
         if self.process and self.process.poll() is None:
             try:
-                os.killpg(self.process.pid, signal.SIGTERM)
+                os.killpg(self.process.pid, signal.SIGTERM)  # type: ignore[attr-defined]
                 self.process.wait(timeout=3)
             except (OSError, subprocess.TimeoutExpired):
                 try:
-                    os.killpg(self.process.pid, signal.SIGKILL)
+                    os.killpg(self.process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
                 except OSError:
                     pass
         self.process = None
@@ -232,7 +232,7 @@ def reconcile_runtime(runtime_dir: Path) -> Dict[str, int]:
                         failed += 1
                         continue
                 try:
-                    os.kill(pid, signal.SIGKILL)
+                    os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]
                 except ProcessLookupError:
                     pass
             shutil.rmtree(vm_dir, ignore_errors=True)

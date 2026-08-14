@@ -110,7 +110,7 @@ def sha256_file(path: Path) -> str:
 def host_health() -> dict:
     if os.name != "posix":
         raise RuntimeError("Firecracker worker requires Linux")
-    if os.uname().machine != "x86_64":
+    if os.uname().machine != "x86_64":  # type: ignore[attr-defined]
         raise RuntimeError("current worker validation policy requires x86_64")
     kvm = Path("/dev/kvm")
     if not kvm.exists() or not os.access(kvm, os.R_OK | os.W_OK):
@@ -168,7 +168,7 @@ def execute(req: ExecuteRequest, _: None = Depends(authenticate)):
     metadata = {
         "run_id": req.run_id,
         "vm_id": vm_id,
-        "worker_id": os.getenv("LOOM_FIRECRACKER_WORKER_ID", os.uname().nodename),
+        "worker_id": os.getenv("LOOM_FIRECRACKER_WORKER_ID", os.uname().nodename),  # type: ignore[attr-defined]
         "org_id": req.org_id,
         "repo_path": str(repo),
         "kernel_hash": sha256_file(KERNEL_PATH),
