@@ -74,12 +74,14 @@ async def _read_body(receive: Callable[..., Awaitable[dict[str, Any]]]) -> tuple
 
 def _replay_receive(body: bytes, terminal: dict[str, Any] | None = None) -> Callable[..., Awaitable[dict[str, Any]]]:
     sent = False
+
     async def receive() -> dict[str, Any]:
         nonlocal sent
         if sent:
             return terminal or {"type": "http.disconnect"}
         sent = True
         return {"type": "http.request", "body": body, "more_body": False}
+
     return receive
 
 
@@ -115,11 +117,10 @@ class RuntimeGuardMiddleware:
         else:
             body = b""
 
-        # Production run listing is backed by the relational store rather than
-        # scanning every checkpoint file. This also makes tenant scoping explicit.
         if _production() and method == "GET" and path.rstrip("/") in {"/api/runs", "/api/v1/runs"}:
             if principal is None:
-                await self._reject(send, 401, "Authentication required")
+                detail = "API_KEY environment variable is not configured" if not os.getenv("API_KEY") else "Authentication required"
+                await self._reject(send, 401, detail)
                 return
             query = parse_qs((scope.get("query_string") or b"").decode("utf-8", errors="replace"))
             try:
@@ -146,11 +147,7 @@ class RuntimeGuardMiddleware:
                 for record in records
             ]
             payload = json.dumps(data).encode()
-            await send({
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(payload)).encode())],
-            })
+            await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(payload)).encode())]})
             await send({"type": "http.response.body", "body": payload, "more_body": False})
             return
 
