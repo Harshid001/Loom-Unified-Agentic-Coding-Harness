@@ -112,7 +112,7 @@ def install_run_authorization(module: Any) -> None:
         if dependant is None:
             continue
         # Idempotency guard — avoid double-wrapping if called twice.
-        if getattr(dependant, "_loom_run_authorized", False):
+        if getattr(route, "_loom_run_authorized", False) or getattr(dependant, "_loom_run_authorized", False):
             continue
 
         target_action = action
@@ -127,7 +127,14 @@ def install_run_authorization(module: Any) -> None:
         checker = _make_checker(target_action, module)
         sub_dep = get_dependant(path=path, call=checker, use_cache=False)
         dependant.dependencies.append(sub_dep)
-        setattr(dependant, "_loom_run_authorized", True)
+        try:
+            setattr(route, "_loom_run_authorized", True)
+        except AttributeError:
+            pass
+        try:
+            setattr(dependant, "_loom_run_authorized", True)
+        except AttributeError:
+            pass
 
 
 def _normalize_path(path: str) -> str:
