@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { DASHBOARD_SESSION_COOKIE, isDashboardTokenValid } from '@/lib/auth';
@@ -48,11 +48,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ detail: 'Invalid dashboard credentials' }, { status: 401 });
   }
 
-  const sessionId = randomBytes(32).toString('hex');
   const response = NextResponse.json({ authenticated: true });
   response.cookies.set({
     name: DASHBOARD_SESSION_COOKIE,
-    value: sessionId,
+    value: token,
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
