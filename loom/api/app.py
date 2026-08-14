@@ -1,20 +1,8 @@
-"""PRD-016 — Explicit Application Security Composition.
-
-create_app() is the single entry point for building the Loom FastAPI application.
-All middleware and routers are composed here explicitly.  No sys.meta_path hooks,
-no runtime route mutation, no module-level side effects.
-
-Security composition order (outermost → innermost):
-  1. APIHardeningMiddleware     — body-size limit + public-surface policy
-  2. WebhookSignatureMiddleware — raw-body caching + HMAC/token verification
-  3. CORSMiddleware             — origin allowlist
-  4. security_headers_middleware — response headers (inline @middleware)
-  5. rate_limit_middleware       — per-IP sliding window (inline @middleware)
-  6. routers                    — each route declares its own Depends chain
-"""
+"""Explicit application security composition."""
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -25,7 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from loom.api.hardening import APIHardeningMiddleware
-from loom.api.late_hardening import WebhookSignatureMiddleware
+from loom.api.late_hardening import (
+    PrincipalCleanupMiddleware,
+    WebhookSignatureMiddleware,
+    install_terminal_webhook_normalizer,
+    install_webhook_secret_encryption,
+)
+from loom.api.runtime_guards import install_runtime_guards
 
 logger = logging.getLogger("loom.api")
 
@@ -38,11 +32,7 @@ def create_app(
     redoc_url: str | None = "/redoc",
     rate_limit_per_minute: int | None = None,
 ) -> FastAPI:
-    """Build and return a fully-hardened FastAPI application instance.
-
-    This function is idempotent: calling it multiple times produces independent
-    application instances, which makes it safe to use in tests.
-    """
+    """Build and return a fully-hardened FastAPI application instance."""
     app = FastAPI(
         title=title,
         description="Unified Agentic Coding Harness API Server for orchestration, execution, and trace management.",
@@ -51,23 +41,16 @@ def create_app(
         redoc_url=redoc_url,
     )
 
-    # ------------------------------------------------------------------ #
-    # 1. Request-size + public-surface policy (outermost ASGI layer)      #
-    # ------------------------------------------------------------------ #
+    # Principal lifecycle must wrap every request so auth dependencies populate
+    # a request-scoped identity instead of falling back to the service identity.
+    app.add_middleware(PrincipalCleanupMiddleware)
+    install_runtime_guards(app)
     app.add_middleware(APIHardeningMiddleware, max_body_bytes=10 * 1024 * 1024)
-
-    # ------------------------------------------------------------------ #
-    # 2. Webhook signature validation (raw-body caching + HMAC)           #
-    # ------------------------------------------------------------------ #
     app.add_middleware(WebhookSignatureMiddleware)
 
-    # ------------------------------------------------------------------ #
-    # 3. CORS                                                             #
-    # ------------------------------------------------------------------ #
     raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
     is_wildcard = "*" in allowed_origins
-
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -76,9 +59,6 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # ------------------------------------------------------------------ #
-    # 4. Security response headers                                        #
-    # ------------------------------------------------------------------ #
     @app.middleware("http")
     async def security_headers_middleware(request: Request, call_next: Any) -> Any:
         response = await call_next(request)
@@ -90,52 +70,44 @@ def create_app(
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
-    # ------------------------------------------------------------------ #
-    # 5. Per-IP sliding-window rate limiting                              #
-    # ------------------------------------------------------------------ #
     default_limit = "1000" if os.getenv("LOOM_ENV", "development").lower() == "development" else "60"
     _rate_limit_requests = rate_limit_per_minute or int(os.getenv("RATE_LIMIT_PER_MINUTE", default_limit))
-    _rate_limit_window = 60  # seconds
+    _rate_limit_window = 60
     _rate_store: dict[str, list[float]] = {}
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next: Any) -> Any:
         if request.url.path.startswith("/api/"):
-            client_ip = request.client.host if request.client else "127.0.0.1"
+            credential = request.headers.get("x-api-key") or request.headers.get("authorization")
+            if credential:
+                client_key = "credential:" + hashlib.sha256(credential.encode()).hexdigest()
+            else:
+                client_key = "ip:" + (request.client.host if request.client else "127.0.0.1")
             now = time.time()
-            timestamps = [ts for ts in _rate_store.get(client_ip, []) if now - ts < _rate_limit_window]
+            timestamps = [ts for ts in _rate_store.get(client_key, []) if now - ts < _rate_limit_window]
             if len(timestamps) >= _rate_limit_requests:
                 return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Too many requests."})
             timestamps.append(now)
-            _rate_store[client_ip] = timestamps
-
-            # Bounded store cleanup
+            _rate_store[client_key] = timestamps
             if len(_rate_store) > 5000:
-                stale = [ip for ip, tss in _rate_store.items() if not tss or (now - tss[-1] > _rate_limit_window)]
-                for ip in stale:
-                    _rate_store.pop(ip, None)
-
+                stale = [key for key, tss in _rate_store.items() if not tss or now - tss[-1] > _rate_limit_window]
+                for key in stale:
+                    _rate_store.pop(key, None)
         return await call_next(request)
 
-    # ------------------------------------------------------------------ #
-    # 6. Routers                                                          #
-    # ------------------------------------------------------------------ #
-    _attach_routers(app)
+    # These hardening hooks already exist; composing them here makes the
+    # protections effective rather than leaving them as unused code.
+    install_terminal_webhook_normalizer()
+    install_webhook_secret_encryption()
 
+    _attach_routers(app)
     return app
 
 
 def _attach_routers(app: FastAPI) -> None:
-    """Attach all API routers to the application.
-
-    Routers are imported here (not at module level) to avoid circular imports
-    and to keep create_app() self-contained.
-    """
-    # SCIM provisioning router (self-contained)
     from loom.scim.provisioning import scim_router
     app.include_router(scim_router)
 
-    # Main API routes (runs, evidence, streaming, control, CI, integrations)
     from loom.api.server import (
         router_auth,
         router_runs,
@@ -144,9 +116,9 @@ def _attach_routers(app: FastAPI) -> None:
         router_admin,
         router_health,
     )
-    app.include_router(router_health)         # /healthz, /metrics — no auth
-    app.include_router(router_auth)           # /api/v1/auth/tokens
-    app.include_router(router_runs)           # /api/v1/run, /stream, /runs/*
-    app.include_router(router_webhooks)       # outbound webhook management
-    app.include_router(router_integrations)   # GitHub, GitLab, Slack
-    app.include_router(router_admin)          # entitlements, orgs
+    app.include_router(router_health)
+    app.include_router(router_auth)
+    app.include_router(router_runs)
+    app.include_router(router_webhooks)
+    app.include_router(router_integrations)
+    app.include_router(router_admin)
