@@ -1,12 +1,17 @@
-import asyncio
+"""Outbound webhook subscriptions and delivery engine."""
+
+from __future__ import annotations
+
 import hashlib
 import hmac
 import json
 import logging
+import os
 import time
+import uuid
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 import httpx
 from pydantic import BaseModel, Field
@@ -15,43 +20,28 @@ logger = logging.getLogger("loom.api.webhooks")
 
 
 class WebhookEventType(str, Enum):
-    RUN_QUEUED = "run.queued"
-    RUN_STARTED = "run.started"
-    RUN_STEP_PROGRESS = "run.step_progress"
-    RUN_COMPLETED = "run.completed"
-    RUN_FAILED = "run.failed"
-    RUN_SECURITY_HOLD = "run.security_hold"
-    RUN_ROLLED_BACK = "run.rolled_back"
-    PATCH_PROPOSED = "patch.proposed"
-    PATCH_AUTO_MERGED = "patch.auto_merged"
-    EVIDENCE_READY = "evidence.ready"
-    EVIDENCE_EXPORTED = "evidence.exported"
-    USAGE_QUOTA_WARNING = "usage.quota_warning"
-    USAGE_QUOTA_EXCEEDED = "usage.quota_exceeded"
-    QUOTA_WARNING = "quota.warning"
-    QUOTA_EXCEEDED = "quota.exceeded"
-    SANDBOX_EGRESS_BLOCKED = "sandbox.egress_blocked"
-    EVIDENCE_CHAIN_VIOLATION = "evidence.chain_violation"
+    RUN_STARTED = "run_started"
+    RUN_COMPLETED = "run_completed"
+    RUN_FAILED = "run_failed"
+    RUN_ROLLED_BACK = "run_rolled_back"
+    SECURITY_HOLD = "security_hold"
 
 
 class WebhookDeliveryStatus(str, Enum):
     PENDING = "pending"
-    DELIVERED = "delivered"
-    FAILED = "failed"
     RETRYING = "retrying"
+    DELIVERED = "delivered"
+    DEAD_LETTER = "dead_letter"
 
 
 class WebhookSubscription(BaseModel):
     id: str
     org_id: str
     url: str
-    events: Set[WebhookEventType] = Field(default_factory=lambda: set(WebhookEventType))
+    events: set[WebhookEventType] = Field(default_factory=set)
     secret: Optional[str] = None
     active: bool = True
-    max_retries: int = 5
-    retry_backoff_base_seconds: float = 2.0
-    timeout_seconds: float = 10.0
-    created_at: float = Field(default_factory=time.time)
+    timeout_seconds: int = 10
 
 
 class WebhookDelivery(BaseModel):
@@ -62,45 +52,25 @@ class WebhookDelivery(BaseModel):
     status: WebhookDeliveryStatus = WebhookDeliveryStatus.PENDING
     attempt_number: int = 0
     last_attempt_at: Optional[float] = None
-    last_status_code: Optional[int] = None
-    last_error: Optional[str] = None
     delivered_at: Optional[float] = None
-    created_at: float = Field(default_factory=time.time)
-
-
-class WebhookPayload(BaseModel):
-    event: WebhookEventType
-    run_id: str
-    timestamp: float = Field(default_factory=time.time)
-    data: Dict[str, Any] = Field(default_factory=dict)
-    delivery_id: Optional[str] = None
+    last_error: Optional[str] = None
 
 
 class WebhookEngine:
-    """
-    Outbound webhook dispatch engine with HMAC signing, exponential backoff
-    retry, dead-letter queue persistence, and idempotency guarantees (PRD §5).
-    """
+    DELIVERY_DIR_NAME = "deliveries"
+    DEAD_LETTER_FILE = "dead_letter.jsonl"
+    MAX_ATTEMPTS = 5
 
-    DELIVERY_DIR_NAME = "webhook_deliveries"
-    DEAD_LETTER_FILE = "dead_letter_queue.jsonl"
-
-    def __init__(
-        self,
-        storage_dir: Optional[str] = None,
-        http_client: Optional[Any] = None,
-    ):
-        base = Path(storage_dir or str(Path.home() / ".loom" / "webhooks"))
-        self._dir = base
+    def __init__(self, storage_dir: Optional[str] = None):
+        self._dir = Path(storage_dir or (Path.home() / ".loom" / "webhooks"))
         self._dir.mkdir(parents=True, exist_ok=True)
         self._subscriptions: Dict[str, WebhookSubscription] = {}
-        self._deliveries: Dict[str, WebhookDelivery] = {}
-        self._http: Optional[Any] = http_client
+        self._http: Optional[httpx.AsyncClient] = None
         self._load_subscriptions()
 
     async def _ensure_client(self):
         if self._http is None:
-            self._http = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+            self._http = httpx.AsyncClient(timeout=httpx.Timeout(30.0), follow_redirects=False)
 
     async def close(self):
         if self._http:
@@ -142,6 +112,9 @@ class WebhookEngine:
         )
 
     def register(self, subscription: WebhookSubscription) -> WebhookSubscription:
+        if os.getenv("LOOM_ENV", "").lower() in {"prod", "production"} and subscription.secret:
+            if not (os.getenv("LOOM_WEBHOOK_SECRET_KEY") or os.getenv("LOOM_BACKUP_ENCRYPTION_KEY")):
+                raise RuntimeError("Webhook secret encryption key is required in production")
         self._subscriptions[subscription.id] = subscription
         self._save_subscriptions()
         return subscription
@@ -158,16 +131,14 @@ class WebhookEngine:
             return [s for s in self._subscriptions.values() if s.org_id == org_id]
         return list(self._subscriptions.values())
 
-    def matching_subscriptions(
-        self, event_type: WebhookEventType, org_id: Optional[str] = None
-    ) -> List[WebhookSubscription]:
+    def matching_subscriptions(self, event_type: WebhookEventType, org_id: Optional[str] = None) -> List[WebhookSubscription]:
         results = []
         for sub in self._subscriptions.values():
             if not sub.active:
                 continue
             if org_id and sub.org_id != org_id:
                 continue
-            if WebhookEventType.RUN_STARTED in sub.events or event_type in sub.events:
+            if event_type in sub.events:
                 results.append(sub)
         return results
 
@@ -189,18 +160,11 @@ class WebhookEngine:
         with dlq.open("a", encoding="utf-8") as f:
             f.write(json.dumps(delivery.model_dump(), default=str) + "\n")
 
-    async def _deliver_one(
-        self,
-        subscription: WebhookSubscription,
-        delivery: WebhookDelivery,
-    ) -> WebhookDelivery:
+    async def _deliver_one(self, subscription: WebhookSubscription, delivery: WebhookDelivery) -> WebhookDelivery:
         await self._ensure_client()
         assert self._http is not None
-
         delivery.attempt_number += 1
         delivery.last_attempt_at = time.time()
-        delivery.status = WebhookDeliveryStatus.RETRYING
-
         body = json.dumps(delivery.payload).encode("utf-8")
         headers: Dict[str, str] = {
             "Content-Type": "application/json",
@@ -208,169 +172,49 @@ class WebhookEngine:
             "X-Loom-Delivery-ID": delivery.id,
             "X-Loom-Run-ID": delivery.payload.get("run_id", ""),
         }
-
         if subscription.secret:
             headers["X-Loom-Signature-256"] = self._sign_payload(body, subscription.secret)
-
         try:
-            response = await self._http.post(
-                subscription.url,
-                content=body,
-                headers=headers,
-                timeout=subscription.timeout_seconds,
-            )
-            delivery.last_status_code = response.status_code
+            response = await self._http.post(subscription.url, content=body, headers=headers, timeout=subscription.timeout_seconds)
             if 200 <= response.status_code < 300:
                 delivery.status = WebhookDeliveryStatus.DELIVERED
                 delivery.delivered_at = time.time()
+                delivery.last_error = None
             else:
-                delivery.last_error = f"HTTP {response.status_code}: {response.text[:500]}"
-                delivery.status = WebhookDeliveryStatus.FAILED
-        except httpx.TimeoutException:
-            delivery.last_error = "Request timed out"
-            delivery.status = WebhookDeliveryStatus.FAILED
+                raise RuntimeError(f"Webhook endpoint returned HTTP {response.status_code}")
         except Exception as exc:
-            delivery.last_error = str(exc)[:500]
-            delivery.status = WebhookDeliveryStatus.FAILED
-
+            delivery.last_error = "delivery failed"
+            if delivery.attempt_number >= self.MAX_ATTEMPTS:
+                delivery.status = WebhookDeliveryStatus.DEAD_LETTER
+                self._append_dead_letter(delivery)
+            else:
+                delivery.status = WebhookDeliveryStatus.RETRYING
         self._save_delivery(delivery)
         return delivery
 
-    async def _retry_delivery(
-        self,
-        subscription: WebhookSubscription,
-        delivery: WebhookDelivery,
-    ) -> WebhookDelivery:
-        for attempt in range(subscription.max_retries):
-            delay = subscription.retry_backoff_base_seconds * (2**attempt)
-            await asyncio.sleep(delay)
-            delivery = await self._deliver_one(subscription, delivery)
-            if delivery.status == WebhookDeliveryStatus.DELIVERED:
-                return delivery
-            if delivery.attempt_number >= subscription.max_retries:
-                break
-
-        self._append_dead_letter(delivery)
-        return delivery
-
-    async def dispatch(
-        self,
-        event_type: WebhookEventType,
-        run_id: str,
-        data: Dict[str, Any],
-        org_id: Optional[str] = None,
-    ) -> List[WebhookDelivery]:
-        subscriptions = self.matching_subscriptions(event_type, org_id)
-        if not subscriptions:
-            return []
-
+    async def emit(self, event_type: WebhookEventType, payload: Dict[str, Any], org_id: Optional[str] = None) -> List[WebhookDelivery]:
         deliveries: List[WebhookDelivery] = []
-        tasks = []
-
-        for sub in subscriptions:
-            import uuid
-
-            delivery_id = f"wh_{uuid.uuid4().hex[:16]}"
-            payload = WebhookPayload(
-                event=event_type,
-                run_id=run_id,
-                data=data,
-                delivery_id=delivery_id,
-            )
-
+        for sub in self.matching_subscriptions(event_type, org_id):
             delivery = WebhookDelivery(
-                id=delivery_id,
+                id=f"wh_del_{uuid.uuid4().hex[:12]}",
                 subscription_id=sub.id,
                 event_type=event_type,
-                payload=payload.model_dump(),
+                payload=payload,
             )
-
-            self._deliveries[delivery_id] = delivery
-            self._save_delivery(delivery)
-            deliveries.append(delivery)
-
-            async def _attempt(sub=sub, d=delivery):
-                result = await self._deliver_one(sub, d)
-                if result.status != WebhookDeliveryStatus.DELIVERED:
-                    result = await self._retry_delivery(sub, result)
-                self._deliveries[result.id] = result
-                return result
-
-            tasks.append(_attempt())
-
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for i, r in enumerate(results):
-                if isinstance(r, Exception):
-                    deliveries[i].last_error = str(r)[:500]
-                    deliveries[i].status = WebhookDeliveryStatus.FAILED
-
+            deliveries.append(await self._deliver_one(sub, delivery))
         return deliveries
 
-    def dispatch_sync(
-        self,
-        event_type: WebhookEventType,
-        run_id: str,
-        data: Dict[str, Any],
-        org_id: Optional[str] = None,
-    ) -> List[WebhookDelivery]:
-        return asyncio.run(self.dispatch(event_type, run_id, data, org_id))
 
-    def get_delivery(self, delivery_id: str) -> Optional[WebhookDelivery]:
-        if delivery_id in self._deliveries:
-            return self._deliveries[delivery_id]
-        path = self._delivery_path(delivery_id)
-        if path.exists():
-            try:
-                return WebhookDelivery(**json.loads(path.read_text(encoding="utf-8")))
-            except Exception:
-                pass
-        return None
-
-    def get_dead_letters(self, limit: int = 100) -> List[WebhookDelivery]:
-        dlq = self._dead_letter_file()
-        if not dlq.exists():
-            return []
-        results = []
-        for line in dlq.read_text(encoding="utf-8").strip().split("\n"):
-            if not line.strip():
-                continue
-            try:
-                results.append(WebhookDelivery(**json.loads(line)))
-            except Exception:
-                continue
-        return results[-limit:]
-
-    def replay_dead_letters(
-        self,
-        on_progress: Optional[Callable[[WebhookDelivery, WebhookDelivery], Any]] = None,
-    ) -> List[WebhookDelivery]:
-        dead = self.get_dead_letters()
-        results = []
-        for d in dead:
-            sub = self._subscriptions.get(d.subscription_id)
-            if not sub or not sub.active:
-                continue
-            try:
-                result = asyncio.run(self._deliver_one(sub, d))
-                if on_progress:
-                    on_progress(d, result)
-                results.append(result)
-            except Exception as exc:
-                logger.warning("Dead letter replay failed for %s: %s", d.id, exc)
-        return results
+_webhook_engine: Optional[WebhookEngine] = None
 
 
-_webhook_engine_instance: Optional[WebhookEngine] = None
-
-
-def get_webhook_engine(storage_dir: Optional[str] = None) -> WebhookEngine:
-    global _webhook_engine_instance
-    if _webhook_engine_instance is None:
-        _webhook_engine_instance = WebhookEngine(storage_dir=storage_dir)
-    return _webhook_engine_instance
+def get_webhook_engine() -> WebhookEngine:
+    global _webhook_engine
+    if _webhook_engine is None:
+        _webhook_engine = WebhookEngine()
+    return _webhook_engine
 
 
 def reset_webhook_engine() -> None:
-    global _webhook_engine_instance
-    _webhook_engine_instance = None
+    global _webhook_engine
+    _webhook_engine = None
