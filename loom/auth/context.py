@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Optional
@@ -102,3 +103,12 @@ def require_authenticated_principal() -> AuthenticatedPrincipal:
             detail="Authentication required",
         )
     return principal
+
+
+# Backward-compatible export for code/tests that historically imported
+# resolve_request_org from loom.api.server.  server.py may be partially
+# initialized during the API app's router bootstrap, so install the alias
+# without introducing a hard circular import.
+_server_module = sys.modules.get("loom.api.server")
+if _server_module is not None:
+    setattr(_server_module, "resolve_request_org", resolve_request_org)

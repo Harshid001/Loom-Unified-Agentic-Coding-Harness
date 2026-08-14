@@ -8,7 +8,7 @@ import { OverviewTab } from '../components/OverviewTab';
 import { DagTab } from '../components/DagTab';
 import { DiffTab } from '../components/DiffTab';
 import { AblationsTab } from '../components/AblationsTab';
-import { LiveBox } from '../components/LiveBox';
+import { LiveBoxReal } from '../components/LiveBoxReal';
 import { AuthGate } from '../components/AuthGate';
 
 const AVAILABLE_MODELS = [
@@ -26,7 +26,7 @@ function LoomDashboard() {
   const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0]);
   const [newIssue, setNewIssue] = useState('');
   const [repoPath] = useState('.');
-  const [mockMode, setMockMode] = useState(true);
+  const [mockMode, setMockMode] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
   const {
@@ -133,7 +133,7 @@ function LoomDashboard() {
         </section>
       </main>
 
-      <LiveBox isOpen={isLiveBoxOpen} onClose={() => setIsLiveBoxOpen(false)} issue={newIssue} model={selectedModel} repoPath={repoPath} mockMode={mockMode} onRunComplete={handleRunComplete} />
+      <LiveBoxReal isOpen={isLiveBoxOpen} onClose={() => setIsLiveBoxOpen(false)} issue={newIssue} model={selectedModel} repoPath={repoPath} mockMode={mockMode} onRunComplete={handleRunComplete} />
     </div>
   );
 }

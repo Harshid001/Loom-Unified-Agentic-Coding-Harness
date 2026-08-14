@@ -1,103 +1,83 @@
-"""PRD-029 — Final Release Gate Aggregator.
-
-Executes and verifies all 15 Production Gates:
-  Gate 0:  Release Baseline (docs/releases/production-baseline.md)
-  Gate 1:  Explicit Auth Architecture (create_app factory & no sys.meta_path)
-  Gate 2:  Full Authorization Matrix Tests (tests/security/test_authorization_matrix.py)
-  Gate 3:  Webhook Security Hardening (tests/security/test_webhooks.py)
-  Gate 4:  Distributed Runtime State (tests/integration/test_distributed_runtime.py)
-  Gate 5:  Sandbox Isolation (tests/sandbox/)
-  Gate 6:  PostgreSQL Production Gate (tests/integration/test_postgres_production.py)
-  Gate 7:  Backup & Restore Drill (scripts/production/restore_drill.sh)
-  Gate 8:  Chaos & Failure Recovery (tests/chaos/test_failure_recovery.py)
-  Gate 9:  Load & SLO Validation
-  Gate 10: Immutable Release Pipeline
-  Gate 11: Production Observability (loom/telemetry/metrics.py)
-  Gate 12: Frontend Quality Gate
-  Gate 13: Operational Runbooks (docs/runbooks/)
-  Gate 14: Final Gate Score Aggregator (90+/100 target)
-
-Outputs final score and Production Ready verdict.
-"""
+"""PRD-029 — Evidence-based final production release gate."""
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 
-def _run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
+TIMEOUT = int(os.getenv("LOOM_GATE_TIMEOUT_SECONDS", "900"))
+
+
+def _run(cmd: list[str], cwd: Path, timeout: int = TIMEOUT) -> tuple[bool, str]:
     try:
-        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=180)
-        return proc.returncode, proc.stdout, proc.stderr
-    except Exception as exc:
-        return 1, "", str(exc)
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    output = (proc.stdout + "\n" + proc.stderr).strip()
+    return proc.returncode == 0, output[-12000:]
+
+
+def _npm() -> str:
+    return shutil.which("npm.cmd") or shutil.which("npm") or "npm"
+
+
+def _exists(path: Path) -> tuple[bool, str]:
+    return (path.exists(), str(path))
+
+
+def _env_required(*names: str) -> tuple[bool, str]:
+    missing = [name for name in names if not os.getenv(name)]
+    return (not missing, "missing environment: " + ", ".join(missing) if missing else "configured")
 
 
 def run_all_gates(repo_root: Path) -> dict:
-    print("===============================================================")
-    print("       LOOM PRODUCTION GATE AGGREGATOR (PRD-029)               ")
-    print("===============================================================")
-    print(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}")
-    print(f"Repository Root: {repo_root}")
-    print("---------------------------------------------------------------")
-
-    gates = [
-        ("Gate 0: Release Baseline", lambda: (repo_root / "scripts" / "production" / "capture_baseline.py").exists()),
-        ("Gate 1: Explicit Auth Architecture", lambda: "_ServerFinder" not in (repo_root / "loom" / "api" / "__init__.py").read_text()),
-        ("Gate 2: Authorization Matrix Tests", lambda: _run([sys.executable, "-m", "pytest", "tests/security/test_authorization_matrix.py", "-q"], repo_root)[0] == 0),
-        ("Gate 3: Webhook Security Hardening", lambda: _run([sys.executable, "-m", "pytest", "tests/security/test_webhooks.py", "-q"], repo_root)[0] == 0),
-        ("Gate 4: Distributed Runtime State", lambda: _run([sys.executable, "-m", "pytest", "tests/integration/test_distributed_runtime.py", "-q"], repo_root)[0] == 0),
-        ("Gate 5: Sandbox Isolation Tests", lambda: (repo_root / "tests" / "sandbox" / "test_filesystem_isolation.py").exists()),
-        ("Gate 6: PostgreSQL Production Gate", lambda: _run([sys.executable, "-m", "pytest", "tests/integration/test_postgres_production.py", "-q"], repo_root)[0] == 0),
-        ("Gate 7: Backup/Restore Drill", lambda: (repo_root / "scripts" / "production" / "restore_drill.sh").exists()),
-        ("Gate 8: Chaos & Failure Recovery", lambda: _run([sys.executable, "-m", "pytest", "tests/chaos/test_failure_recovery.py", "-q"], repo_root)[0] == 0),
-        ("Gate 9: Load & SLO Validation", lambda: True),
-        ("Gate 10: Immutable Release Pipeline", lambda: (repo_root / ".github" / "workflows" / "release.yml").exists() or True),
-        ("Gate 11: Production Observability", lambda: (repo_root / "loom" / "telemetry" / "metrics.py").exists()),
-        ("Gate 12: Frontend Quality Gate", lambda: True),
-        ("Gate 13: Operational Runbooks", lambda: (repo_root / "docs" / "runbooks" / "deployment.md").exists()),
-        ("Gate 14: Final Gate Score Aggregator", lambda: True),
+    gates: list[tuple[str, callable]] = [
+        ("Gate 0: Release Baseline", lambda: _run([sys.executable, "scripts/production/capture_baseline.py"], repo_root)),
+        ("Gate 1: Explicit Auth Architecture", lambda: _run([sys.executable, "-c", "from loom.api.app import create_app; import loom.api.__init__ as m; assert '_ServerFinder' not in open(m.__file__, encoding='utf-8').read(); create_app(docs_url=None, redoc_url=None)"], repo_root)),
+        ("Gate 2: Authorization Matrix Tests", lambda: _run([sys.executable, "-m", "pytest", "tests/security/test_authorization_matrix.py", "-q"], repo_root)),
+        ("Gate 3: Webhook Security Hardening", lambda: _run([sys.executable, "-m", "pytest", "tests/security/test_webhooks.py", "-q"], repo_root)),
+        ("Gate 4: Distributed Runtime State", lambda: _run([sys.executable, "-m", "pytest", "tests/integration/test_distributed_runtime.py", "-q"], repo_root)),
+        ("Gate 5: Sandbox Isolation", lambda: _run([sys.executable, "-m", "pytest", "tests/sandbox", "-q"], repo_root) if (repo_root / "tests" / "sandbox").exists() else (False, "sandbox test suite missing")),
+        ("Gate 6: PostgreSQL Production Gate", lambda: _run([sys.executable, "-m", "pytest", "tests/integration/test_postgres_production.py", "-q"], repo_root)),
+        ("Gate 7: Backup/Restore Drill", lambda: _run([sys.executable, "scripts/restore_drill.py", "--help"], repo_root) if os.getenv("LOOM_ALLOW_DR_DRILL_HELP") == "1" else (False, "live restore evidence not executed; set LOOM_ALLOW_DR_DRILL_HELP=1 only for script validation")),
+        ("Gate 8: Chaos & Failure Recovery", lambda: _run([sys.executable, "-m", "pytest", "tests/chaos", "-q"], repo_root) if (repo_root / "tests" / "chaos").exists() else (False, "chaos test suite missing")),
+        ("Gate 9: Load & SLO Validation", lambda: _run([sys.executable, "scripts/production/load_slo_gate.py"], repo_root) if (repo_root / "scripts" / "production" / "load_slo_gate.py").exists() else (False, "load/SLO validation is not available")),
+        ("Gate 10: Immutable Release Pipeline", lambda: _exists(repo_root / ".github" / "workflows" / "production-gates.yml")),
+        ("Gate 11: Production Observability", lambda: _run([sys.executable, "-c", "from loom.telemetry.metrics import generate_latest; assert generate_latest()"], repo_root)),
+        ("Gate 12: Frontend Quality", lambda: _run([_npm(), "run", "lint"], repo_root / "web") if (repo_root / "web" / "package.json").exists() else (False, "frontend package missing")),
+        ("Gate 13: Operational Runbooks", lambda: _exists(repo_root / "docs" / "runbooks" / "deployment.md")),
+        ("Gate 14: Dependency/Security Scan", lambda: _run([sys.executable, "-m", "pip_audit", "--skip-editable"], repo_root)),
     ]
 
-    passed_count = 0
     results = []
-
+    passed = 0
     for name, check in gates:
-        start = time.time()
+        started = time.time()
         try:
-            ok = check()
-        except Exception:
-            ok = False
-        duration = round(time.time() - start, 2)
-        status = "PASS" if ok else "FAIL"
+            ok, evidence = check()
+        except Exception as exc:
+            ok, evidence = False, repr(exc)
+        duration = round(time.time() - started, 2)
         if ok:
-            passed_count += 1
-        results.append({"gate": name, "status": status, "duration_seconds": duration})
-        print(f"[{status}] {name:<42} ({duration}s)")
+            passed += 1
+        results.append({"gate": name, "status": "PASS" if ok else "FAIL", "duration_seconds": duration, "evidence": evidence})
 
-    score = round((passed_count / len(gates)) * 100, 1)
-    # Map score: base 82 -> target 95+/100
-    production_ready = score >= 90.0
-
-    print("---------------------------------------------------------------")
-    print(f"PASSED GATES: {passed_count}/{len(gates)}")
-    print(f"PRODUCTION READINESS SCORE: {score}/100")
-    print(f"VERDICT: {'PRODUCTION READY' if production_ready else 'NOT READY'}")
-    print("===============================================================")
-
+    score = round((passed / len(gates)) * 100, 1)
+    production_ready = passed == len(gates)
     report = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "passed_gates": passed_count,
+        "passed_gates": passed,
         "total_gates": len(gates),
         "score": score,
         "verdict": "PRODUCTION READY" if production_ready else "NOT READY",
         "gate_results": results,
     }
-
     out_file = repo_root / "docs" / "releases" / "final-release-gate-report.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -107,6 +87,7 @@ def run_all_gates(repo_root: Path) -> dict:
 def main() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     report = run_all_gates(repo_root)
+    print(json.dumps(report, indent=2))
     if report["verdict"] != "PRODUCTION READY":
         sys.exit(1)
 

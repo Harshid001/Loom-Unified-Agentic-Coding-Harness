@@ -3,6 +3,7 @@ import re
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
 
@@ -18,13 +19,28 @@ def _safe_snapshot_label(label: str) -> str:
     return value
 
 
-from dataclasses import dataclass
+def _copy_tree_no_links(source: Path, destination: Path) -> None:
+    for item in source.iterdir():
+        dest = destination / item.name
+        if item.is_symlink():
+            raise ValueError(f"Symlink is not permitted in snapshot restore: {item}")
+        if item.is_dir():
+            dest.mkdir(parents=True, exist_ok=True)
+            _copy_tree_no_links(item, dest)
+        else:
+            shutil.copy2(item, dest)
 
 
-@dataclass
-class Worktree:
-    worktree_path: str
+@dataclass(frozen=True)
+class WorktreeHandle:
     snapshot_id: str
+    worktree_path: str
+
+    def __str__(self) -> str:
+        return self.worktree_path
+
+    def __fspath__(self) -> str:
+        return self.worktree_path
 
 
 class WorktreeManager:
@@ -33,19 +49,6 @@ class WorktreeManager:
     def __init__(self, repo_path: str):
         self.repo_path = Path(repo_path).resolve()
         self.snapshots: Dict[str, str] = {}
-
-    def create_worktree(self, label: str) -> Worktree:
-        snap_id = self.create_snapshot(label)
-        path = self.snapshots[snap_id]
-        return Worktree(worktree_path=path, snapshot_id=snap_id)
-
-    def cleanup_worktree(self, label: str):
-        if label in self.snapshots:
-            self.cleanup_snapshot(label)
-        else:
-            for snap_id in list(self.snapshots.keys()):
-                if label in snap_id:
-                    self.cleanup_snapshot(snap_id)
 
     def create_snapshot(self, label: str) -> str:
         safe_label = _safe_snapshot_label(label)
@@ -70,10 +73,16 @@ class WorktreeManager:
                 self.repo_path,
                 snapshot_dir,
                 ignore=shutil.ignore_patterns(".loom_snapshots", ".venv", "node_modules", ".git"),
+                symlinks=False,
             )
             self.snapshots[snapshot_id] = str(snapshot_dir)
 
         return snapshot_id
+
+    def create_worktree(self, label: str) -> WorktreeHandle:
+        """Backward-compatible object API exposing the materialized worktree path."""
+        snapshot_id = self.create_snapshot(label)
+        return WorktreeHandle(snapshot_id=snapshot_id, worktree_path=self.snapshots[snapshot_id])
 
     def restore_snapshot(self, snapshot_id: str) -> bool:
         if snapshot_id not in self.snapshots:
@@ -93,21 +102,23 @@ class WorktreeManager:
             for item in snapshot_path.iterdir():
                 if item.name in [".git", ".loom_snapshots"]:
                     continue
+                if item.is_symlink():
+                    raise ValueError(f"Symlink is not permitted in snapshot restore: {item}")
                 dest = (self.repo_path / item.name).resolve()
                 if self.repo_path not in dest.parents and dest != self.repo_path:
                     return False
                 if item.is_dir():
                     if dest.exists():
                         shutil.rmtree(dest, ignore_errors=True)
-                    shutil.copytree(item, dest)
+                    _copy_tree_no_links(item, dest)
                 else:
                     shutil.copy2(item, dest)
             return True
-        except (OSError, IOError, shutil.Error) as err:
+        except (OSError, IOError, shutil.Error, ValueError) as err:
             logger.error("Failed to restore snapshot %s: %s", snapshot_id, err)
             return False
 
-    def cleanup_snapshot(self, snapshot_id: str):
+    def cleanup_snapshot(self, snapshot_id: str) -> None:
         if snapshot_id in self.snapshots:
             path = Path(self.snapshots[snapshot_id]).resolve()
             snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
@@ -123,3 +134,7 @@ class WorktreeManager:
                 if path.exists():
                     shutil.rmtree(path, ignore_errors=True)
             del self.snapshots[snapshot_id]
+
+    def cleanup_worktree(self, worktree_id: str) -> None:
+        """Backward-compatible alias for cleanup_snapshot()."""
+        self.cleanup_snapshot(worktree_id)

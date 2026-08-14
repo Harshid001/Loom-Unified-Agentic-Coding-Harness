@@ -476,6 +476,7 @@ class TaskGraph:
                 gateway_result = self.state.shared_data.get("commit_gateway", {})
                 if not gateway_result.get("allowed", True):
                     self.run_status = RunStatus.SECURITY_HOLD
+                    self.state.shared_data["verification_decision"] = "security_hold"
                     self.state.shared_data["security_hold_reason"] = gateway_result.get(
                         "reason", "commit gateway blocked patch"
                     )

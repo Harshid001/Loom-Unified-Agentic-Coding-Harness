@@ -13,6 +13,10 @@ from loom.runtime.job_queue import JobQueue, RunJob
 logger = logging.getLogger("loom.runtime.worker")
 
 
+class ExecutionLeaseLost(RuntimeError):
+    """Raised when a worker can no longer prove ownership of a running job."""
+
+
 class RunWorker:
     def __init__(self) -> None:
         self.queue = JobQueue()
@@ -33,29 +37,42 @@ class RunWorker:
                 if claimed is None:
                     continue
                 job = claimed.job
-                heartbeat = asyncio.create_task(self._heartbeat(job))
-                await self.queue.mark_started(job)
+                lease_lost = asyncio.Event()
+                heartbeat = asyncio.create_task(self._heartbeat(job, claimed.lease_token, lease_lost))
+                lease_waiter = asyncio.create_task(lease_lost.wait())
+                execution: asyncio.Task[object] | None = None
                 try:
-                    await execute_run_job(job)
+                    await self.queue.mark_started(job, claimed.lease_token)
+                    execution = asyncio.create_task(execute_run_job(job))
+                    completed, pending = await asyncio.wait(
+                        {execution, lease_waiter},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in pending:
+                        task.cancel()
+                    if execution not in completed:
+                        execution.cancel()
+                        try:
+                            await execution
+                        except asyncio.CancelledError:
+                            pass
+                        raise ExecutionLeaseLost(f"Execution lease lost for run {job.run_id}")
+                    await execution
                     await self.queue.mark_finished(job, "succeeded")
                     await self.queue.ack(claimed.message_id)
                 except Exception as exc:
                     failure_class = classify_failure(exc)
                     next_attempt = job.attempts + 1
-                    logger.exception(
-                        "Run %s failed on attempt %s with class %s",
-                        job.run_id,
-                        next_attempt,
-                        failure_class.value,
-                    )
+                    logger.exception("Run %s failed on attempt %s with class %s", job.run_id, next_attempt, failure_class.value)
                     if not should_retry(exc) or next_attempt >= self.max_attempts:
-                        await self.queue.mark_finished(job, "dead_letter", str(exc))
+                        await self.queue.mark_finished(job, "dead_letter", "execution failed")
+                        await self.queue.dead_letter(job, str(exc))
                         await self.queue.ack(claimed.message_id)
                     else:
-                        await self.queue.mark_finished(job, "retrying", str(exc))
+                        await self.queue.mark_finished(job, "retrying", "execution failed")
                         await self.queue.enqueue(
                             RunJob(
-                                job_id=job.job_id,
+                                job_id=f"{job.job_id}:retry:{next_attempt}",
                                 run_id=job.run_id,
                                 org_id=job.org_id,
                                 repo_path=job.repo_path,
@@ -70,11 +87,17 @@ class RunWorker:
                         )
                         await self.queue.ack(claimed.message_id)
                 finally:
+                    lease_waiter.cancel()
+                    try:
+                        await lease_waiter
+                    except asyncio.CancelledError:
+                        pass
                     heartbeat.cancel()
                     try:
                         await heartbeat
                     except asyncio.CancelledError:
                         pass
+                    await self.queue.release_lease(job.job_id, claimed.lease_token)
         finally:
             idle_heartbeat.cancel()
             try:
@@ -87,10 +110,13 @@ class RunWorker:
             await self.queue.mark_worker_heartbeat()
             await asyncio.sleep(self.heartbeat_seconds)
 
-    async def _heartbeat(self, job: RunJob) -> None:
+    async def _heartbeat(self, job: RunJob, lease_token: str, lease_lost: asyncio.Event) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_seconds)
-            await self.queue.heartbeat(job)
+            if not await self.queue.heartbeat(job, lease_token):
+                logger.critical("Execution lease lost for run %s", job.run_id)
+                lease_lost.set()
+                return
 
 
 async def main() -> None:

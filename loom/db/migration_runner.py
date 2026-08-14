@@ -1,48 +1,83 @@
-"""Versioned database migrations for production schema evolution."""
+"""Authoritative PostgreSQL migration runner.
+
+The SQL files under migrations/postgres are the single source of truth. The
+schema_migrations table records the version, filename, checksum and timestamp.
+"""
 
 from __future__ import annotations
 
-import time
+import hashlib
+from pathlib import Path
 from typing import Any
+
+
+def _migration_files() -> list[Path]:
+    root = Path(__file__).resolve().parents[2] / "migrations" / "postgres"
+    return sorted(root.glob("[0-9][0-9][0-9]_*.sql"))
+
+
+def _ensure_schema_migrations(conn: Any) -> None:
+    from sqlalchemy import text
+
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                filename VARCHAR(255),
+                checksum VARCHAR(64),
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+    )
+    columns = conn.execute(
+        text("SELECT column_name FROM information_schema.columns WHERE table_name = 'schema_migrations'")
+    ).scalars().all()
+    if "filename" not in columns:
+        conn.execute(text("ALTER TABLE schema_migrations ADD COLUMN filename VARCHAR(255)"))
+    if "checksum" not in columns:
+        conn.execute(text("ALTER TABLE schema_migrations ADD COLUMN checksum VARCHAR(64)"))
 
 
 def apply_postgres_migrations(engine: Any) -> None:
     from sqlalchemy import text
 
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at DOUBLE PRECISION NOT NULL
-                )
-                """
-            )
-        )
-        current = conn.execute(text("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")).scalar_one()
-        if int(current) < 1:
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_runs_org_started ON runs(org_id, started_at DESC)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_steps_run_recorded ON agent_steps(run_id, recorded_at)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_verify_run_recorded ON verification_results(run_id, recorded_at)"))
-            conn.execute(text("INSERT INTO schema_migrations(version, applied_at) VALUES (1, :ts)"), {"ts": time.time()})
-            current = 1
+    files = _migration_files()
+    if not files:
+        raise RuntimeError("No PostgreSQL migration files found")
 
-        if int(current) < 2:
-            # Add tenant FK constraints only when their parent tables exist. Existing
-            # deployments may not yet have an organizations table, so this migration
-            # intentionally fails safe and records the version only after inspection.
-            org_exists = conn.execute(
-                text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'organizations')")
-            ).scalar_one()
-            if org_exists:
-                conn.execute(
-                    text(
-                        "ALTER TABLE runs ADD CONSTRAINT fk_runs_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    with engine.begin() as conn:
+        _ensure_schema_migrations(conn)
+        rows = conn.execute(
+            text("SELECT version, filename, checksum FROM schema_migrations ORDER BY version")
+        ).mappings().all()
+        applied = {int(row["version"]): dict(row) for row in rows}
+
+        for path in files:
+            version = int(path.name[:3])
+            sql = path.read_text(encoding="utf-8").strip()
+            checksum = hashlib.sha256(sql.encode("utf-8")).hexdigest()
+            previous = applied.get(version)
+            if previous is not None:
+                old_checksum = previous.get("checksum") or ""
+                if old_checksum in {"", "legacy", "programmatic"}:
+                    conn.execute(
+                        text("UPDATE schema_migrations SET filename=:filename, checksum=:checksum WHERE version=:version"),
+                        {"filename": path.name, "checksum": checksum, "version": version},
                     )
-                )
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_runs_org ON runs(org_id)"))
-            conn.execute(text("INSERT INTO schema_migrations(version, applied_at) VALUES (2, :ts)"), {"ts": time.time()})
+                    continue
+                if previous.get("filename") != path.name or old_checksum != checksum:
+                    raise RuntimeError(f"Migration {version} checksum/name mismatch")
+                continue
+
+            conn.exec_driver_sql(sql)
+            conn.execute(
+                text(
+                    "INSERT INTO schema_migrations(version, filename, checksum) VALUES (:version, :filename, :checksum)"
+                ),
+                {"version": version, "filename": path.name, "checksum": checksum},
+            )
 
 
 def apply_sqlite_hardening(conn: Any) -> None:

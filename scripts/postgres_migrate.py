@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply versioned PostgreSQL migrations with an advisory lock and checksums."""
+"""Apply authoritative PostgreSQL migrations with an advisory lock and checksums."""
 from __future__ import annotations
 
 import argparse
@@ -37,7 +37,7 @@ def migrate(database_url: str, directory: Path, target: int | None = None) -> in
     if not files:
         raise RuntimeError(f"No PostgreSQL migrations found in {directory}")
 
-    engine = create_engine(database_url, pool_pre_ping=True, pool_size=3, max_overflow=2)
+    engine = create_engine(database_url, pool_pre_ping=True, pool_recycle=1800, pool_size=3, max_overflow=2)
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": LOCK_KEY})
         conn.execute(
@@ -45,8 +45,8 @@ def migrate(database_url: str, directory: Path, target: int | None = None) -> in
                 """
                 CREATE TABLE IF NOT EXISTS schema_migrations (
                     version INTEGER PRIMARY KEY,
-                    filename VARCHAR(255) NOT NULL,
-                    checksum VARCHAR(64) NOT NULL,
+                    filename VARCHAR(255),
+                    checksum VARCHAR(64),
                     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """
@@ -63,14 +63,19 @@ def migrate(database_url: str, directory: Path, target: int | None = None) -> in
             checksum = migration_checksum(sql)
             previous = applied.get(version)
             if previous is not None:
-                if previous["checksum"] != checksum or previous["filename"] != path.name:
+                old = previous.get("checksum") or ""
+                if old in {"legacy", "programmatic", ""}:
+                    conn.execute(
+                        text("UPDATE schema_migrations SET filename=:filename, checksum=:checksum WHERE version=:version"),
+                        {"version": version, "filename": path.name, "checksum": checksum},
+                    )
+                    continue
+                if previous.get("filename") != path.name or old != checksum:
                     raise RuntimeError(f"Migration {version} checksum/name mismatch")
                 continue
             conn.exec_driver_sql(sql)
             conn.execute(
-                text(
-                    "INSERT INTO schema_migrations (version, filename, checksum) VALUES (:version, :filename, :checksum)"
-                ),
+                text("INSERT INTO schema_migrations (version, filename, checksum) VALUES (:version, :filename, :checksum)"),
                 {"version": version, "filename": path.name, "checksum": checksum},
             )
             print(f"applied {version:03d} {path.name}")

@@ -78,6 +78,7 @@ from loom.api.security import (
     PrincipalDep,
     require_admin_permission,
     require_auditor_permission,
+    require_entitlement,
     require_run_access,
     require_run_permission,
     require_token_admin,
@@ -230,6 +231,11 @@ def _request_org_id(client_org_id: str) -> str:
         orgs = list(getattr(entitlements, "_orgs", {}).keys())
         return client_org_id or (orgs[0] if orgs else "default")
     return get_effective_principal().org_id
+
+
+def resolve_request_org(client_org_id: Optional[str] = None) -> str:
+    """Backward-compatible request-org resolver with production identity binding."""
+    return _request_org_id(client_org_id or "")
 
 
 # ---------------------------------------------------------------------------
@@ -924,177 +930,45 @@ async def handle_github_webhook(
     before this handler is ever reached.  The raw body is cached in
     request.state.raw_body by that middleware.
     """
-    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
+    event_type = request.headers.get("x-github-event", "")
+    if event_type not in {"push", "pull_request", "issues", "issue_comment"}:
+        return {"received": True, "ignored": True, "event": event_type}
 
-    raw_body = getattr(request.state, "raw_body", None)
-    payload: dict[str, Any] = {}
-    if raw_body:
-        try:
-            payload = json.loads(raw_body)
-        except Exception:
-            payload = {}
-    else:
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
-
-    repo_name = payload.get("repository", {}).get("full_name", "") if isinstance(payload.get("repository"), dict) else ""
-    issue = payload.get("issue", {}) or {}
-    issue_title = issue.get("title", "")
-    issue_labels = [lbl.get("name", "") for lbl in issue.get("labels", [])]
-    issue_number = issue.get("number", 0)
-    action = payload.get("action", "")
-
-    config = CIBotConfig(
-        provider=CIBotProvider.GITHUB,
-        org_id="from_webhook",
-        repo_full_name=repo_name,
-        api_base_url="",
-    )
-    bot = CIBot(config)
-    should_triage = bot.should_triage_issue(issue_title, issue_labels)
-    return {
-        "action": action,
-        "should_triage": should_triage,
-        "repo": repo_name,
-        "issue_number": issue_number,
-    }
+    payload = GitHubWebhookRequest.model_validate(await request.json())
+    engine = get_webhook_engine()
+    return await engine.handle_github(payload.model_dump(), event_type)
 
 
-@router_integrations.post("/api/v1/integrations/gitlab/webhook")
 @router_integrations.post("/api/integrations/gitlab/webhook")
+@router_integrations.post("/api/v1/integrations/gitlab/webhook")
 async def handle_gitlab_webhook(
     request: Request,
     _auth: AuthDep = None,
 ) -> dict:
-    """GitLab inbound webhook handler.
+    event_type = request.headers.get("x-gitlab-event", "")
+    if event_type not in {"Push Hook", "Merge Request Hook", "Note Hook", "Issue Hook"}:
+        return {"received": True, "ignored": True, "event": event_type}
 
-    Signature verification is enforced by WebhookSignatureMiddleware (ASGI layer).
-    """
-    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
-
-    raw_body = getattr(request.state, "raw_body", None)
-    payload: dict[str, Any] = {}
-    if raw_body:
-        try:
-            payload = json.loads(raw_body)
-        except Exception:
-            payload = {}
-    else:
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
-
-    project = payload.get("project", {}) or {}
-    project_name = project.get("path_with_namespace", "")
-    obj_attrs = payload.get("object_attributes", {}) or {}
-    issue_title = obj_attrs.get("title", "")
-    issue_labels = [lbl.get("title", "") for lbl in obj_attrs.get("labels", [])]
-    issue_number = obj_attrs.get("iid", 0)
-    object_kind = payload.get("object_kind", "")
-
-    config = CIBotConfig(
-        provider=CIBotProvider.GITLAB,
-        org_id="from_webhook",
-        repo_full_name=project_name,
-        api_base_url="",
-    )
-    bot = CIBot(config)
-    should_triage = bot.should_triage_issue(issue_title, issue_labels)
-    return {
-        "object_kind": object_kind,
-        "should_triage": should_triage,
-        "repo": project_name,
-        "issue_number": issue_number,
-    }
+    payload = GitLabWebhookRequest.model_validate(await request.json())
+    return await get_webhook_engine().handle_gitlab(payload.model_dump(), event_type)
 
 
 @router_integrations.post("/api/v1/integrations/slack/notify")
 @router_integrations.post("/api/integrations/slack/notify")
-async def send_slack_notification(
-    req: SlackNotifyRequest,
-    _auth: AuthDep = None,
-) -> dict:
-    from loom.integrations.slack import (
-        SlackNotification,
-        SlackNotificationLevel,
-        SlackNotificationTemplate,
-        SlackNotifier,
-    )
+async def notify_slack(req: SlackNotifyRequest, _auth: AuthDep = None) -> dict:
+    from loom.integrations.slack import SlackWebhookClient
 
-    level = SlackNotificationLevel.INFO
-    template = SlackNotificationTemplate.CUSTOM
-    try:
-        level = SlackNotificationLevel(req.level)
-    except ValueError:
-        pass
-    try:
-        template = SlackNotificationTemplate(req.template)
-    except ValueError:
-        pass
-
-    notification = SlackNotification(
-        title=req.title,
-        body=req.body,
-        level=level,
-        template=template,
-        run_id=req.run_id,
-    )
-
-    notifier = SlackNotifier(webhook_url=req.webhook_url)
-    try:
-        success = await notifier.send(notification)
-        await notifier.close()
-        return {"sent": success, "level": level.value, "template": template.value}
-    except Exception as exc:
-        logger.error("Slack notify failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Slack delivery failed: {exc}")
+    client = SlackWebhookClient(req.webhook_url)
+    return client.send_notification(req.title, req.body, req.level, req.template, req.run_id)
 
 
-@router_integrations.get("/api/v1/integrations/bot/{org_id}/status")
-@router_integrations.get("/api/integrations/bot/{org_id}/status")
-def get_bot_status(
-    org_id: str,
-    _rbac: RBACEnforcer = Depends(require_admin_permission),
-) -> Any:
-    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
+@router_integrations.post("/api/v1/integrations/github/prepare-pr")
+@router_integrations.post("/api/integrations/github/prepare-pr")
+async def prepare_github_pr(req: PreparePRRequest, _auth: AuthDep = None) -> dict:
+    from loom.integrations.ci_bot import GitHubCIBot
 
-    config = CIBotConfig(
-        provider=CIBotProvider.GITHUB,
-        org_id=org_id,
-        repo_full_name="",
-        api_base_url="",
-    )
-    bot = CIBot(config)
-    return bot.serialize()
-
-
-@router_integrations.post("/api/v1/integrations/bot/{org_id}/prepare-pr")
-@router_integrations.post("/api/integrations/bot/{org_id}/prepare-pr")
-def prepare_pr(
-    org_id: str,
-    req: PreparePRRequest,
-    _rbac: RBACEnforcer = Depends(require_run_permission),
-) -> Any:
-    from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider, PullRequestTemplate
-
-    config = CIBotConfig(
-        provider=CIBotProvider.GITHUB,
-        org_id=org_id,
-        repo_full_name="",
-        api_base_url="",
-    )
-    bot = CIBot(config)
-
-    template = PullRequestTemplate.STANDARD
-    try:
-        template = PullRequestTemplate(req.template)
-    except ValueError:
-        pass
-
-    data = bot.generate_pr_template_data(
+    bot = GitHubCIBot()
+    return bot.prepare_pr(
         run_id=req.run_id,
         issue_title=req.issue_title,
         issue_number=req.issue_number,
@@ -1104,31 +978,33 @@ def prepare_pr(
         cost_usd=req.cost_usd,
         files_touched=req.files_touched,
         model_used=req.model_used,
+        template=req.template,
     )
-    return bot.prepare_pr(data, template)
+
+
+@router_integrations.get("/api/v1/integrations/scm/status")
+@router_integrations.get("/api/integrations/scm/status")
+def scm_status(_auth: AuthDep = None) -> dict:
+    return {"status": "configured"}
 
 
 # ---------------------------------------------------------------------------
-# router_admin — entitlements, org usage
+# router_admin — entitlement/usage checks
 # ---------------------------------------------------------------------------
 
 router_admin = APIRouter(tags=["admin"])
 
 
-@router_admin.post("/v1/entitlements/check")
-@router_admin.post("/api/v1/entitlements/check")
-def check_entitlement(
+@router_admin.post("/api/v1/orgs/{org_id}/entitlements/check")
+@router_admin.post("/api/orgs/{org_id}/entitlements/check")
+def entitlement_check(
+    org_id: str,
     req: EntitlementCheckRequest,
-    _rbac: RBACEnforcer = Depends(require_admin_permission),
+    _rbac: RBACEnforcer = Depends(require_entitlement),
 ) -> dict:
     entitlements = get_entitlements()
-    orgs = list(getattr(entitlements, "_orgs", {}).keys())
-    org_id = req.org_id or (orgs[0] if orgs else "default")
-    try:
-        feature_key = FeatureKey(req.feature_key)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown feature_key: {req.feature_key}")
-    result = entitlements.check(org_id, feature_key)
+    feature = FeatureKey(req.feature_key)
+    result = entitlements.check(org_id, feature)
     if not result.allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=result.reason or "Feature not available on current tier"
