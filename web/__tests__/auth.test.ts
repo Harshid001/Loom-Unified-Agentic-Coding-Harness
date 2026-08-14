@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { validateRequestAuth, DASHBOARD_SESSION_COOKIE } from '../src/lib/auth';
+import { createDashboardSession, validateRequestAuth, DASHBOARD_SESSION_COOKIE } from '../src/lib/auth';
 
 describe('validateRequestAuth', () => {
   const originalEnv = process.env.DASHBOARD_AUTH_TOKEN;
@@ -30,16 +30,18 @@ describe('validateRequestAuth', () => {
 
   it('accepts the secure dashboard session cookie', () => {
     vi.stubEnv('NODE_ENV', 'production');
-    process.env.DASHBOARD_AUTH_TOKEN = 'secret-token-123';
+    vi.stubEnv('DASHBOARD_AUTH_TOKEN', 'secret-token-123');
+    const session = createDashboardSession();
+    expect(session).not.toBeNull();
     const req = new NextRequest('http://localhost:3000/api/runs', {
-      headers: { Cookie: `${DASHBOARD_SESSION_COOKIE}=secret-token-123` },
+      headers: { Cookie: `${DASHBOARD_SESSION_COOKIE}=${session}` },
     });
     expect(validateRequestAuth(req).isAuthorized).toBe(true);
   });
 
   it('rejects an invalid session cookie', () => {
     vi.stubEnv('NODE_ENV', 'production');
-    process.env.DASHBOARD_AUTH_TOKEN = 'secret-token-123';
+    vi.stubEnv('DASHBOARD_AUTH_TOKEN', 'secret-token-123');
     const req = new NextRequest('http://localhost:3000/api/runs', {
       headers: { Cookie: `${DASHBOARD_SESSION_COOKIE}=wrong-token` },
     });

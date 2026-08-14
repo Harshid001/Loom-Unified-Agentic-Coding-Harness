@@ -9,6 +9,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, cast
+from urllib.parse import urlparse
 
 import httpx
 
@@ -21,12 +22,7 @@ class FirecrackerUnavailable(RuntimeError):
 
 
 class FirecrackerSandbox(BaseSandbox):
-    """Delegate Tier C execution to an authenticated Firecracker worker.
-
-    HTTP JSON is the production contract. ``LOOM_FIRECRACKER_WORKER_CMD`` is
-    retained only as a deterministic unit-test/dev harness and is never a
-    Docker/local fallback.
-    """
+    """Delegate Tier C execution to an authenticated Firecracker worker."""
 
     def __init__(self, repo_path: str, worker_url: Optional[str] = None, worker_token: Optional[str] = None):
         self.repo_path = Path(repo_path).resolve()
@@ -37,15 +33,15 @@ class FirecrackerSandbox(BaseSandbox):
     def _ensure_configured(self) -> None:
         production = os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
         if production and not self.worker_url:
-            raise FirecrackerUnavailable(
-                "Production Tier C requires LOOM_FIRECRACKER_WORKER_URL; refusing local worker-command execution"
-            )
+            raise FirecrackerUnavailable("Production Tier C requires LOOM_FIRECRACKER_WORKER_URL")
         if not self.worker_url and not os.getenv("LOOM_FIRECRACKER_WORKER_CMD"):
-            raise FirecrackerUnavailable(
-                "Tier C requires LOOM_FIRECRACKER_WORKER_URL; refusing Docker/local fallback"
-            )
+            raise FirecrackerUnavailable("Tier C requires LOOM_FIRECRACKER_WORKER_URL")
         if self.worker_url and not self.worker_token:
             raise FirecrackerUnavailable("Tier C worker authentication requires LOOM_FIRECRACKER_WORKER_TOKEN")
+        if production and self.worker_url:
+            parsed = urlparse(self.worker_url)
+            if parsed.scheme != "https" or not parsed.hostname:
+                raise FirecrackerUnavailable("Production Firecracker worker URL must use HTTPS")
         if not self.repo_path.is_dir():
             raise FirecrackerUnavailable(f"Repository path does not exist: {self.repo_path}")
 
@@ -54,8 +50,8 @@ class FirecrackerSandbox(BaseSandbox):
         started = time.time()
         headers = {"Authorization": f"Bearer {self.worker_token}"}
         try:
-            with httpx.Client(timeout=float(timeout) + 15) as client:
-                response = client.post(f"{self.worker_url}/execute", json=payload, headers=headers)
+            with httpx.Client(timeout=float(timeout) + 15, follow_redirects=False, verify=True) as client:
+                response = client.post(f"{self.worker_url.rstrip('/')}/execute", json=payload, headers=headers)
                 response.raise_for_status()
                 data = cast(dict[str, Any], response.json())
             return CommandResult(
@@ -66,12 +62,12 @@ class FirecrackerSandbox(BaseSandbox):
                 duration_seconds=float(data.get("duration_seconds", time.time() - started)),
                 timed_out=bool(data.get("timed_out", False)),
             )
-        except httpx.HTTPError as exc:
+        except httpx.HTTPError:
             return CommandResult(
                 command=" ".join(str(x) for x in cast(List[str], payload.get("argv", []))),
                 exit_code=125,
                 stdout="",
-                stderr=f"Firecracker worker request failed: {exc}",
+                stderr="Firecracker worker request failed",
                 duration_seconds=round(time.time() - started, 3),
                 timed_out=False,
             )
@@ -105,19 +101,12 @@ class FirecrackerSandbox(BaseSandbox):
             timed_out = isinstance(exc, subprocess.TimeoutExpired)
             return CommandResult(command=command, exit_code=124 if timed_out else 1, stdout="", stderr=str(exc), duration_seconds=round(time.time() - started, 3), timed_out=timed_out)
 
-    def run_command(
-        self,
-        cmd: Union[str, List[str]],
-        cwd: Optional[str] = None,
-        timeout: int = 60,
-        env: Optional[Dict[str, str]] = None,
-    ) -> CommandResult:
+    def run_command(self, cmd: Union[str, List[str]], cwd: Optional[str] = None, timeout: int = 60, env: Optional[Dict[str, str]] = None) -> CommandResult:
         command = cmd if isinstance(cmd, str) else " ".join(cmd)
         try:
             self._ensure_configured()
         except FirecrackerUnavailable as exc:
             return CommandResult(command=command, exit_code=125, stdout="", stderr=str(exc), duration_seconds=0.0, timed_out=False)
-
         argv = cmd if isinstance(cmd, list) else ["/bin/sh", "-lc", cmd]
         payload: dict[str, object] = {
             "run_id": f"loom-{uuid.uuid4().hex}",
