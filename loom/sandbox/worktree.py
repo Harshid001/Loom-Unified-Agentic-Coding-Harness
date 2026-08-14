@@ -66,6 +66,10 @@ class WorktreeManager:
 
         return snapshot_id
 
+    def create_worktree(self, label: str) -> str:
+        """Backward-compatible alias for create_snapshot()."""
+        return self.create_snapshot(label)
+
     def restore_snapshot(self, snapshot_id: str) -> bool:
         if snapshot_id not in self.snapshots:
             candidate = (self.repo_path / ".loom_snapshots" / snapshot_id).resolve()
