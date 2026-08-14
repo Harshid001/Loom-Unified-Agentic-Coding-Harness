@@ -42,17 +42,13 @@ class RunWorker:
                 except Exception as exc:
                     failure_class = classify_failure(exc)
                     next_attempt = job.attempts + 1
-                    logger.exception(
-                        "Run %s failed on attempt %s with class %s",
-                        job.run_id,
-                        next_attempt,
-                        failure_class.value,
-                    )
+                    logger.exception("Run %s failed on attempt %s with class %s", job.run_id, next_attempt, failure_class.value)
                     if not should_retry(exc) or next_attempt >= self.max_attempts:
-                        await self.queue.mark_finished(job, "dead_letter", str(exc))
+                        await self.queue.mark_finished(job, "dead_letter", "execution failed")
+                        await self.queue.dead_letter(job, str(exc))
                         await self.queue.ack(claimed.message_id)
                     else:
-                        await self.queue.mark_finished(job, "retrying", str(exc))
+                        await self.queue.mark_finished(job, "retrying", "execution failed")
                         await self.queue.enqueue(
                             RunJob(
                                 job_id=f"{job.job_id}:retry:{next_attempt}",
@@ -91,10 +87,9 @@ class RunWorker:
     async def _heartbeat(self, job: RunJob, lease_token: str) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_seconds)
-            if not await self.queue._renew_lease(job.job_id, lease_token):
+            if not await self.queue.heartbeat(job, lease_token):
                 logger.critical("Execution lease lost for run %s", job.run_id)
                 return
-            await self.queue.heartbeat(job, lease_token)
 
 
 async def main() -> None:
