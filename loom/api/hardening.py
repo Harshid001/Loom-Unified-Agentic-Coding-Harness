@@ -352,16 +352,6 @@ def harden_server_module(module: Any) -> None:
                 return result
             route.endpoint = list_guard
 
-        elif "run/{run_id}" in path or "runs/{run_id}" in path:
-            async def run_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
-                run_id = kwargs.get("run_id") or (args[0] if args else "")
-                principal = module.get_effective_principal()
-                run_org = run_org_id(str(run_id))
-                if run_org is None or run_org != principal.org_id:
-                    raise HTTPException(status_code=404, detail="Run not found")
-                return await __endpoint(*args, **kwargs) if asyncio.iscoroutinefunction(__endpoint) else __endpoint(*args, **kwargs)
-            route.endpoint = run_guard
-
         elif path.endswith("/run"):
             async def create_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
                 req = kwargs.get("req")
