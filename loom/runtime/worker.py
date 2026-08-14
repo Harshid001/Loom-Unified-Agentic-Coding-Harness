@@ -39,13 +39,17 @@ class RunWorker:
                 job = claimed.job
                 lease_lost = asyncio.Event()
                 heartbeat = asyncio.create_task(self._heartbeat(job, claimed.lease_token, lease_lost))
+                lease_waiter = asyncio.create_task(lease_lost.wait())
+                execution: asyncio.Task[object] | None = None
                 try:
                     await self.queue.mark_started(job, claimed.lease_token)
                     execution = asyncio.create_task(execute_run_job(job))
-                    completed, _ = await asyncio.wait(
-                        {execution, asyncio.create_task(lease_lost.wait())},
+                    completed, pending = await asyncio.wait(
+                        {execution, lease_waiter},
                         return_when=asyncio.FIRST_COMPLETED,
                     )
+                    for task in pending:
+                        task.cancel()
                     if execution not in completed:
                         execution.cancel()
                         try:
@@ -83,6 +87,11 @@ class RunWorker:
                         )
                         await self.queue.ack(claimed.message_id)
                 finally:
+                    lease_waiter.cancel()
+                    try:
+                        await lease_waiter
+                    except asyncio.CancelledError:
+                        pass
                     heartbeat.cancel()
                     try:
                         await heartbeat
