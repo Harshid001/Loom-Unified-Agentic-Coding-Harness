@@ -58,9 +58,14 @@ def _install_records_store_guards() -> None:
         return engine
 
     def hardened_select(self: Any, table: str, columns: list[str], clause: str, params: tuple, model_cls: Any) -> list[Any]:
-        if table in {"agent_steps", "patches", "verification_results"} and " LIMIT " not in clause.upper():
-            clause = clause.rstrip() + f" LIMIT {int(os.getenv('LOOM_RECORD_READ_LIMIT', '1000'))}"
-        return original_select(self, table, columns, clause, params, model_cls)
+        normalized = clause.strip()
+        if normalized.upper().startswith("ORDER BY"):
+            normalized = "1=1 " + normalized
+        if table in {"agent_steps", "patches", "verification_results"} and " LIMIT " not in normalized.upper():
+            normalized = normalized.rstrip() + f" LIMIT {int(os.getenv('LOOM_RECORD_READ_LIMIT', '1000'))}"
+        if table == "runs" and " LIMIT " not in normalized.upper():
+            normalized = normalized.rstrip() + f" LIMIT {int(os.getenv('LOOM_RUN_READ_LIMIT', '100'))}"
+        return original_select(self, table, columns, normalized, params, model_cls)
 
     RunRecordStore.__init__ = hardened_init  # type: ignore[method-assign]
     RunRecordStore._get_pg_engine = hardened_get_pg_engine  # type: ignore[method-assign]
