@@ -19,6 +19,7 @@ from loom.api.late_hardening import (
     install_terminal_webhook_normalizer,
     install_webhook_secret_encryption,
 )
+from loom.api.route_security_guards import install_route_security_guards
 from loom.api.runtime_guards import install_runtime_guards
 
 logger = logging.getLogger("loom.api")
@@ -41,10 +42,9 @@ def create_app(
         redoc_url=redoc_url,
     )
 
-    # Principal lifecycle must wrap every request so auth dependencies populate
-    # a request-scoped identity instead of falling back to the service identity.
     app.add_middleware(PrincipalCleanupMiddleware)
     install_runtime_guards(app)
+    install_route_security_guards(app)
     app.add_middleware(APIHardeningMiddleware, max_body_bytes=10 * 1024 * 1024)
     app.add_middleware(WebhookSignatureMiddleware)
 
@@ -95,8 +95,6 @@ def create_app(
                     _rate_store.pop(key, None)
         return await call_next(request)
 
-    # These hardening hooks already exist; composing them here makes the
-    # protections effective rather than leaving them as unused code.
     install_terminal_webhook_normalizer()
     install_webhook_secret_encryption()
 
