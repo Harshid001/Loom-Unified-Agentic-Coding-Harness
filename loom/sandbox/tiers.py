@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict, List, Optional, Set
+from urllib.parse import urlparse
 
 from loom.business.audit_log import AuditLogger
 from loom.business.models import AuditAction, OrgTier
@@ -37,6 +38,12 @@ DEFAULT_EGRESS_ALLOWLIST: Set[str] = {
 }
 
 
+def _host_allowed(host: str, allowed: str) -> bool:
+    host = host.lower().rstrip(".")
+    allowed = allowed.lower().rstrip(".")
+    return host == allowed or host.endswith("." + allowed)
+
+
 @dataclass
 class SandboxContext:
     org_tier: OrgTier
@@ -65,8 +72,11 @@ class EgressEnforcer:
         self.audit_logger = audit_logger
 
     def check_egress(self, target: str, command: str, tier: SandboxTier) -> bool:
-        target_normalized = target.lower().strip()
-        if any(allowed in target_normalized for allowed in self.allowlist):
+        target_normalized = target.lower().strip().rstrip(".")
+        parsed = urlparse(target_normalized if "://" in target_normalized else f"https://{target_normalized}")
+        host = (parsed.hostname or "").lower().rstrip(".")
+        allowed = bool(host) and any(_host_allowed(host, entry) for entry in self.allowlist)
+        if allowed:
             return True
         violation = EgressViolation(target=target, command=command, tier=tier)
         self.violations.append(violation)
