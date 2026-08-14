@@ -7,8 +7,6 @@ rate limiting, SSRF validation, webhook signature validation, and removal of fab
 
 from __future__ import annotations
 
-import asyncio
-import functools
 import hashlib
 import hmac
 import ipaddress
@@ -17,12 +15,10 @@ import socket
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
 
 
 PRIVATE_NETS = (
@@ -53,16 +49,10 @@ class APIHardeningMiddleware:
         self.app = app
         self.max_body_bytes = max_body_bytes
 
-    async def __call__(
-        self,
-        scope: dict[str, Any],
-        receive: Callable[..., Awaitable[dict[str, Any]]],
-        send: Callable[..., Awaitable[None]],
-    ) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
-
         path = scope.get("path", "")
         headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope.get("headers", [])}
         content_length = headers.get("content-length")
@@ -73,11 +63,9 @@ class APIHardeningMiddleware:
                     return
             except ValueError:
                 pass
-
         if self._public_surface_blocked(path, headers):
             await self._reject(send, 404, "Not found")
             return
-
         total = 0
         exhausted = False
 
@@ -89,12 +77,7 @@ class APIHardeningMiddleware:
                 total += len(body)
                 if total > self.max_body_bytes and not exhausted:
                     exhausted = True
-                    return {
-                        "type": "http.request",
-                        "body": b"",
-                        "more_body": False,
-                        "loom_size_exceeded": True,
-                    }
+                    return {"type": "http.request", "body": b"", "more_body": False, "loom_size_exceeded": True}
             return message
 
         violated = False
@@ -123,13 +106,7 @@ class APIHardeningMiddleware:
     @staticmethod
     async def _reject(send: Callable[..., Awaitable[None]], status_code: int, detail: str) -> None:
         body = ("{\"detail\":\"" + detail.replace('"', "'") + "\"}").encode()
-        await send(
-            {
-                "type": "http.response.start",
-                "status": status_code,
-                "headers": [(b"content-type", b"application/json")],
-            }
-        )
+        await send({"type": "http.response.start", "status": status_code, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": body})
 
 
@@ -151,7 +128,6 @@ def valid_api_credential(headers: dict[str, str]) -> bool:
         return True
     try:
         from loom.auth.api_tokens import get_api_token_store
-
         record = get_api_token_store().verify(token)
         return record is not None
     except Exception:
@@ -162,7 +138,6 @@ def verify_webhook_signature(path: str, headers: dict[str, str], body: bytes) ->
     """Verify an inbound GitHub or GitLab webhook signature using constant-time comparison."""
     normalized_path = path.lower()
     normalized_headers = {str(key).lower(): str(value) for key, value in headers.items()}
-
     if "/github/" in normalized_path and normalized_path.endswith("/webhook"):
         secret = os.getenv("GITHUB_WEBHOOK_SECRET")
         signature = normalized_headers.get("x-hub-signature-256", "")
@@ -170,14 +145,12 @@ def verify_webhook_signature(path: str, headers: dict[str, str], body: bytes) ->
             return False
         expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(signature, expected)
-
     if "/gitlab/" in normalized_path and normalized_path.endswith("/webhook"):
         secret = os.getenv("GITLAB_WEBHOOK_SECRET")
         token = normalized_headers.get("x-gitlab-token", "")
         if not secret:
             return False
         return hmac.compare_digest(token, secret)
-
     return False
 
 
@@ -208,7 +181,6 @@ class RedisRateLimiter:
             return None
         try:
             from redis.asyncio import from_url
-
             self._redis = from_url(url, decode_responses=True)
             return self._redis
         except Exception:
@@ -226,13 +198,8 @@ class RedisRateLimiter:
             except Exception:
                 if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
                     raise ProductionSecurityError("Rate-limit Redis is unavailable in production")
-
-        if (
-            os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
-            and os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() not in {"1", "true", "yes"}
-        ):
+        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"} and os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() not in {"1", "true", "yes"}:
             raise ProductionSecurityError("REDIS_URL is required for production rate limiting")
-
         now = time.time()
         state = self._local[key]
         while state.timestamps and now - state.timestamps[0] >= self.window:
@@ -266,7 +233,6 @@ def validate_webhook_url(url: str, allow_hosts: set[str] | None = None) -> None:
 def run_org_id(run_id: str) -> str | None:
     try:
         from loom.orchestrator.state import OrchestratorState
-
         state = OrchestratorState.load_checkpoint(run_id)
         if state is None:
             return None
@@ -275,8 +241,6 @@ def run_org_id(run_id: str) -> str | None:
         return None
 
 
-
 def _checkpoint_org(run_id: str, expected_org: str) -> bool:
     actual = run_org_id(run_id)
     return actual == expected_org
-
