@@ -90,7 +90,6 @@ class SlackNotifier:
 
     def _build_attachment(self, notification: SlackNotification) -> Dict[str, Any]:
         color = LEVEL_COLORS.get(notification.level, TEMPLATE_COLORS.get(notification.template, "#6B7280"))
-
         attachment: Dict[str, Any] = {
             "color": color,
             "title": notification.title,
@@ -99,13 +98,11 @@ class SlackNotifier:
             "footer": notification.footer or "Loom Agentic Harness",
             "ts": int(notification.timestamp),
         }
-
         if notification.fields:
             attachment["fields"] = [
                 {"title": f.get("title", ""), "value": f.get("value", ""), "short": f.get("short", True)}
                 for f in notification.fields
             ]
-
         return attachment
 
     def _build_payload(self, notification: SlackNotification) -> Dict[str, Any]:
@@ -122,9 +119,7 @@ class SlackNotifier:
     async def send(self, notification: SlackNotification) -> bool:
         await self._ensure_client()
         assert self._http is not None
-
         payload = self._build_payload(notification)
-
         delivery_record = {
             "title": notification.title,
             "level": notification.level.value,
@@ -133,7 +128,6 @@ class SlackNotifier:
             "success": False,
             "error": None,
         }
-
         try:
             response = await self._http.post(
                 self.webhook_url,
@@ -162,7 +156,6 @@ class SlackNotifier:
 
     def send_sync(self, notification: SlackNotification) -> bool:
         import asyncio
-
         return asyncio.run(self.send(notification))
 
     def build_run_completed_notification(
@@ -192,11 +185,7 @@ class SlackNotifier:
         )
 
     def build_security_hold_notification(
-        self,
-        run_id: str,
-        repo_name: str,
-        blocked_paths: List[str],
-        reason: str,
+        self, run_id: str, repo_name: str, blocked_paths: List[str], reason: str
     ) -> SlackNotification:
         paths_text = "\n".join(f"• `{p}`" for p in blocked_paths[:10])
         if len(blocked_paths) > 10:
@@ -214,13 +203,7 @@ class SlackNotifier:
             run_id=run_id,
         )
 
-    def build_quota_warning_notification(
-        self,
-        org_id: str,
-        quota_pct: float,
-        runs_consumed: int,
-        runs_limit: int,
-    ) -> SlackNotification:
+    def build_quota_warning_notification(self, org_id: str, quota_pct: float, runs_consumed: int, runs_limit: int) -> SlackNotification:
         return SlackNotification(
             title=f":chart_with_downwards_trend: Quota Warning — {quota_pct:.0f}% Used",
             body=f"Organization `{org_id}` has consumed {runs_consumed}/{runs_limit} runs this month.",
@@ -234,19 +217,11 @@ class SlackNotifier:
             footer="Loom CI Bot | Billing Alert",
         )
 
-    def build_quota_exceeded_notification(
-        self,
-        org_id: str,
-        quota_pct: float,
-        runs_consumed: int,
-        runs_limit: int,
-        hard_stop_triggered: bool,
-    ) -> SlackNotification:
+    def build_quota_exceeded_notification(self, org_id: str, quota_pct: float, runs_consumed: int, runs_limit: int, hard_stop_triggered: bool) -> SlackNotification:
         level = SlackNotificationLevel.CRITICAL if hard_stop_triggered else SlackNotificationLevel.ERROR
         return SlackNotification(
             title=f":no_entry: Quota {'Hard Stop' if hard_stop_triggered else 'Exceeded'} — {quota_pct:.0f}%",
-            body=f"Organization `{org_id}` exceeded quota ({runs_consumed}/{runs_limit} runs). "
-            + ("New runs are blocked." if hard_stop_triggered else "Overage billing active."),
+            body=f"Organization `{org_id}` exceeded quota ({runs_consumed}/{runs_limit} runs). " + ("New runs are blocked." if hard_stop_triggered else "Overage billing active."),
             level=level,
             template=SlackNotificationTemplate.QUOTA_EXCEEDED,
             fields=[
@@ -257,13 +232,7 @@ class SlackNotifier:
             footer="Loom CI Bot | Billing Alert",
         )
 
-    def build_merged_notification(
-        self,
-        run_id: str,
-        repo_name: str,
-        issue_title: str,
-        confidence_score: float,
-    ) -> SlackNotification:
+    def build_merged_notification(self, run_id: str, repo_name: str, issue_title: str, confidence_score: float) -> SlackNotification:
         return SlackNotification(
             title=f":rocket: Auto-Merged — Run {run_id}",
             body=f"Fix for *{issue_title}* on `{repo_name}` merged at {confidence_score:.1%} confidence.",
@@ -277,13 +246,7 @@ class SlackNotifier:
             run_id=run_id,
         )
 
-    def build_rolled_back_notification(
-        self,
-        run_id: str,
-        repo_name: str,
-        issue_title: str,
-        reason: str,
-    ) -> SlackNotification:
+    def build_rolled_back_notification(self, run_id: str, repo_name: str, issue_title: str, reason: str) -> SlackNotification:
         return SlackNotification(
             title=f":rewind: Auto-Rollback — Run {run_id}",
             body=f"Fix for *{issue_title}* on `{repo_name}` was rolled back.\n*Reason:* {reason}",
@@ -297,19 +260,10 @@ class SlackNotifier:
             run_id=run_id,
         )
 
-    def build_failed_notification(
-        self,
-        run_id: str,
-        repo_name: str,
-        issue_title: str,
-        error_message: str,
-        step_failed: str = "",
-    ) -> SlackNotification:
+    def build_failed_notification(self, run_id: str, repo_name: str, issue_title: str, error_message: str, step_failed: str = "") -> SlackNotification:
         return SlackNotification(
             title=f":x: Run Failed — {run_id}",
-            body=f"Fix for *{issue_title}* on `{repo_name}` failed"
-            + (f" at step `{step_failed}`." if step_failed else ".")
-            + f"\n```{error_message[:500]}```",
+            body=f"Fix for *{issue_title}* on `{repo_name}` failed" + (f" at step `{step_failed}`." if step_failed else ".") + f"\n```{error_message[:500]}```",
             level=SlackNotificationLevel.ERROR,
             template=SlackNotificationTemplate.RUN_FAILED,
             fields=[
@@ -326,3 +280,31 @@ class SlackNotifier:
 
     def clear_delivery_log(self) -> None:
         self._delivery_log.clear()
+
+
+class SlackWebhookClient:
+    """Compatibility adapter for legacy API callers."""
+
+    def __init__(self, webhook_url: str):
+        self._notifier = SlackNotifier(webhook_url)
+
+    def send_notification(
+        self,
+        title: str,
+        body: str,
+        level: str = "info",
+        template: str = "custom",
+        run_id: str = "",
+    ) -> Dict[str, Any]:
+        try:
+            notification = SlackNotification(
+                title=title,
+                body=body,
+                level=SlackNotificationLevel(level),
+                template=SlackNotificationTemplate(template),
+                run_id=run_id,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Unsupported Slack notification level/template: {exc}") from exc
+        delivered = self._notifier.send_sync(notification)
+        return {"success": delivered, "run_id": run_id, "title": title}
