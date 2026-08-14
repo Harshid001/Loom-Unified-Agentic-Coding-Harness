@@ -29,6 +29,7 @@ def _install_records_store_guards() -> None:
 
     original_init = RunRecordStore.__init__
     original_get_pg_engine = RunRecordStore._get_pg_engine
+    original_select = RunRecordStore._select
 
     def hardened_init(self: Any, db_path: str | None = None) -> None:
         original_init(self, db_path)
@@ -38,7 +39,6 @@ def _install_records_store_guards() -> None:
             if self._pg_engine is not None:
                 try:
                     from sqlalchemy import create_engine
-
                     self._pg_engine.dispose()
                     self._pg_engine = create_engine(
                         self.db_url,
@@ -57,8 +57,14 @@ def _install_records_store_guards() -> None:
             raise RuntimeError("PostgreSQL records store unavailable; refusing successful no-op writes")
         return engine
 
+    def hardened_select(self: Any, table: str, columns: list[str], clause: str, params: tuple, model_cls: Any) -> list[Any]:
+        if table in {"agent_steps", "patches", "verification_results"} and " LIMIT " not in clause.upper():
+            clause = clause.rstrip() + f" LIMIT {int(os.getenv('LOOM_RECORD_READ_LIMIT', '1000'))}"
+        return original_select(self, table, columns, clause, params, model_cls)
+
     RunRecordStore.__init__ = hardened_init  # type: ignore[method-assign]
     RunRecordStore._get_pg_engine = hardened_get_pg_engine  # type: ignore[method-assign]
+    RunRecordStore._select = hardened_select  # type: ignore[method-assign]
 
     original_schema_version = RunRecordStore.get_schema_version
 
@@ -69,7 +75,6 @@ def _install_records_store_guards() -> None:
         if engine is None:
             raise RuntimeError("PostgreSQL records store unavailable")
         from sqlalchemy import text
-
         with engine.connect() as conn:
             return int(conn.execute(text("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")).scalar_one())
 
