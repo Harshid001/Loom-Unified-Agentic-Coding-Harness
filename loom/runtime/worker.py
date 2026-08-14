@@ -33,9 +33,9 @@ class RunWorker:
                 if claimed is None:
                     continue
                 job = claimed.job
-                heartbeat = asyncio.create_task(self._heartbeat(job))
-                await self.queue.mark_started(job)
+                heartbeat = asyncio.create_task(self._heartbeat(job, claimed.lease_token))
                 try:
+                    await self.queue.mark_started(job, claimed.lease_token)
                     await execute_run_job(job)
                     await self.queue.mark_finished(job, "succeeded")
                     await self.queue.ack(claimed.message_id)
@@ -55,7 +55,7 @@ class RunWorker:
                         await self.queue.mark_finished(job, "retrying", str(exc))
                         await self.queue.enqueue(
                             RunJob(
-                                job_id=job.job_id,
+                                job_id=f"{job.job_id}:retry:{next_attempt}",
                                 run_id=job.run_id,
                                 org_id=job.org_id,
                                 repo_path=job.repo_path,
@@ -75,6 +75,7 @@ class RunWorker:
                         await heartbeat
                     except asyncio.CancelledError:
                         pass
+                    await self.queue.release_lease(job.job_id, claimed.lease_token)
         finally:
             idle_heartbeat.cancel()
             try:
@@ -87,10 +88,13 @@ class RunWorker:
             await self.queue.mark_worker_heartbeat()
             await asyncio.sleep(self.heartbeat_seconds)
 
-    async def _heartbeat(self, job: RunJob) -> None:
+    async def _heartbeat(self, job: RunJob, lease_token: str) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_seconds)
-            await self.queue.heartbeat(job)
+            if not await self.queue._renew_lease(job.job_id, lease_token):
+                logger.critical("Execution lease lost for run %s", job.run_id)
+                return
+            await self.queue.heartbeat(job, lease_token)
 
 
 async def main() -> None:
