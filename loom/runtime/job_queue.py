@@ -144,13 +144,14 @@ class JobQueue:
         if lease_token and not await self._renew_lease(job.job_id, lease_token):
             raise RuntimeError(f"Lost execution lease for job {job.job_id}")
 
-    async def heartbeat(self, job: RunJob, lease_token: str = "") -> None:
+    async def heartbeat(self, job: RunJob, lease_token: str = "") -> bool:
         key = f"loom:job:{job.job_id}"
         await self.coordinator.client.hset(key, "heartbeat_at", time.time())
         await self.coordinator.client.expire(key, 7 * 24 * 3600)
         await self.mark_worker_heartbeat()
-        if lease_token and not await self._renew_lease(job.job_id, lease_token):
-            raise RuntimeError(f"Lost execution lease for job {job.job_id}")
+        if not lease_token:
+            return True
+        return await self._renew_lease(job.job_id, lease_token)
 
     async def mark_finished(self, job: RunJob, status: str, error: str = "") -> None:
         key = f"loom:job:{job.job_id}"
