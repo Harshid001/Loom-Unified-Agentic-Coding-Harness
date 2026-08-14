@@ -8,6 +8,7 @@ on:
       - prod-hardening-90plus
       - production-readiness/remediation
       - prod-readiness
+      - prod-readiness-hardening
       - 'agent/**'
       - 'feat/**'
       - 'remove-docker-firecracker'
