@@ -34,7 +34,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -69,12 +69,10 @@ except ImportError:
 from loom.adapters.router import ModelRouter
 from loom.api.dependencies import (
     AuthDep,
-    OrgIdDep,
     get_entitlements,
     get_records_store,
     is_dev_mode,
     resolve_org_id,
-    verify_api_key,
 )
 from loom.api.security import (
     PrincipalDep,
@@ -83,11 +81,10 @@ from loom.api.security import (
     require_run_access,
     require_run_permission,
     require_token_admin,
-    require_entitlement,
 )
 from loom.api.webhooks import WebhookEventType, get_webhook_engine
 from loom.auth.api_tokens import get_api_token_store
-from loom.auth.context import get_effective_principal, require_authenticated_principal
+from loom.auth.context import get_effective_principal
 from loom.business.models import FeatureKey, RunRecord
 from loom.business.rbac import Action, RBACEnforcer
 from loom.memory.store import TieredMemoryStore
@@ -872,7 +869,8 @@ def create_webhook_subscription(
     if req.org_id != principal.org_id:
         raise HTTPException(status_code=403, detail="Cannot create subscription for another organization")
 
-    from loom.api.webhooks import WebhookSubscription, WebhookEventType as WET
+    from loom.api.webhooks import WebhookEventType as WET
+    from loom.api.webhooks import WebhookSubscription
 
     events = set(WET)
     if req.events:
