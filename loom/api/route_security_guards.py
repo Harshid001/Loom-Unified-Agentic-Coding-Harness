@@ -7,7 +7,8 @@ import os
 from typing import Any, Awaitable, Callable
 
 from loom.api.hardening import validate_webhook_url
-from loom.api.runtime_guards import _owns_run, _principal_from_headers, _read_body
+from loom.api.runtime_guards import _owns_run, _read_body
+from loom.auth.runtime_principal import principal_from_headers
 
 
 class RouteSecurityGuardMiddleware:
@@ -34,7 +35,7 @@ class RouteSecurityGuardMiddleware:
             payload = {}
 
         headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope.get("headers", [])}
-        principal = _principal_from_headers(headers)
+        principal = principal_from_headers(headers)
 
         if path.rstrip("/") in {"/api/v1/run/control", "/api/run/control"}:
             action = str(payload.get("action", "")).lower()
@@ -53,9 +54,7 @@ class RouteSecurityGuardMiddleware:
                 try:
                     validate_webhook_url(str(webhook_url))
                 except Exception as exc:
-                    status_code = getattr(exc, "status_code", 400)
-                    detail = getattr(exc, "detail", "Invalid webhook URL")
-                    await self._reject(send, int(status_code), str(detail))
+                    await self._reject(send, int(getattr(exc, "status_code", 400)), str(getattr(exc, "detail", "Invalid webhook URL")))
                     return
 
         await self.app(scope, receive, send)
