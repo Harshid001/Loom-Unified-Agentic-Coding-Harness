@@ -52,7 +52,6 @@ async def verify_api_key(
     request: Request,
     x_api_key: str | None = Header(default=None),
 ) -> str:
-    # Signed GitHub/GitLab webhooks already passed WebhookSignatureMiddleware.
     if request.url.path.endswith("/integrations/github/webhook") or request.url.path.endswith("/integrations/gitlab/webhook"):
         if getattr(request.state, "webhook_signature_verified", False):
             return "webhook-signature"
@@ -67,14 +66,24 @@ async def verify_api_key(
         record = token_store.verify(x_api_key)
         if record is not None:
             from loom.auth.context import AuthenticatedPrincipal
-            set_principal(AuthenticatedPrincipal(user_id=record.user_id, org_id=record.org_id, token_id=record.id, auth_method="api_token"))
+            set_principal(
+                AuthenticatedPrincipal(
+                    user_id=record.user_id,
+                    org_id=record.org_id,
+                    token_id=record.id,
+                    auth_method="api_token",
+                )
+            )
             return x_api_key
 
     if not required_key and is_dev_mode():
         set_principal(get_service_principal())
         return x_api_key or "dev_key"
 
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    # Preserve the historical diagnostic while remaining fail-closed.  This is
+    # useful operationally when production is started without API_KEY.
+    detail = "API_KEY environment variable is not configured" if not required_key else "Authentication required"
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 
 
 AuthDep = Annotated[str, Depends(verify_api_key)]
