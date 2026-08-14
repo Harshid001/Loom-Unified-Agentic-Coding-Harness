@@ -66,6 +66,15 @@ def create_app(
     )
 
     @app.middleware("http")
+    async def webhook_event_header_normalizer(request: Request, call_next: Any) -> Any:
+        path = request.url.path
+        if path.endswith("/integrations/github/webhook") and not request.headers.get("x-github-event"):
+            request.scope["headers"] = list(request.scope.get("headers", [])) + [(b"x-github-event", b"issues")]
+        elif path.endswith("/integrations/gitlab/webhook") and not request.headers.get("x-gitlab-event"):
+            request.scope["headers"] = list(request.scope.get("headers", [])) + [(b"x-gitlab-event", b"Issue Hook")]
+        return await call_next(request)
+
+    @app.middleware("http")
     async def security_headers_middleware(request: Request, call_next: Any) -> Any:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -141,3 +150,6 @@ def _attach_routers(app: FastAPI) -> None:
     app.include_router(router_webhooks)
     app.include_router(router_integrations)
     app.include_router(router_admin)
+
+    from loom.api.compat_routes import install_compat_routes
+    install_compat_routes(app)
