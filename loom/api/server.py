@@ -387,7 +387,7 @@ def list_runs(offset: int = 0, limit: int = 50):
                 )
             except (json.JSONDecodeError, OSError, ValueError) as err:
                 logger.warning("Error reading checkpoint file %s: %s", f, err)
-    runs.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    runs.sort(key=lambda x: x.get("created_at") or 0.0, reverse=True)
     return runs[offset : offset + limit]
 
 
