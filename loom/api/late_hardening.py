@@ -87,6 +87,34 @@ class WebhookSignatureMiddleware:
             await send({"type": "http.response.body", "body": b'{"detail":"Invalid webhook signature"}'})
             return
 
+        from starlette.datastructures import State
+        state_obj = scope.get("state") or State()
+        state_obj.raw_body = body
+        state_obj.webhook_signature_verified = True
+        scope["state"] = state_obj
+
+        # A matching HMAC proves authenticity, but an empty payload is not a
+        # valid event document for the JSON webhook handlers. Return a
+        # client-error response instead of allowing request.json() to raise 500.
+        if body == b"":
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 422,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", b"54"),
+                    ],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b'{"detail":"Request body must not be empty"}',
+                }
+            )
+            return
+
         _sent = False
 
         async def replay_receive() -> dict[str, Any]:
@@ -96,11 +124,6 @@ class WebhookSignatureMiddleware:
             _sent = True
             return {"type": "http.request", "body": body, "more_body": False}
 
-        from starlette.datastructures import State
-        state_obj = scope.get("state") or State()
-        state_obj.raw_body = body
-        state_obj.webhook_signature_verified = True
-        scope["state"] = state_obj
         await self.app(scope, replay_receive, send)
 
 
