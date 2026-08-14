@@ -20,13 +20,12 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 
-from loom.api.dependencies import AuthDep, get_entitlements, get_rbac, is_dev_mode, verify_api_key
+from loom.api.dependencies import AuthDep, get_entitlements, get_rbac, is_dev_mode
 from loom.auth.context import AuthenticatedPrincipal, get_effective_principal, require_authenticated_principal
 from loom.business.audit_log import get_audit_logger
 from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
 from loom.db.records_store import get_run_record_store
-
 
 # ---------------------------------------------------------------------------
 # Principal extraction
@@ -36,7 +35,6 @@ async def get_principal(
     _auth: AuthDep,
 ) -> AuthenticatedPrincipal:
     """Return the authenticated principal after verifying the API key."""
-    from loom.auth.context import get_effective_principal
     principal = get_effective_principal()
     if principal is None:
         from fastapi import HTTPException, status
@@ -146,7 +144,6 @@ def require_run_access(run_id: str, action: Action, *, principal: AuthenticatedP
 
 def require_entitlement(feature_key):
     """Factory: return a dependency that checks org entitlement for feature_key."""
-    from loom.business.models import FeatureKey
 
     async def _check(
         _auth: AuthDep,

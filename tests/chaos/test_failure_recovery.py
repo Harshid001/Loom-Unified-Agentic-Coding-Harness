@@ -9,8 +9,8 @@ Verifies:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
 import pytest
 
 from loom.infra.run_state import LocalRunStore, get_run_store, reset_run_store

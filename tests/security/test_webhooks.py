@@ -22,7 +22,6 @@ from loom.api.app import create_app
 from loom.api.dependencies import reset_entitlements
 from loom.db.records_store import reset_run_record_store
 
-
 GITHUB_WEBHOOK_PATH = "/api/v1/integrations/github/webhook"
 GITLAB_WEBHOOK_PATH = "/api/v1/integrations/gitlab/webhook"
 

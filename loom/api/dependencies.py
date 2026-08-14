@@ -6,24 +6,22 @@ This eliminates module-level singleton initialization scattered in server.py.
 
 from __future__ import annotations
 
+import os
+import secrets
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 
 from loom.auth.api_tokens import get_api_token_store
 from loom.auth.context import (
-    AuthenticatedPrincipal,
     get_effective_principal,
     get_service_principal,
     set_principal,
 )
 from loom.business.entitlements import EntitlementService
 from loom.business.models import Membership, MembershipRole, Organization, OrgTier
-from loom.business.rbac import Action, RBACEnforcer
+from loom.business.rbac import RBACEnforcer
 from loom.db.records_store import RunRecordStore, get_run_record_store
-
-import os
-import secrets
 
 # ---------------------------------------------------------------------------
 # Singleton accessors (lazy, test-overridable)

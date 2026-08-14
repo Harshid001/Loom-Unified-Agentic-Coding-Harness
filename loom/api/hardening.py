@@ -7,8 +7,6 @@ rate limiting, SSRF validation, webhook signature validation, and removal of fab
 
 from __future__ import annotations
 
-import asyncio
-import functools
 import hashlib
 import hmac
 import ipaddress
@@ -17,12 +15,10 @@ import socket
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
 
 
 PRIVATE_NETS = (

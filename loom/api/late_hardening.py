@@ -23,8 +23,6 @@ import os
 from typing import Any, Awaitable, Callable
 
 from cryptography.fernet import Fernet
-from fastapi import Header, HTTPException
-
 
 # ---------------------------------------------------------------------------
 # Secret encryption helpers (webhook subscription secret at rest)

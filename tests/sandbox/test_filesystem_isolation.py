@@ -8,9 +8,7 @@ Verifies that sandbox execution:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-import pytest
 
 from loom.sandbox.local_process import LocalProcessSandbox
 from loom.sandbox.worktree import WorktreeManager

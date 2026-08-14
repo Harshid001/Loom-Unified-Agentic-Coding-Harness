@@ -10,31 +10,31 @@ verifying:
 from __future__ import annotations
 
 import asyncio
-import os
+
 import pytest
 
-from loom.infra.run_state import LocalRunStore, RedisRunStore, get_run_store, reset_run_store
+from loom.infra.run_state import LocalRunStore, get_run_store, reset_run_store
 
 
 @pytest.mark.asyncio
 async def test_local_run_store_lifecycle():
     store = LocalRunStore()
     run_id = "test_run_local_1"
-    
+
     # 1. Set
     await store.set_run(run_id, {"status": "queued", "org_id": "org_123", "step": 1})
     data = await store.get_run(run_id)
     assert data is not None
     assert data["status"] == "queued"
     assert data["org_id"] == "org_123"
-    
+
     # 2. Update
     await store.update_run(run_id, {"status": "running", "step": 2})
     data = await store.get_run(run_id)
     assert data["status"] == "running"
     assert data["step"] == 2
     assert data["org_id"] == "org_123"
-    
+
     # 3. Delete
     await store.delete_run(run_id)
     data = await store.get_run(run_id)
