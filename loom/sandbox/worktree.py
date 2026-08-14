@@ -3,6 +3,7 @@ import re
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
 
@@ -28,6 +29,18 @@ def _copy_tree_no_links(source: Path, destination: Path) -> None:
             _copy_tree_no_links(item, dest)
         else:
             shutil.copy2(item, dest)
+
+
+@dataclass(frozen=True)
+class WorktreeHandle:
+    snapshot_id: str
+    worktree_path: str
+
+    def __str__(self) -> str:
+        return self.worktree_path
+
+    def __fspath__(self) -> str:
+        return self.worktree_path
 
 
 class WorktreeManager:
@@ -66,9 +79,10 @@ class WorktreeManager:
 
         return snapshot_id
 
-    def create_worktree(self, label: str) -> str:
-        """Backward-compatible alias for create_snapshot()."""
-        return self.create_snapshot(label)
+    def create_worktree(self, label: str) -> WorktreeHandle:
+        """Backward-compatible object API exposing the materialized worktree path."""
+        snapshot_id = self.create_snapshot(label)
+        return WorktreeHandle(snapshot_id=snapshot_id, worktree_path=self.snapshots[snapshot_id])
 
     def restore_snapshot(self, snapshot_id: str) -> bool:
         if snapshot_id not in self.snapshots:
@@ -104,7 +118,7 @@ class WorktreeManager:
             logger.error("Failed to restore snapshot %s: %s", snapshot_id, err)
             return False
 
-    def cleanup_snapshot(self, snapshot_id: str):
+    def cleanup_snapshot(self, snapshot_id: str) -> None:
         if snapshot_id in self.snapshots:
             path = Path(self.snapshots[snapshot_id]).resolve()
             snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
@@ -120,3 +134,7 @@ class WorktreeManager:
                 if path.exists():
                     shutil.rmtree(path, ignore_errors=True)
             del self.snapshots[snapshot_id]
+
+    def cleanup_worktree(self, worktree_id: str) -> None:
+        """Backward-compatible alias for cleanup_snapshot()."""
+        self.cleanup_snapshot(worktree_id)
