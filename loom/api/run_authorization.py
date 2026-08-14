@@ -114,23 +114,26 @@ def install_run_authorization(module: Any) -> None:
         if getattr(endpoint, "_loom_run_authorized", False):
             continue
 
-        if asyncio.iscoroutinefunction(endpoint):
-            @functools.wraps(endpoint)
-            async def guarded_async(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
-                run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
-                require_run_access(run_id, __action, module=module)
-                return await __endpoint(*args, **kwargs)
+        target_endpoint = endpoint
+        target_action = action
 
-            guarded_async._loom_run_authorized = True
+        if asyncio.iscoroutinefunction(target_endpoint):
+            async def guarded_async(*args: Any, **kwargs: Any) -> Any:
+                run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
+                require_run_access(run_id, target_action, module=module)
+                return await target_endpoint(*args, **kwargs)
+
+            functools.update_wrapper(guarded_async, target_endpoint)
+            setattr(guarded_async, "_loom_run_authorized", True)
             _set_route_callable(route, guarded_async)
         else:
-            @functools.wraps(endpoint)
-            def guarded_sync(*args: Any, __endpoint: Any = endpoint, __action: Action = action, **kwargs: Any) -> Any:
+            def guarded_sync(*args: Any, **kwargs: Any) -> Any:
                 run_id = str(kwargs.get("run_id") or (args[0] if args else ""))
-                require_run_access(run_id, __action, module=module)
-                return __endpoint(*args, **kwargs)
+                require_run_access(run_id, target_action, module=module)
+                return target_endpoint(*args, **kwargs)
 
-            guarded_sync._loom_run_authorized = True
+            functools.update_wrapper(guarded_sync, target_endpoint)
+            setattr(guarded_sync, "_loom_run_authorized", True)
             _set_route_callable(route, guarded_sync)
 
 
