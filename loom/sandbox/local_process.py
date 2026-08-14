@@ -43,7 +43,8 @@ class LocalProcessSandbox(BaseSandbox):
             cmd_args = cmd
             cmd_str = " ".join(cmd)
 
-        if not self.egress_enforcer.check_command_egress(cmd_str, SandboxTier.A_GIT_WORKTREE):
+        blocked_targets = self.egress_enforcer.check_command_egress(cmd_str, SandboxTier.A_GIT_WORKTREE)
+        if blocked_targets:
             return CommandResult(
                 command=cmd_str,
                 exit_code=126,
@@ -94,8 +95,22 @@ class LocalProcessSandbox(BaseSandbox):
                 timed_out=False,
             )
 
+    def execute(
+        self,
+        cmd: Union[str, List[str]],
+        cwd: Optional[str] = None,
+        timeout: int = 60,
+        env: Optional[Dict[str, str]] = None,
+    ) -> CommandResult:
+        """Backward-compatible alias for run_command()."""
+        return self.run_command(cmd, cwd=cwd, timeout=timeout, env=env)
+
     def create_snapshot(self, label: str) -> str:
         return self.worktree_manager.create_snapshot(label)
+
+    def create_worktree(self, label: str) -> str:
+        """Backward-compatible alias for create_snapshot()."""
+        return self.create_snapshot(label)
 
     def restore_snapshot(self, snapshot_id: str) -> bool:
         return self.worktree_manager.restore_snapshot(snapshot_id)
