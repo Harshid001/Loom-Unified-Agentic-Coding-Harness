@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { DASHBOARD_SESSION_COOKIE, isDashboardTokenValid } from '@/lib/auth';
+import {
+  DASHBOARD_SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
+  createDashboardSession,
+  isDashboardTokenValid,
+  validateSameOrigin,
+} from '@/lib/auth';
 
 const failures = new Map<string, number[]>();
 const WINDOW_MS = 60_000;
@@ -27,9 +33,7 @@ function recordFailure(key: string): void {
 }
 
 export async function POST(req: NextRequest) {
-  const origin = req.headers.get('origin');
-  const configuredOrigin = process.env.NEXT_PUBLIC_APP_ORIGIN;
-  if (configuredOrigin && origin && origin !== configuredOrigin) {
+  if (!validateSameOrigin(req)) {
     return NextResponse.json({ detail: 'Invalid request origin' }, { status: 403 });
   }
 
@@ -48,15 +52,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ detail: 'Invalid dashboard credentials' }, { status: 401 });
   }
 
+  const session = createDashboardSession();
+  if (!session) {
+    return NextResponse.json({ detail: 'Dashboard session configuration is incomplete' }, { status: 503 });
+  }
+
   const response = NextResponse.json({ authenticated: true });
   response.cookies.set({
     name: DASHBOARD_SESSION_COOKIE,
-    value: token,
+    value: session,
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/',
-    maxAge: 60 * 60 * 8,
+    maxAge: SESSION_TTL_SECONDS,
   });
   return response;
 }
