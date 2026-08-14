@@ -26,7 +26,7 @@ function LoomDashboard() {
   const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0]);
   const [newIssue, setNewIssue] = useState('');
   const [repoPath] = useState('.');
-  const [mockMode, setMockMode] = useState(true);
+  const [mockMode, setMockMode] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
   const {
