@@ -88,6 +88,7 @@ class WebhookSignatureMiddleware:
             return
 
         _sent = False
+
         async def replay_receive() -> dict[str, Any]:
             nonlocal _sent
             if _sent:
@@ -134,16 +135,23 @@ def install_terminal_webhook_normalizer() -> None:
             return
         original_fire = TaskGraph._fire_webhook
         original_record = TaskGraph._record_run
+
         def fire(self: Any, event_type: Any, data: dict[str, Any]) -> None:
             if event_type == WebhookEventType.RUN_FAILED and data.get("reason") == "human_review_required":
                 event_type = WebhookEventType.RUN_COMPLETED
             original_fire(self, event_type, data)
+
         def record(self: Any) -> None:
             commit_gateway = self.state.shared_data.get("commit_gateway") or {}
-            security_hold = self.state.shared_data.get("verification_decision") == "security_hold" or commit_gateway.get("status") == "security_hold" or bool(self.state.shared_data.get("security_hold_reason"))
+            security_hold = (
+                self.state.shared_data.get("verification_decision") == "security_hold"
+                or commit_gateway.get("status") == "security_hold"
+                or bool(self.state.shared_data.get("security_hold_reason"))
+            )
             if security_hold:
                 self.run_status = RunStatus.SECURITY_HOLD
             original_record(self)
+
         TaskGraph._fire_webhook = fire
         TaskGraph._record_run = record
         TaskGraph._loom_terminal_webhooks_patched = True
@@ -161,11 +169,13 @@ def install_webhook_secret_encryption() -> None:
             return
         original_load = WebhookEngine._load_subscriptions
         original_save = WebhookEngine._save_subscriptions
+
         def load(self: Any) -> None:
             original_load(self)
             for subscription in self._subscriptions.values():
                 if subscription.secret:
                     subscription.secret = _decrypt_secret(subscription.secret)
+
         def save(self: Any) -> None:
             original_values = list(self._subscriptions.values())
             try:
@@ -177,6 +187,7 @@ def install_webhook_secret_encryption() -> None:
                 for subscription in original_values:
                     if subscription.secret and subscription.secret.startswith("enc:"):
                         subscription.secret = _decrypt_secret(subscription.secret)
+
         WebhookEngine._load_subscriptions = load  # type: ignore[method-assign]
         WebhookEngine._save_subscriptions = save  # type: ignore[method-assign]
         WebhookEngine._loom_secret_hardened = True  # type: ignore[attr-defined]
@@ -185,15 +196,12 @@ def install_webhook_secret_encryption() -> None:
             raise
 
 
-# ---------------------------------------------------------------------------
-# Legacy no-op shim (kept for any remaining call sites during transition)
-# ---------------------------------------------------------------------------
-
-
 def apply_late_hardening(module: Any) -> None:  # noqa: ARG001
-    """No-op.  All hardening is now composed explicitly in create_app().
+    """Compatibility entry point for legacy callers during the hardening migration.
 
-    This function is retained to avoid ImportError in any code that still
-    calls it, but it performs no action.  It will be removed in a future
-    cleanup pass after all call sites are confirmed removed.
+    The modern application composes these installers explicitly in create_app().
+    Legacy callers still need the concrete installers to be activated, so this
+    wrapper is intentionally idempotent rather than a no-op.
     """
+    install_terminal_webhook_normalizer()
+    install_webhook_secret_encryption()
