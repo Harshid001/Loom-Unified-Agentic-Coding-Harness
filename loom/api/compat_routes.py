@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from loom.api.dependencies import AuthDep, get_entitlements
+from loom.api.dependencies import get_entitlements
 from loom.api.security import PrincipalDep, require_run_access
 from loom.api.server import ACTIVE_RUNS, CiReportRequest, ControlRequest
 from loom.auth.context import AuthenticatedPrincipal
@@ -147,7 +147,7 @@ def compat_control_run(req: ControlRequest, principal: PrincipalDep) -> dict[str
 
 @compat_router.get("/api/v1/stream/{run_id}")
 @compat_router.get("/api/stream/{run_id}")
-def compat_stream(run_id: str, _auth: AuthDep = None, principal: PrincipalDep = None) -> dict[str, Any]:
+def compat_stream(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
     require_run_access(run_id, Action.VIEW_RUN, principal=principal)
     return {"status": "streaming", "run_id": run_id}
 
