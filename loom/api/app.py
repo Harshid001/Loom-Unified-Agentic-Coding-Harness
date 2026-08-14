@@ -22,8 +22,13 @@ from loom.api.late_hardening import (
 from loom.api.route_security_guards import install_route_security_guards
 from loom.api.runtime_guards import install_runtime_guards
 from loom.auth.runtime_principal import principal_from_headers
+from loom.runtime.production_hardening import install as install_runtime_hardening
 
 logger = logging.getLogger("loom.api")
+
+
+def _production() -> bool:
+    return os.getenv("LOOM_ENV", "").lower() in {"prod", "production"}
 
 
 def create_app(
@@ -35,6 +40,7 @@ def create_app(
     rate_limit_per_minute: int | None = None,
 ) -> FastAPI:
     """Build and return a fully-hardened FastAPI application instance."""
+    install_runtime_hardening()
     app = FastAPI(
         title=title,
         description="Unified Agentic Coding Harness API Server for orchestration, execution, and trace management.",
@@ -74,6 +80,21 @@ def create_app(
         response.headers["Content-Security-Policy"] = "default-src 'self'"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
+
+    @app.exception_handler(Exception)
+    async def production_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled application error on %s %s", request.method, request.url.path)
+        if _production():
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "type": "about:blank",
+                    "title": "Internal Server Error",
+                    "status": 500,
+                    "detail": "An unexpected internal error occurred.",
+                },
+            )
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
 
     default_limit = "1000" if os.getenv("LOOM_ENV", "development").lower() == "development" else "60"
     _rate_limit_requests = rate_limit_per_minute or int(os.getenv("RATE_LIMIT_PER_MINUTE", default_limit))
