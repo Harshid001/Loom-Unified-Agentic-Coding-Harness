@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from loom.sandbox.base import BaseSandbox, CommandResult
-from loom.sandbox.tiers import EgressEnforcer, SandboxContext, SandboxTier
 from loom.sandbox.worktree import WorktreeManager
 
 
@@ -14,6 +13,8 @@ class LocalProcessSandbox(BaseSandbox):
     """Executes commands locally with resource timeouts, repo scoping, and egress enforcement."""
 
     def __init__(self, repo_path: str):
+        from loom.sandbox.tiers import EgressEnforcer
+
         self.repo_path = Path(repo_path).resolve()
         self.worktree_manager = WorktreeManager(str(self.repo_path))
         self.egress_enforcer = EgressEnforcer()
@@ -25,6 +26,8 @@ class LocalProcessSandbox(BaseSandbox):
         timeout: int = 60,
         env: Optional[Dict[str, str]] = None,
     ) -> CommandResult:
+        from loom.sandbox.tiers import SandboxTier
+
         exec_cwd = Path(cwd).resolve() if cwd else self.repo_path
         if not exec_cwd.is_relative_to(self.repo_path) and exec_cwd != self.repo_path:
             exec_cwd = self.repo_path
@@ -40,11 +43,6 @@ class LocalProcessSandbox(BaseSandbox):
             cmd_args = cmd
             cmd_str = " ".join(cmd)
 
-        ctx = SandboxContext(
-            org_tier=getattr(getattr(__import__("loom.business.models", fromlist=["OrgTier"]), "OrgTier"), "SOLO"),
-            sandbox_tier=SandboxTier.A_GIT_WORKTREE,
-            egress_allowlist=self.egress_enforcer.allowlist.copy(),
-        )
         if not self.egress_enforcer.check_command_egress(cmd_str, SandboxTier.A_GIT_WORKTREE):
             return CommandResult(
                 command=cmd_str,
