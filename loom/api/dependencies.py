@@ -6,14 +6,10 @@ import os
 import secrets
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 
 from loom.auth.api_tokens import get_api_token_store
-from loom.auth.context import (
-    get_effective_principal,
-    get_service_principal,
-    set_principal,
-)
+from loom.auth.context import get_effective_principal, get_service_principal, set_principal
 from loom.business.entitlements import EntitlementService
 from loom.business.models import Membership, MembershipRole, Organization, OrgTier
 from loom.business.rbac import RBACEnforcer
@@ -43,10 +39,6 @@ def get_records_store() -> RunRecordStore:
 
 
 def is_dev_mode() -> bool:
-    """Only enable authentication bypass when development is explicit.
-
-    An unset LOOM_ENV is intentionally secure and is not treated as development.
-    """
     env = os.getenv("LOOM_ENV", "").lower()
     dev_flag = os.getenv("DEV_MODE", "").lower()
     return env == "development" and dev_flag in {"true", "1", "yes", "on"}
@@ -56,10 +48,16 @@ def get_required_api_key() -> str | None:
     return os.getenv("API_KEY")
 
 
-async def verify_api_key(x_api_key: str | None = Header(default=None)) -> str:
-    """Authenticate via the master API key or a per-user API token."""
-    required_key = get_required_api_key()
+async def verify_api_key(
+    request: Request,
+    x_api_key: str | None = Header(default=None),
+) -> str:
+    # Signed GitHub/GitLab webhooks already passed WebhookSignatureMiddleware.
+    if request.url.path.endswith("/integrations/github/webhook") or request.url.path.endswith("/integrations/gitlab/webhook"):
+        if getattr(request.state, "webhook_signature_verified", False):
+            return "webhook-signature"
 
+    required_key = get_required_api_key()
     if required_key and x_api_key and secrets.compare_digest(x_api_key, required_key):
         set_principal(get_service_principal())
         return x_api_key
@@ -69,24 +67,14 @@ async def verify_api_key(x_api_key: str | None = Header(default=None)) -> str:
         record = token_store.verify(x_api_key)
         if record is not None:
             from loom.auth.context import AuthenticatedPrincipal
-            set_principal(
-                AuthenticatedPrincipal(
-                    user_id=record.user_id,
-                    org_id=record.org_id,
-                    token_id=record.id,
-                    auth_method="api_token",
-                )
-            )
+            set_principal(AuthenticatedPrincipal(user_id=record.user_id, org_id=record.org_id, token_id=record.id, auth_method="api_token"))
             return x_api_key
 
     if not required_key and is_dev_mode():
         set_principal(get_service_principal())
         return x_api_key or "dev_key"
 
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required",
-    )
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
 
 AuthDep = Annotated[str, Depends(verify_api_key)]
