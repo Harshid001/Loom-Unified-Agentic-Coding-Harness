@@ -183,3 +183,17 @@ def install_webhook_secret_encryption() -> None:
     except Exception:
         if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
             raise
+
+
+# ---------------------------------------------------------------------------
+# Legacy no-op shim (kept for any remaining call sites during transition)
+# ---------------------------------------------------------------------------
+
+
+def apply_late_hardening(module: Any) -> None:  # noqa: ARG001
+    """No-op.  All hardening is now composed explicitly in create_app().
+
+    This function is retained to avoid ImportError in any code that still
+    calls it, but it performs no action.  It will be removed in a future
+    cleanup pass after all call sites are confirmed removed.
+    """
