@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from loom.api.dependencies import get_entitlements
 from loom.api.run_authorization import _route_action, install_run_authorization
-from loom.api.server import _default_org, _entitlements, app
+from loom.api.server import _default_org, app
 from loom.api.webhooks import get_webhook_engine, reset_webhook_engine
 from loom.business.models import Membership, MembershipRole, RunRecord
 from loom.business.rbac import Action
@@ -267,8 +268,9 @@ def test_forged_org_header_overridden_in_production(monkeypatch):
 )
 def test_rbac_role_matrix(role, can_view, can_rollback, can_report_ci):
     headers = {"X-API-Key": "test-api-key"}
-    _entitlements._memberships.clear()
-    _entitlements.add_membership(
+    ent = get_entitlements()
+    ent._memberships.clear()
+    ent.add_membership(
         Membership(user_id="dev_user", org_id=_default_org.id, role=role)
     )
 

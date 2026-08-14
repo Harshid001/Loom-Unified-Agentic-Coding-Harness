@@ -243,44 +243,6 @@ class RedisRateLimiter:
         return True
 
 
-def install_rate_limiter(app: Any) -> None:
-    limiter = RedisRateLimiter(int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")))
-
-    def local_allow(key: str) -> bool:
-        now = time.time()
-        state = limiter._local[key]
-        while state.timestamps and now - state.timestamps[0] >= limiter.window:
-            state.timestamps.popleft()
-        if len(state.timestamps) >= limiter.limit:
-            return False
-        state.timestamps.append(now)
-        return True
-
-    @app.middleware("http")
-    async def production_rate_limit(request: Any, call_next: Callable[..., Awaitable[Any]]) -> Any:
-        if not request.url.path.startswith("/api/"):
-            return await call_next(request)
-        try:
-            ip = trusted_client_ip(request.scope)
-            auth = request.headers.get("authorization") or request.headers.get("x-api-key") or request.headers.get("x-dashboard-auth")
-            principal = auth[-16:] if auth else "anonymous"
-
-            # Authentication must remain authoritative: unauthenticated requests are
-            # locally rate-limited, then passed to FastAPI so protected routes return 401/403.
-            if not auth:
-                local_key = f"unauth:{ip}:{request.url.path}"
-                if not local_allow(local_key):
-                    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
-                return await call_next(request)
-
-            key = f"{ip}:{principal}:{request.url.path}"
-            if not await limiter.allow(key):
-                return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
-        except ProductionSecurityError as exc:
-            return JSONResponse(status_code=503, content={"detail": str(exc)})
-        return await call_next(request)
-
-
 def validate_webhook_url(url: str, allow_hosts: set[str] | None = None) -> None:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
@@ -313,79 +275,8 @@ def run_org_id(run_id: str) -> str | None:
         return None
 
 
-def harden_server_module(module: Any) -> None:
-    app = module.app
-    app.add_middleware(APIHardeningMiddleware)
-    install_rate_limiter(app)
-
-    for route in list(getattr(app, "routes", [])):
-        path = getattr(route, "path", "")
-        endpoint = getattr(route, "endpoint", None)
-        if endpoint is None:
-            continue
-
-        if path.endswith("/ast"):
-            @functools.wraps(endpoint)  # type: ignore[arg-type]
-            async def ast_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
-                run_id = kwargs.get("run_id") or (args[0] if args else "")
-                checkpoint = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
-                if not checkpoint.exists():
-                    raise HTTPException(status_code=404, detail="AST evidence unavailable")
-                result = await __endpoint(*args, **kwargs) if asyncio.iscoroutinefunction(__endpoint) else __endpoint(*args, **kwargs)
-                if isinstance(result, dict) and "files_indexed" in result and result.get("sanitizer_status") == "safe":
-                    return result
-                return result
-            route.endpoint = ast_guard
-
-        elif path.endswith("/runs"):
-            @functools.wraps(endpoint)  # type: ignore[arg-type]
-            async def list_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
-                limit = int(kwargs.get("limit", 50))
-                offset = max(int(kwargs.get("offset", 0)), 0)
-                kwargs["limit"] = min(limit, 100)
-                kwargs["offset"] = offset
-                result = await __endpoint(*args, **kwargs) if asyncio.iscoroutinefunction(__endpoint) else __endpoint(*args, **kwargs)
-                try:
-                    principal = module.get_effective_principal()
-                    org_id = principal.org_id
-                    if isinstance(result, list):
-                        return [r for r in result if r.get("id") and _checkpoint_org(r.get("id"), org_id)]
-                except Exception:
-                    pass
-                return result
-            route.endpoint = list_guard
-
-        elif "run/{run_id}" in path or "runs/{run_id}" in path:
-            @functools.wraps(endpoint)  # type: ignore[arg-type]
-            async def run_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
-                run_id = kwargs.get("run_id") or (args[0] if args else "")
-                principal = module.get_effective_principal()
-                run_org = run_org_id(str(run_id))
-                if run_org is None or run_org != principal.org_id:
-                    raise HTTPException(status_code=404, detail="Run not found")
-                return await __endpoint(*args, **kwargs) if asyncio.iscoroutinefunction(__endpoint) else __endpoint(*args, **kwargs)
-            route.endpoint = run_guard
-
-        elif path.endswith("/run"):
-            @functools.wraps(endpoint)  # type: ignore[arg-type]
-            async def create_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
-                req = kwargs.get("req")
-                production = os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
-                if production and req is not None and bool(getattr(req, "mock", False)):
-                    raise HTTPException(status_code=400, detail="Mock execution is disabled in production")
-                return await __endpoint(*args, **kwargs) if asyncio.iscoroutinefunction(__endpoint) else __endpoint(*args, **kwargs)
-            route.endpoint = create_guard
-
-        elif "integrations/slack/notify" in path:
-            @functools.wraps(endpoint)  # type: ignore[arg-type]
-            async def slack_guard(*args: Any, __endpoint: Any = endpoint, **kwargs: Any) -> Any:
-                req = kwargs.get("req")
-                if req is not None:
-                    validate_webhook_url(str(req.webhook_url))
-                return await __endpoint(*args, **kwargs) if asyncio.iscoroutinefunction(__endpoint) else __endpoint(*args, **kwargs)
-            route.endpoint = slack_guard
-
 
 def _checkpoint_org(run_id: str, expected_org: str) -> bool:
     actual = run_org_id(run_id)
     return actual == expected_org
+

@@ -10,10 +10,14 @@ from loom.scim.provisioning import get_scim_provisioner, reset_scim_provisioner
 client = TestClient(app)
 
 
+from loom.api.dependencies import reset_entitlements
+
+
 @pytest.fixture(autouse=True)
 def setup_api_key_env(monkeypatch, tmp_path):
     monkeypatch.setenv("API_KEY", "test-api-key")
     monkeypatch.setenv("LOOM_EVIDENCE_DIR", str(tmp_path / "evidence"))
+    reset_entitlements()
     reset_usage_ledger()
     get_usage_ledger(str(tmp_path / "ledger"))
     reset_webhook_engine()

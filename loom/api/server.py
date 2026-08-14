@@ -1,16 +1,40 @@
+"""Loom API route handlers.
+
+Backward-compat note: tests and external callers that import
+``_default_org``, ``_entitlements``, or ``_rate_limit_memory_store``
+directly from this module will continue to work via re-exports at the
+bottom of this file.
+
+PRD-016: This module exposes named APIRouter instances instead of a global
+FastAPI `app`.  All middleware is composed by create_app() in loom.api.app.
+Every sensitive route declares its security boundary explicitly via Depends().
+
+Routers exported:
+  router_health       — /healthz, /metrics, /api/*/health/*
+  router_auth         — /api/*/auth/tokens
+  router_runs         — /api/*/run, /api/*/runs/*, /api/*/stream/*, /api/*/run/control
+  router_webhooks     — outbound webhook subscription management
+  router_integrations — GitHub / GitLab / Slack inbound webhooks + bot endpoints
+  router_admin        — entitlements check, org usage
+
+The legacy module-level `app` is still provided for backward-compat with
+uvicorn entry-points that do `loom.api.server:app`.  It is built via
+create_app() on first import so no hardening is skipped.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
 import logging
 import os
-import secrets
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -43,163 +67,45 @@ except ImportError:
     Histogram = DummyMetricFactory()  # type: ignore
 
 from loom.adapters.router import ModelRouter
+from loom.api.dependencies import (
+    AuthDep,
+    OrgIdDep,
+    get_entitlements,
+    get_records_store,
+    is_dev_mode,
+    resolve_org_id,
+    verify_api_key,
+)
+from loom.api.security import (
+    PrincipalDep,
+    require_admin_permission,
+    require_auditor_permission,
+    require_run_access,
+    require_run_permission,
+    require_token_admin,
+    require_entitlement,
+)
 from loom.api.webhooks import WebhookEventType, get_webhook_engine
 from loom.auth.api_tokens import get_api_token_store
-from loom.auth.context import get_effective_principal, get_service_principal, set_principal
-from loom.business.entitlements import EntitlementService
-from loom.business.models import (
-    FeatureKey,
-    Membership,
-    MembershipRole,
-    Organization,
-    OrgTier,
-    RunRecord,
-)
+from loom.auth.context import get_effective_principal, require_authenticated_principal
+from loom.business.models import FeatureKey, RunRecord
 from loom.business.rbac import Action, RBACEnforcer
-from loom.db.records_store import get_run_record_store
 from loom.memory.store import TieredMemoryStore
 from loom.orchestrator.state import OrchestratorState
 from loom.orchestrator.task_graph import TaskGraph
 from loom.sandbox.local_process import LocalProcessSandbox
-from loom.scim.provisioning import scim_router
 from loom.telemetry.cost_tracker import CostTracker
 from loom.telemetry.tracer import TelemetryTracer
 from loom.verification.bundle import EvidenceBundler
 
-app = FastAPI(
-    title="Loom Agentic Harness API",
-    description="Unified Agentic Coding Harness API Server for orchestration, execution, and trace management.",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
-
-app.include_router(scim_router)
-
-
-# PRD-001: Hardened CORS configuration
-raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
-allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
-is_wildcard = "*" in allowed_origins
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=not is_wildcard,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# PRD-005 & PRD-006: Security Headers Middleware
-@app.middleware("http")
-async def security_headers_middleware(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Content-Security-Policy"] = "default-src 'self'"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
-
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("loom.api")
 
-# PRD-015: Prometheus Metrics Instrumentation
+# Prometheus metrics
 REQUEST_COUNT = Counter("loom_requests_total", "Total requests processed", ["method", "endpoint", "status"])
 REQUEST_LATENCY = Histogram("loom_request_duration_seconds", "Request latency", ["endpoint"])
 
-# PRD-108 & PRD-007: In-Memory Sliding-Window Rate Limiting Store with Bounded Cleanup
-RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
-RATE_LIMIT_WINDOW = 60  # seconds
-_rate_limit_memory_store: Dict[str, List[float]] = {}
-
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    start_time = time.time()
-    if request.url.path.startswith("/api/"):
-        client_ip = request.client.host if request.client else "127.0.0.1"
-        now = time.time()
-        timestamps = [ts for ts in _rate_limit_memory_store.get(client_ip, []) if now - ts < RATE_LIMIT_WINDOW]
-        if len(timestamps) >= RATE_LIMIT_REQUESTS:
-            REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, status="429").inc()
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Too many requests."})
-        timestamps.append(now)
-        _rate_limit_memory_store[client_ip] = timestamps
-
-        # Bounded store cleanup (PRD-007)
-        if len(_rate_limit_memory_store) > 5000:
-            stale = [
-                ip for ip, tss in _rate_limit_memory_store.items() if not tss or (now - tss[-1] > RATE_LIMIT_WINDOW)
-            ]
-            for ip in stale:
-                _rate_limit_memory_store.pop(ip, None)
-
-    response = await call_next(request)
-    duration = time.time() - start_time
-    REQUEST_LATENCY.labels(endpoint=request.url.path).observe(duration)
-    REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, status=str(response.status_code)).inc()
-    return response
-
-
-# PRD-010: Request Body Size Limit Middleware (10MB Max Body Size)
-MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-@app.middleware("http")
-async def limit_request_body_size(request: Request, call_next):
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > MAX_REQUEST_SIZE:
-                return JSONResponse(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    content={"detail": "Request payload exceeds maximum allowed size of 10MB."},
-                )
-        except ValueError:
-            pass
-    return await call_next(request)
-
-
-def is_dev_mode() -> bool:
-    env = os.getenv("LOOM_ENV", "development").lower()
-    dev_flag = os.getenv("DEV_MODE", "").lower()
-    if env in ("prod", "production") or dev_flag in ("false", "0", "no"):
-        return False
-    return env == "development" or dev_flag in ("true", "1", "yes")
-
-
-def get_required_api_key() -> Optional[str]:
-    return os.getenv("API_KEY")
-
-
-async def verify_api_key(x_api_key: Optional[str] = Header(None)):
-    required_key = get_required_api_key()
-    if required_key and x_api_key and secrets.compare_digest(x_api_key, required_key):
-        set_principal(get_service_principal())
-        return x_api_key
-
-    if x_api_key:
-        token_store = get_api_token_store()
-        record = token_store.verify(x_api_key)
-        if record is not None:
-            return x_api_key
-
-    if not required_key:
-        if is_dev_mode():
-            set_principal(get_service_principal())
-            return x_api_key or "dev_key"
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API_KEY environment variable is not configured. Production mode requires API_KEY or valid auth token.",
-        )
-
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing X-API-Key header")
-
-
+# Process-local active run store (Phase 4 will replace with RedisRunStore)
 ACTIVE_RUNS: Dict[str, Dict[str, Any]] = {}
 
 
@@ -208,6 +114,11 @@ def _evidence_dir() -> Path:
     if raw:
         return Path(raw)
     return Path.home() / ".loom" / "evidence"
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
 
 
 class TokenCreateRequest(BaseModel):
@@ -232,107 +143,106 @@ class ControlRequest(BaseModel):
     snapshot_id: Optional[str] = None
 
 
-async def require_token_admin(x_api_key: str = Depends(verify_api_key)):
-    """Require an authenticated principal with token-management RBAC permission."""
-    principal = get_effective_principal()
-    role = _entitlements.get_role(principal.org_id, principal.user_id)
-    RBACEnforcer(role).authorize(Action.MODIFY_ENTITLEMENTS, resource=f"org:{principal.org_id}")
-    return principal
+class CiReportRequest(BaseModel):
+    merge_time: float
+    ci_failure_detected: bool
+    monitor_timeout_seconds: int = 3600
 
 
-@app.post("/api/v1/auth/tokens", dependencies=[Depends(require_token_admin)])
-@app.post("/api/auth/tokens", dependencies=[Depends(require_token_admin)])
-def issue_api_token(req: TokenCreateRequest):
-    token_store = get_api_token_store()
-    principal = get_effective_principal()
-    requested_user = req.user_id or principal.user_id
-    requested_org = req.org_id or principal.org_id
-
-    # Prevent an administrator from creating a token in another organization from
-    # a client-supplied org_id. Cross-organization administration is a separate
-    # control-plane concern and is not exposed by this endpoint.
-    if requested_org != principal.org_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot issue a token for another organization")
-
-    record, raw_token = token_store.issue(
-        user_id=requested_user,
-        org_id=principal.org_id,
-        label=req.label or "cli",
-    )
-    return {
-        "token": raw_token,
-        "token_id": record.id,
-        "user_id": record.user_id,
-        "org_id": record.org_id,
-        "label": record.label,
-        "prefix": record.prefix,
-        "created_at": record.created_at,
-    }
+class GitHubWebhookRequest(BaseModel):
+    action: str = ""
+    issue: Optional[Dict[str, Any]] = None
+    pull_request: Optional[Dict[str, Any]] = None
+    repository: Optional[Dict[str, Any]] = None
+    sender: Optional[Dict[str, Any]] = None
 
 
-@app.get("/api/v1/auth/tokens")
-@app.get("/api/auth/tokens")
-def list_api_tokens(
-    user_id: Optional[str] = None,
-    x_api_key: str = Depends(verify_api_key),
-):
-    token_store = get_api_token_store()
-    principal = get_effective_principal()
-    records = [
-        {
-            "id": r.id,
-            "user_id": r.user_id,
-            "org_id": r.org_id,
-            "label": r.label,
-            "prefix": r.prefix,
-            "active": r.active,
-            "created_at": r.created_at,
-        }
-        for r in token_store._records.values()
-        if r.active
-        and r.org_id == principal.org_id
-        and (user_id is None or r.user_id == user_id)
-    ]
-    return records
+class GitLabWebhookRequest(BaseModel):
+    object_kind: str = ""
+    object_attributes: Optional[Dict[str, Any]] = None
+    project: Optional[Dict[str, Any]] = None
+    user: Optional[Dict[str, Any]] = None
 
 
-@app.delete("/api/v1/auth/tokens/{token_id}")
-@app.delete("/api/auth/tokens/{token_id}")
-def revoke_api_token(
-    token_id: str,
-    x_api_key: str = Depends(verify_api_key),
-):
-    principal = get_effective_principal()
-    token_store = get_api_token_store()
-    record = token_store._records.get(token_id)
-    if record is None or record.org_id != principal.org_id:
-        raise HTTPException(status_code=404, detail="Token not found")
-    success = token_store.revoke(token_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Token not found or already revoked")
-    return {"revoked": True, "token_id": token_id}
+class SlackNotifyRequest(BaseModel):
+    webhook_url: str
+    title: str
+    body: str
+    level: str = "info"
+    template: str = "custom"
+    run_id: str = ""
 
 
-# PRD-015: Prometheus Metrics Endpoint
+class PreparePRRequest(BaseModel):
+    run_id: str
+    issue_title: str
+    issue_number: int
+    patch_diff: str = ""
+    confidence_score: float = 0.0
+    verification_passed: bool = False
+    cost_usd: float = 0.0
+    files_touched: int = 0
+    model_used: str = "unknown"
+    template: str = "standard"
 
-@app.get("/metrics")
-def metrics():
-    if not PROMETHEUS_AVAILABLE:
-        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+class EntitlementCheckRequest(BaseModel):
+    org_id: str = ""
+    feature_key: str
+
+
+class EntitlementCheckResponse(BaseModel):
+    allowed: bool
+    reason: Optional[str] = None
+
+
+class WebhookSubscribeRequest(BaseModel):
+    org_id: str
+    url: str
+    events: Optional[List[str]] = None
+    secret: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Helper: RBAC enforcer from request context
+# ---------------------------------------------------------------------------
+
+
+def _get_rbac(org_id: str, user_id: str = "dev_user") -> RBACEnforcer:
+    role = get_entitlements().get_role(org_id, user_id)
+    return RBACEnforcer(role)
+
+
+def _request_org_id(client_org_id: str) -> str:
+    if is_dev_mode():
+        entitlements = get_entitlements()
+        orgs = list(getattr(entitlements, "_orgs", {}).keys())
+        return client_org_id or (orgs[0] if orgs else "default")
+    return get_effective_principal().org_id
+
+
+# ---------------------------------------------------------------------------
+# router_health — no authentication required
+# ---------------------------------------------------------------------------
+
+router_health = APIRouter(tags=["health"])
+
+
+@router_health.get("/metrics")
+def metrics() -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-# PRD-103: Authenticated health probes
-@app.get("/api/v1/health/liveness")
-@app.get("/api/health/liveness")
-@app.get("/healthz")
-def liveness_health():
+@router_health.get("/api/v1/health/liveness")
+@router_health.get("/api/health/liveness")
+@router_health.get("/healthz")
+def liveness_health() -> dict:
     return {"status": "alive", "service": "Loom API"}
 
 
-@app.get("/api/v1/health/readiness")
-@app.get("/api/health/readiness")
-def readiness_health():
+@router_health.get("/api/v1/health/readiness")
+@router_health.get("/api/health/readiness")
+def readiness_health() -> Any:
     db_ok = True
     try:
         store = TieredMemoryStore()
@@ -360,15 +270,104 @@ def readiness_health():
     return {"status": "ready", "service": "Loom API", "components": {"database": "ok", "storage": "ok"}}
 
 
-@app.get("/api/health")
-def legacy_health_alias():
+@router_health.get("/api/health")
+def legacy_health_alias() -> dict:
     return {"status": "ok", "service": "Loom API"}
 
 
-# PRD-103: Authenticated run list endpoint
-@app.get("/api/v1/runs", dependencies=[Depends(verify_api_key)])
-@app.get("/api/runs", dependencies=[Depends(verify_api_key)])
-def list_runs(offset: int = 0, limit: int = 50):
+# ---------------------------------------------------------------------------
+# router_auth — API token management
+# ---------------------------------------------------------------------------
+
+router_auth = APIRouter(tags=["auth"])
+
+
+@router_auth.post("/api/v1/auth/tokens")
+@router_auth.post("/api/auth/tokens")
+def issue_api_token(
+    req: TokenCreateRequest,
+    principal: PrincipalDep,
+    _admin: Any = Depends(require_token_admin),
+) -> dict:
+    token_store = get_api_token_store()
+    requested_user = req.user_id or principal.user_id
+    requested_org = req.org_id or principal.org_id
+
+    if requested_org != principal.org_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot issue a token for another organization")
+
+    record, raw_token = token_store.issue(
+        user_id=requested_user,
+        org_id=principal.org_id,
+        label=req.label or "cli",
+    )
+    return {
+        "token": raw_token,
+        "token_id": record.id,
+        "user_id": record.user_id,
+        "org_id": record.org_id,
+        "label": record.label,
+        "prefix": record.prefix,
+        "created_at": record.created_at,
+    }
+
+
+@router_auth.get("/api/v1/auth/tokens")
+@router_auth.get("/api/auth/tokens")
+def list_api_tokens(
+    user_id: Optional[str] = None,
+    _auth: AuthDep = None,
+) -> list:
+    token_store = get_api_token_store()
+    principal = get_effective_principal()
+    return [
+        {
+            "id": r.id,
+            "user_id": r.user_id,
+            "org_id": r.org_id,
+            "label": r.label,
+            "prefix": r.prefix,
+            "active": r.active,
+            "created_at": r.created_at,
+        }
+        for r in token_store._records.values()
+        if r.active
+        and r.org_id == principal.org_id
+        and (user_id is None or r.user_id == user_id)
+    ]
+
+
+@router_auth.delete("/api/v1/auth/tokens/{token_id}")
+@router_auth.delete("/api/auth/tokens/{token_id}")
+def revoke_api_token(
+    token_id: str,
+    _auth: AuthDep = None,
+) -> dict:
+    principal = get_effective_principal()
+    token_store = get_api_token_store()
+    record = token_store._records.get(token_id)
+    if record is None or record.org_id != principal.org_id:
+        raise HTTPException(status_code=404, detail="Token not found")
+    success = token_store.revoke(token_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Token not found or already revoked")
+    return {"revoked": True, "token_id": token_id}
+
+
+# ---------------------------------------------------------------------------
+# router_runs — run lifecycle
+# ---------------------------------------------------------------------------
+
+router_runs = APIRouter(tags=["runs"])
+
+
+@router_runs.get("/api/v1/runs")
+@router_runs.get("/api/runs")
+def list_runs(
+    offset: int = 0,
+    limit: int = 50,
+    _auth: AuthDep = None,
+) -> list:
     checkpoints_dir = Path.home() / ".loom" / "checkpoints"
     runs = []
     if checkpoints_dir.exists():
@@ -391,81 +390,15 @@ def list_runs(offset: int = 0, limit: int = 50):
     return runs[offset : offset + limit]
 
 
-def get_rbac(org_id: str = "org_placeholder", user_id: str = "dev_user") -> RBACEnforcer:
-    role = _entitlements.get_role(org_id, user_id)
-    return RBACEnforcer(role)
-
-
-def _request_org_id(client_org_id: str) -> str:
-    if is_dev_mode():
-        return client_org_id or _default_org.id
-    return get_effective_principal().org_id
-
-
-async def require_run_permission(
-    x_api_key: str = Depends(verify_api_key),
-    x_org_id: str = Header(default="", alias="X-Org-Id"),
-    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
-) -> RBACEnforcer:
-    org_id = _request_org_id(x_org_id)
-    enforcer = get_rbac(org_id, x_user_id)
-    enforcer.authorize(Action.TRIGGER_RUN, resource=f"org:{org_id}")
-    return enforcer
-
-
-async def require_admin_permission(
-    x_api_key: str = Depends(verify_api_key),
-    x_org_id: str = Header(default="", alias="X-Org-Id"),
-    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
-) -> RBACEnforcer:
-    org_id = _request_org_id(x_org_id)
-    enforcer = get_rbac(org_id, x_user_id)
-    enforcer.authorize(Action.MODIFY_ENTITLEMENTS, resource=f"org:{org_id}")
-    return enforcer
-
-
-async def require_auditor_permission(
-    x_api_key: str = Depends(verify_api_key),
-    x_org_id: str = Header(default="", alias="X-Org-Id"),
-    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
-) -> RBACEnforcer:
-    org_id = _request_org_id(x_org_id)
-    enforcer = get_rbac(org_id, x_user_id)
-    enforcer.authorize(Action.EXPORT_EVIDENCE, resource=f"org:{org_id}")
-    return enforcer
-
-
-async def resolve_org_id(
-    x_org_id: str = Header(default="", alias="X-Org-Id"),
-) -> str:
-    return _request_org_id(x_org_id)
-
-
-_entitlements = EntitlementService()
-_default_org = Organization(name="Default", tier=OrgTier.SOLO)
-_entitlements.register_org(_default_org)
-_default_membership = Membership(user_id="dev_user", org_id=_default_org.id, role=MembershipRole.OWNER)
-_entitlements.add_membership(_default_membership)
-
-
-class EntitlementCheckRequest(BaseModel):
-    org_id: str = ""
-    feature_key: str
-
-
-class EntitlementCheckResponse(BaseModel):
-    allowed: bool
-    reason: Optional[str] = None
-
-
-@app.post("/api/v1/run")
-@app.post("/api/run")
+@router_runs.post("/api/v1/run")
+@router_runs.post("/api/run")
 async def create_run(
     req: RunRequest,
     _rbac: RBACEnforcer = Depends(require_run_permission),
     org_id: str = Depends(resolve_org_id),
-):
-    org = _entitlements.get_org(org_id) or _default_org
+) -> Any:
+    entitlements = get_entitlements()
+    org = entitlements.get_org(org_id) or entitlements._orgs.get(next(iter(getattr(entitlements, "_orgs", {})), ""), None)
 
     sandbox_tier = (req.sandbox_tier or "A").upper()
     if sandbox_tier not in ("A", "B", "C"):
@@ -476,15 +409,18 @@ async def create_run(
         "C": FeatureKey.SANDBOX_TIER_C_MICROVM,
     }
     if sandbox_tier in tier_gated_feature:
-        result = _entitlements.check(org_id, tier_gated_feature[sandbox_tier])
+        result = entitlements.check(org_id, tier_gated_feature[sandbox_tier])
         if not result.allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=result.reason)
 
     from loom.business.usage_ledger import get_usage_ledger
 
     ledger = get_usage_ledger()
+    if org is None:
+        from loom.business.models import Organization, OrgTier
+        org = Organization(name="Default", tier=OrgTier.SOLO)
     snapshot = ledger.build_snapshot(org_id, org.tier)
-    ok, reason = _entitlements.evaluate_quota(org_id, snapshot)
+    ok, reason = entitlements.evaluate_quota(org_id, snapshot)
     if not ok:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=reason)
 
@@ -517,12 +453,12 @@ async def create_run(
     router = ModelRouter(default_model=req.model, mock_mode=req.mock)
     tracer = TelemetryTracer(run_id=run_id)
     cost_tracker = CostTracker(run_id=run_id)
-    records_store = get_run_record_store()
+    records_store = get_records_store()
 
     run_entry: Dict[str, Any] = {"queues": [], "events": [], "state": state}
     ACTIVE_RUNS[run_id] = run_entry
 
-    def broadcast_event(event_type: str, step_name: str, data: Dict[str, Any]):
+    def broadcast_event(event_type: str, step_name: str, data: Dict[str, Any]) -> None:
         evt = {
             "type": event_type,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -537,19 +473,19 @@ async def create_run(
             except Exception:
                 pass
 
-    def on_step_start(step_name: str, model_name: str):
+    def on_step_start(step_name: str, model_name: str) -> None:
         broadcast_event("step_progress", step_name, {"status": "running", "model": model_name})
 
-    def on_step_log(step_name: str, level: str, message: str):
+    def on_step_log(step_name: str, level: str, message: str) -> None:
         broadcast_event("log_entry", step_name, {"level": level, "agent": step_name, "message": message})
 
-    def on_step_complete(step_name: str, out: Any):
+    def on_step_complete(step_name: str, out: Any) -> None:
         metrics = out.get("_usage", {}) if isinstance(out, dict) else {}
         broadcast_event("step_progress", step_name, {"status": "completed", "metrics": metrics})
         if step_name == "patcher" and isinstance(out, dict) and "diff" in out:
             broadcast_event("patch_proposal", step_name, {"diff": out.get("diff")})
 
-    def on_step_fail(step_name: str, error: str):
+    def on_step_fail(step_name: str, error: str) -> None:
         broadcast_event("step_progress", step_name, {"status": "failed", "error": error})
 
     task_graph = TaskGraph(
@@ -604,24 +540,31 @@ async def create_run(
     }
 
 
-@app.get("/api/v1/stream/{run_id}", dependencies=[Depends(verify_api_key)])
-@app.get("/api/stream/{run_id}", dependencies=[Depends(verify_api_key)])
-async def stream_run_events(run_id: str):
+@router_runs.get("/api/v1/stream/{run_id}")
+@router_runs.get("/api/stream/{run_id}")
+async def stream_run_events(
+    run_id: str,
+    principal: PrincipalDep,
+) -> StreamingResponse:
     """Authenticated SSE stream scoped to the run's owning organization."""
     run_entry = ACTIVE_RUNS.get(run_id)
     if not run_entry:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    principal = get_effective_principal()
     run_org = run_entry.get("state").shared_data.get("org_id") if run_entry.get("state") else None
     if run_org != principal.org_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    async def event_generator():
+    async def event_generator() -> Any:
         queue: asyncio.Queue = asyncio.Queue()
         run_entry["queues"].append(queue)
         for event in list(run_entry.get("events", [])):
             yield f"data: {json.dumps(event)}\n\n"
+            if event.get("type") == "status_change" and event.get("data", {}).get("status") in (
+                "completed",
+                "failed",
+            ):
+                return
 
         try:
             while True:
@@ -649,14 +592,22 @@ async def stream_run_events(run_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.post("/api/v1/run/control", dependencies=[Depends(verify_api_key)])
-@app.post("/api/run/control", dependencies=[Depends(verify_api_key)])
-async def control_run(req: ControlRequest):
+@router_runs.post("/api/v1/run/control")
+@router_runs.post("/api/run/control")
+async def control_run(
+    req: ControlRequest,
+    principal: PrincipalDep,
+) -> dict:
     run_entry = ACTIVE_RUNS.get(req.run_id)
     if not run_entry:
         if req.action == "rollback" and req.run_id:
-            return rollback(req.run_id)
+            return _do_rollback(req.run_id)
         raise HTTPException(status_code=404, detail=f"Active run {req.run_id} not found")
+
+    # Tenant check
+    run_org = run_entry.get("state").shared_data.get("org_id") if run_entry.get("state") else None
+    if run_org != principal.org_id:
+        raise HTTPException(status_code=404, detail="Run not found")
 
     graph: TaskGraph = run_entry["graph"]
     action = req.action.lower()
@@ -687,9 +638,15 @@ async def control_run(req: ControlRequest):
     return {"status": "ok", "action": action, "run_id": req.run_id}
 
 
-@app.get("/api/v1/runs/{run_id}/ast", dependencies=[Depends(verify_api_key)])
-@app.get("/api/runs/{run_id}/ast", dependencies=[Depends(verify_api_key)])
-def get_run_ast(run_id: str):
+@router_runs.get("/api/v1/runs/{run_id}/ast")
+@router_runs.get("/api/runs/{run_id}/ast")
+def get_run_ast(
+    run_id: str,
+    principal: PrincipalDep,
+) -> dict:
+    # Authorize run access
+    require_run_access(run_id, Action.VIEW_RUN, principal=principal)
+
     checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
         return {
@@ -712,9 +669,14 @@ def get_run_ast(run_id: str):
     )
 
 
-@app.get("/api/v1/runs/{run_id}/evidence", dependencies=[Depends(verify_api_key)])
-@app.get("/api/runs/{run_id}/evidence", dependencies=[Depends(verify_api_key)])
-def get_run_evidence(run_id: str):
+@router_runs.get("/api/v1/runs/{run_id}/evidence")
+@router_runs.get("/api/runs/{run_id}/evidence")
+def get_run_evidence(
+    run_id: str,
+    principal: PrincipalDep,
+) -> dict:
+    require_run_access(run_id, Action.VIEW_RUN, principal=principal)
+
     bundler = EvidenceBundler(output_dir=str(_evidence_dir()))
     entry = bundler.get_entry(run_id)
     bundle_path = _evidence_dir() / f"evidence_{run_id}.json"
@@ -741,10 +703,14 @@ def get_run_evidence(run_id: str):
     }
 
 
-# PRD-103: Authenticated run detail endpoint
-@app.get("/api/v1/runs/{run_id}", dependencies=[Depends(verify_api_key)])
-@app.get("/api/runs/{run_id}", dependencies=[Depends(verify_api_key)])
-def get_run(run_id: str):
+@router_runs.get("/api/v1/runs/{run_id}")
+@router_runs.get("/api/runs/{run_id}")
+def get_run(
+    run_id: str,
+    principal: PrincipalDep,
+) -> dict:
+    require_run_access(run_id, Action.VIEW_RUN, principal=principal)
+
     checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
     trace_file = Path.home() / ".loom" / "traces" / f"trace_{run_id}.json"
 
@@ -759,11 +725,16 @@ def get_run(run_id: str):
     return {"checkpoint": data, "trace_events": events}
 
 
-@app.get("/api/v1/runs/{run_id}/records", dependencies=[Depends(verify_api_key)])
-@app.get("/api/runs/{run_id}/records", dependencies=[Depends(verify_api_key)])
-def get_run_records(run_id: str):
-    """Relational run record with nested AgentStep/Patch/VerificationResult rows (spec §2)."""
-    store = get_run_record_store()
+@router_runs.get("/api/v1/runs/{run_id}/records")
+@router_runs.get("/api/runs/{run_id}/records")
+def get_run_records(
+    run_id: str,
+    principal: PrincipalDep,
+) -> dict:
+    """Relational run record with nested AgentStep/Patch/VerificationResult rows."""
+    require_run_access(run_id, Action.VIEW_RUN, principal=principal)
+
+    store = get_records_store()
     run = store.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
@@ -776,10 +747,18 @@ def get_run_records(run_id: str):
     }
 
 
-@app.post("/v1/runs/{run_id}/rollback", dependencies=[Depends(verify_api_key)])
-@app.post("/api/v1/rollback/{run_id}", dependencies=[Depends(verify_api_key)])
-@app.post("/api/rollback/{run_id}", dependencies=[Depends(verify_api_key)])
-def rollback(run_id: str):
+@router_runs.post("/v1/runs/{run_id}/rollback")
+@router_runs.post("/api/v1/rollback/{run_id}")
+@router_runs.post("/api/rollback/{run_id}")
+def rollback(
+    run_id: str,
+    principal: PrincipalDep,
+) -> dict:
+    require_run_access(run_id, Action.ROLLBACK_RUN, principal=principal)
+    return _do_rollback(run_id)
+
+
+def _do_rollback(run_id: str) -> dict:
     checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
         raise HTTPException(status_code=404, detail="Checkpoint not found")
@@ -796,16 +775,15 @@ def rollback(run_id: str):
     return {"success": success, "snapshot_id": snapshot_id}
 
 
-class CiReportRequest(BaseModel):
-    merge_time: float
-    ci_failure_detected: bool
-    monitor_timeout_seconds: int = 3600
+@router_runs.post("/api/v1/runs/{run_id}/ci-report")
+@router_runs.post("/api/runs/{run_id}/ci-report")
+async def report_ci_status(
+    run_id: str,
+    req: CiReportRequest,
+    principal: PrincipalDep,
+) -> dict:
+    require_run_access(run_id, Action.REPORT_CI, principal=principal)
 
-
-# PRD §3.6: Post-merge CI monitoring endpoint — auto-rollback within monitor window
-@app.post("/api/v1/runs/{run_id}/ci-report", dependencies=[Depends(verify_api_key)])
-@app.post("/api/runs/{run_id}/ci-report", dependencies=[Depends(verify_api_key)])
-async def report_ci_status(run_id: str, req: CiReportRequest):
     from loom.business.audit_log import get_audit_logger
     from loom.business.models import AuditAction
     from loom.business.post_merge import auto_rollback_triggered, generate_revert_patch
@@ -855,115 +833,106 @@ async def report_ci_status(run_id: str, req: CiReportRequest):
     return report
 
 
-@app.get("/api/v1/orgs/{org_id}/usage")
-def get_org_usage(
-    org_id: str,
-    _rbac: RBACEnforcer = Depends(require_auditor_permission),
-):
-    org = _entitlements.get_org(org_id)
-    if org is None:
-        raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
-    from loom.business.usage_ledger import get_usage_ledger
+# ---------------------------------------------------------------------------
+# router_webhooks — outbound webhook subscription management
+# ---------------------------------------------------------------------------
 
-    ledger = get_usage_ledger()
-    snapshot = ledger.build_snapshot(org_id, org.tier)
-    allowed, reason = _entitlements.evaluate_quota(org_id, snapshot)
-    return {
-        "org_id": org_id,
-        "tier": org.tier.value,
-        "snapshot": snapshot.model_dump(),
-        "quota_ok": allowed,
-        "quota_reason": reason,
-    }
+router_webhooks = APIRouter(tags=["webhooks"])
 
 
-@app.post("/v1/entitlements/check")
-@app.post("/api/v1/entitlements/check")
-def check_entitlement(
-    req: EntitlementCheckRequest,
-    _rbac: RBACEnforcer = Depends(require_admin_permission),
-):
-    org_id = req.org_id or _default_org.id
-    try:
-        feature_key = FeatureKey(req.feature_key)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown feature_key: {req.feature_key}")
-    result = _entitlements.check(org_id, feature_key)
-    if not result.allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=result.reason or "Feature not available on current tier"
-        )
-    return {"allowed": True}
+@router_webhooks.get("/api/v1/webhooks/subscriptions")
+@router_webhooks.get("/api/webhooks/subscriptions")
+def list_webhook_subscriptions(
+    principal: PrincipalDep,
+) -> list:
+    engine = get_webhook_engine()
+    return [s.model_dump() for s in engine.get_subscriptions(org_id=principal.org_id)]
 
 
-def require_entitlement(feature_key: FeatureKey):
-    def dependency(org_id: str = Depends(resolve_org_id)):
-        result = _entitlements.check(org_id, feature_key)
-        if not result.allowed:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=result.reason or f"Feature '{feature_key.value}' not available",
-            )
-        return True
+@router_webhooks.post("/api/v1/webhooks/subscriptions")
+@router_webhooks.post("/api/webhooks/subscriptions")
+def create_webhook_subscription(
+    req: WebhookSubscribeRequest,
+    principal: PrincipalDep,
+) -> dict:
+    if req.org_id != principal.org_id:
+        raise HTTPException(status_code=403, detail="Cannot create subscription for another organization")
 
-    return dependency
+    from loom.api.webhooks import WebhookSubscription, WebhookEventType as WET
 
+    events = set(WET)
+    if req.events:
+        try:
+            events = {WET(e) for e in req.events}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Unknown event type: {exc}")
 
-class GitHubWebhookRequest(BaseModel):
-    action: str = ""
-    issue: Optional[Dict[str, Any]] = None
-    pull_request: Optional[Dict[str, Any]] = None
-    repository: Optional[Dict[str, Any]] = None
-    sender: Optional[Dict[str, Any]] = None
-
-
-class GitLabWebhookRequest(BaseModel):
-    object_kind: str = ""
-    object_attributes: Optional[Dict[str, Any]] = None
-    project: Optional[Dict[str, Any]] = None
-    user: Optional[Dict[str, Any]] = None
-
-
-class SlackNotifyRequest(BaseModel):
-    webhook_url: str
-    title: str
-    body: str
-    level: str = "info"
-    template: str = "custom"
-    run_id: str = ""
+    sub = WebhookSubscription(
+        id=f"wh_sub_{uuid.uuid4().hex[:12]}",
+        org_id=principal.org_id,
+        url=req.url,
+        events=events,
+        secret=req.secret,
+    )
+    engine = get_webhook_engine()
+    result = engine.register(sub)
+    return result.model_dump()
 
 
-class PreparePRRequest(BaseModel):
-    run_id: str
-    issue_title: str
-    issue_number: int
-    patch_diff: str = ""
-    confidence_score: float = 0.0
-    verification_passed: bool = False
-    cost_usd: float = 0.0
-    files_touched: int = 0
-    model_used: str = "unknown"
-    template: str = "standard"
+@router_webhooks.delete("/api/v1/webhooks/subscriptions/{sub_id}")
+@router_webhooks.delete("/api/webhooks/subscriptions/{sub_id}")
+def delete_webhook_subscription(
+    sub_id: str,
+    principal: PrincipalDep,
+) -> dict:
+    engine = get_webhook_engine()
+    subs = engine.get_subscriptions(org_id=principal.org_id)
+    if not any(s.id == sub_id for s in subs):
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    success = engine.unregister(sub_id)
+    return {"deleted": success, "subscription_id": sub_id}
 
 
-@app.post("/api/v1/integrations/github/webhook")
-@app.post("/api/integrations/github/webhook")
-def handle_github_webhook(
-    req: GitHubWebhookRequest,
-    x_api_key: str = Depends(verify_api_key),
-):
+# ---------------------------------------------------------------------------
+# router_integrations — inbound GitHub / GitLab / Slack
+# ---------------------------------------------------------------------------
+
+router_integrations = APIRouter(tags=["integrations"])
+
+
+@router_integrations.post("/api/v1/integrations/github/webhook")
+@router_integrations.post("/api/integrations/github/webhook")
+async def handle_github_webhook(
+    request: Request,
+    _auth: AuthDep = None,
+) -> dict:
+    """GitHub inbound webhook handler.
+
+    Signature verification is enforced by WebhookSignatureMiddleware (ASGI layer)
+    before this handler is ever reached.  The raw body is cached in
+    request.state.raw_body by that middleware.
+    """
     from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
 
-    repo_name = ""
-    if req.repository:
-        repo_name = req.repository.get("full_name", "")
-    issue_title = ""
-    issue_labels: List[str] = []
-    issue_number = 0
-    if req.issue:
-        issue_title = req.issue.get("title", "")
-        issue_labels = [lbl.get("name", "") for lbl in req.issue.get("labels", [])]
-        issue_number = req.issue.get("number", 0)
+    raw_body = getattr(request.state, "raw_body", None)
+    payload: dict[str, Any] = {}
+    if raw_body:
+        try:
+            payload = json.loads(raw_body)
+        except Exception:
+            payload = {}
+    else:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+
+    repo_name = payload.get("repository", {}).get("full_name", "") if isinstance(payload.get("repository"), dict) else ""
+    issue = payload.get("issue", {}) or {}
+    issue_title = issue.get("title", "")
+    issue_labels = [lbl.get("name", "") for lbl in issue.get("labels", [])]
+    issue_number = issue.get("number", 0)
+    action = payload.get("action", "")
 
     config = CIBotConfig(
         provider=CIBotProvider.GITHUB,
@@ -972,34 +941,47 @@ def handle_github_webhook(
         api_base_url="",
     )
     bot = CIBot(config)
-
     should_triage = bot.should_triage_issue(issue_title, issue_labels)
     return {
-        "action": req.action,
+        "action": action,
         "should_triage": should_triage,
         "repo": repo_name,
         "issue_number": issue_number,
     }
 
 
-@app.post("/api/v1/integrations/gitlab/webhook")
-@app.post("/api/integrations/gitlab/webhook")
-def handle_gitlab_webhook(
-    req: GitLabWebhookRequest,
-    x_api_key: str = Depends(verify_api_key),
-):
+@router_integrations.post("/api/v1/integrations/gitlab/webhook")
+@router_integrations.post("/api/integrations/gitlab/webhook")
+async def handle_gitlab_webhook(
+    request: Request,
+    _auth: AuthDep = None,
+) -> dict:
+    """GitLab inbound webhook handler.
+
+    Signature verification is enforced by WebhookSignatureMiddleware (ASGI layer).
+    """
     from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
 
-    project_name = ""
-    if req.project:
-        project_name = req.project.get("path_with_namespace", "")
-    issue_title = ""
-    issue_labels: List[str] = []
-    issue_number = 0
-    if req.object_attributes:
-        issue_title = req.object_attributes.get("title", "")
-        issue_labels = [lbl.get("title", "") for lbl in req.object_attributes.get("labels", [])]
-        issue_number = req.object_attributes.get("iid", 0)
+    raw_body = getattr(request.state, "raw_body", None)
+    payload: dict[str, Any] = {}
+    if raw_body:
+        try:
+            payload = json.loads(raw_body)
+        except Exception:
+            payload = {}
+    else:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+
+    project = payload.get("project", {}) or {}
+    project_name = project.get("path_with_namespace", "")
+    obj_attrs = payload.get("object_attributes", {}) or {}
+    issue_title = obj_attrs.get("title", "")
+    issue_labels = [lbl.get("title", "") for lbl in obj_attrs.get("labels", [])]
+    issue_number = obj_attrs.get("iid", 0)
+    object_kind = payload.get("object_kind", "")
 
     config = CIBotConfig(
         provider=CIBotProvider.GITLAB,
@@ -1008,22 +990,21 @@ def handle_gitlab_webhook(
         api_base_url="",
     )
     bot = CIBot(config)
-
     should_triage = bot.should_triage_issue(issue_title, issue_labels)
     return {
-        "object_kind": req.object_kind,
+        "object_kind": object_kind,
         "should_triage": should_triage,
         "repo": project_name,
         "issue_number": issue_number,
     }
 
 
-@app.post("/api/v1/integrations/slack/notify")
-@app.post("/api/integrations/slack/notify")
+@router_integrations.post("/api/v1/integrations/slack/notify")
+@router_integrations.post("/api/integrations/slack/notify")
 async def send_slack_notification(
     req: SlackNotifyRequest,
-    x_api_key: str = Depends(verify_api_key),
-):
+    _auth: AuthDep = None,
+) -> dict:
     from loom.integrations.slack import (
         SlackNotification,
         SlackNotificationLevel,
@@ -1060,13 +1041,12 @@ async def send_slack_notification(
         raise HTTPException(status_code=500, detail=f"Slack delivery failed: {exc}")
 
 
-@app.get("/api/v1/integrations/bot/{org_id}/status")
-@app.get("/api/integrations/bot/{org_id}/status")
+@router_integrations.get("/api/v1/integrations/bot/{org_id}/status")
+@router_integrations.get("/api/integrations/bot/{org_id}/status")
 def get_bot_status(
     org_id: str,
-    x_api_key: str = Depends(verify_api_key),
     _rbac: RBACEnforcer = Depends(require_admin_permission),
-):
+) -> Any:
     from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider
 
     config = CIBotConfig(
@@ -1079,14 +1059,13 @@ def get_bot_status(
     return bot.serialize()
 
 
-@app.post("/api/v1/integrations/bot/{org_id}/prepare-pr")
-@app.post("/api/integrations/bot/{org_id}/prepare-pr")
+@router_integrations.post("/api/v1/integrations/bot/{org_id}/prepare-pr")
+@router_integrations.post("/api/integrations/bot/{org_id}/prepare-pr")
 def prepare_pr(
     org_id: str,
     req: PreparePRRequest,
-    x_api_key: str = Depends(verify_api_key),
     _rbac: RBACEnforcer = Depends(require_run_permission),
-):
+) -> Any:
     from loom.integrations.ci_bot import CIBot, CIBotConfig, CIBotProvider, PullRequestTemplate
 
     config = CIBotConfig(
@@ -1114,5 +1093,87 @@ def prepare_pr(
         files_touched=req.files_touched,
         model_used=req.model_used,
     )
-    pr = bot.prepare_pr(data, template)
-    return pr
+    return bot.prepare_pr(data, template)
+
+
+# ---------------------------------------------------------------------------
+# router_admin — entitlements, org usage
+# ---------------------------------------------------------------------------
+
+router_admin = APIRouter(tags=["admin"])
+
+
+@router_admin.post("/v1/entitlements/check")
+@router_admin.post("/api/v1/entitlements/check")
+def check_entitlement(
+    req: EntitlementCheckRequest,
+    _rbac: RBACEnforcer = Depends(require_admin_permission),
+) -> dict:
+    entitlements = get_entitlements()
+    orgs = list(getattr(entitlements, "_orgs", {}).keys())
+    org_id = req.org_id or (orgs[0] if orgs else "default")
+    try:
+        feature_key = FeatureKey(req.feature_key)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown feature_key: {req.feature_key}")
+    result = entitlements.check(org_id, feature_key)
+    if not result.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=result.reason or "Feature not available on current tier"
+        )
+    return {"allowed": True}
+
+
+@router_admin.get("/api/v1/orgs/{org_id}/usage")
+def get_org_usage(
+    org_id: str,
+    _rbac: RBACEnforcer = Depends(require_auditor_permission),
+) -> dict:
+    entitlements = get_entitlements()
+    org = entitlements.get_org(org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
+    from loom.business.usage_ledger import get_usage_ledger
+
+    ledger = get_usage_ledger()
+    snapshot = ledger.build_snapshot(org_id, org.tier)
+    allowed, reason = entitlements.evaluate_quota(org_id, snapshot)
+    return {
+        "org_id": org_id,
+        "tier": org.tier.value,
+        "snapshot": snapshot.model_dump(),
+        "quota_ok": allowed,
+        "quota_reason": reason,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat: module-level `app` for uvicorn entry-points
+# ---------------------------------------------------------------------------
+
+def _build_app() -> Any:
+    """Build app lazily to avoid import-time side effects in tests."""
+    from loom.api.app import create_app
+    return create_app()
+
+
+app = _build_app()
+
+# ---------------------------------------------------------------------------
+# Backward-compat re-exports (used by tests that import directly from server)
+# ---------------------------------------------------------------------------
+
+def __getattr__(name: str) -> Any:
+    if name == "_entitlements":
+        return get_entitlements()
+    if name == "_default_org":
+        ent = get_entitlements()
+        if ent._orgs:
+            return next(iter(ent._orgs.values()))
+        from loom.business.models import Organization, OrgTier
+        return Organization(id="default", name="Default", tier=OrgTier.SOLO)
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+# _rate_limit_memory_store: dummy dict — rate limiting is in app middleware
+_rate_limit_memory_store: Dict[str, List[float]] = {}

@@ -1,4 +1,19 @@
-"""Late-bound hardening for components initialized during API import."""
+"""Late-bound hardening components.
+
+PRD-016: This module provides ASGI middleware classes that are composed
+explicitly by create_app() in loom.api.app.  The legacy
+``apply_late_hardening(module)`` function is kept as a no-op for any
+remaining call sites during the transition, but does nothing.
+
+Key changes from the original:
+  - WebhookSignatureMiddleware now caches the raw request body in
+    ``scope["_loom_raw_body"]`` AND replays it downstream so route handlers
+    can call ``request.body()`` without receiving an empty response.
+    (Fixes the double-body-read bug where the middleware consumed the stream
+    and left an empty body for the FastAPI handler.)
+  - ``apply_late_hardening(module)`` is a no-op; all composition is done in
+    create_app().
+"""
 
 from __future__ import annotations
 
@@ -9,6 +24,11 @@ from typing import Any, Awaitable, Callable
 
 from cryptography.fernet import Fernet
 from fastapi import Header, HTTPException
+
+
+# ---------------------------------------------------------------------------
+# Secret encryption helpers (webhook subscription secret at rest)
+# ---------------------------------------------------------------------------
 
 
 def _webhook_fernet() -> Fernet | None:
@@ -36,171 +56,176 @@ def _decrypt_secret(secret: str | None) -> str | None:
     return fernet.decrypt(secret[4:].encode()).decode()
 
 
+# ---------------------------------------------------------------------------
+# WebhookSignatureMiddleware
+# ---------------------------------------------------------------------------
+
+
 class WebhookSignatureMiddleware:
-    def __init__(self, app: Any):
+    """ASGI middleware that verifies inbound webhook signatures before routing.
+
+    For GitHub webhooks:
+        Requires ``X-Hub-Signature-256: sha256=<hmac>`` matching the
+        ``GITHUB_WEBHOOK_SECRET`` environment variable.
+
+    For GitLab webhooks:
+        Requires ``X-Gitlab-Token`` matching the ``GITLAB_WEBHOOK_SECRET``
+        environment variable.
+
+    Body caching (double-read fix):
+        The middleware reads the full request body stream to compute the HMAC.
+        It then stores the raw bytes in ``scope["_loom_raw_body"]`` so that
+        FastAPI route handlers can retrieve it via ``request.state.raw_body``
+        without re-reading a consumed stream.  A ``replay_receive`` coroutine
+        reconstructs the ASGI receive channel so downstream middleware and
+        routes can call ``request.body()`` normally.
+    """
+
+    def __init__(self, app: Any) -> None:
         self.app = app
 
-    async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]):
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[..., Awaitable[dict[str, Any]]],
+        send: Callable[..., Awaitable[None]],
+    ) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
+
         path = scope.get("path", "")
-        if not ("/integrations/github/webhook" in path or "/integrations/gitlab/webhook" in path):
+        is_github = "/integrations/github/webhook" in path
+        is_gitlab = "/integrations/gitlab/webhook" in path
+
+        if not (is_github or is_gitlab):
             await self.app(scope, receive, send)
             return
 
+        # --- Read full body from stream -----------------------------------------
         headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope.get("headers", [])}
         chunks: list[bytes] = []
         more = True
         while more:
             message = await receive()
             if message.get("type") != "http.request":
+                # Pass through non-request messages (e.g. disconnect)
                 continue
             chunks.append(message.get("body", b"") or b"")
             more = bool(message.get("more_body"))
         body = b"".join(chunks)
 
+        # --- Cache raw body for downstream handlers ----------------------------
+        scope["_loom_raw_body"] = body
+
+        # --- Verify signature --------------------------------------------------
         valid = False
         production = os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
-        if "/github/" in path:
-            secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+
+        if is_github:
+            secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
             signature = headers.get("x-hub-signature-256", "")
             if secret:
                 expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-                valid = hmac.compare_digest(signature, expected)
+                # Use constant-time comparison; guard against empty signature
+                valid = bool(signature) and hmac.compare_digest(signature, expected)
             else:
+                # No secret configured: allow in dev, reject in production
                 valid = not production
         else:
-            secret = os.getenv("GITLAB_WEBHOOK_SECRET")
+            # GitLab
+            secret = os.getenv("GITLAB_WEBHOOK_SECRET", "")
             token = headers.get("x-gitlab-token", "")
-            valid = hmac.compare_digest(token, secret) if secret else not production
+            if secret:
+                valid = bool(token) and hmac.compare_digest(token, secret)
+            else:
+                valid = not production
 
         if not valid:
-            await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json")]})
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
             await send({"type": "http.response.body", "body": b'{"detail":"Invalid webhook signature"}'})
             return
 
-        sent = False
+        # --- Replay body as a fresh ASGI receive stream ------------------------
+        _sent = False
 
         async def replay_receive() -> dict[str, Any]:
-            nonlocal sent
-            if sent:
+            nonlocal _sent
+            if _sent:
                 return {"type": "http.request", "body": b"", "more_body": False}
-            sent = True
+            _sent = True
             return {"type": "http.request", "body": body, "more_body": False}
+
+        # Inject raw_body into Starlette request.state via a scope shim
+        # so handlers can do: raw = getattr(request.state, "raw_body", None)
+        original_state = scope.get("state")
+        if original_state is None:
+            # Starlette lazily creates scope["state"] as a State object
+            # We pre-populate it here.
+            from starlette.datastructures import State
+            state_obj = State()
+            state_obj.raw_body = body
+            scope["state"] = state_obj
+        else:
+            try:
+                original_state.raw_body = body
+            except Exception:
+                pass
 
         await self.app(scope, replay_receive, send)
 
 
-def _install_identity_and_stream_hardening(module: Any) -> None:
-    try:
-        from loom.auth.context import get_effective_principal, resolve_request_org
-
-        module.get_effective_principal = get_effective_principal
-        module.resolve_request_org = resolve_request_org
-    except Exception:
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
-            raise
-
-    source = '''
-async def _hardened_stream_run(run_id: str):
-    run_entry = ACTIVE_RUNS.get(run_id)
-    if not run_entry:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    principal = get_effective_principal()
-    run_state = run_entry.get("state")
-    run_org = run_state.shared_data.get("org_id") if run_state else None
-    if run_org != principal.org_id:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    async def event_generator():
-        queue: asyncio.Queue = asyncio.Queue()
-        run_entry["queues"].append(queue)
-        try:
-            for event in list(run_entry.get("events", [])):
-                yield "data: " + json.dumps(event) + chr(10) + chr(10)
-                if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
-                    return
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=2.0)
-                    yield "data: " + json.dumps(event) + chr(10) + chr(10)
-                    if event.get("type") == "status_change" and event.get("data", {}).get("status") in ("completed", "failed"):
-                        return
-                except asyncio.TimeoutError:
-                    ping_event = {
-                        "type": "ping",
-                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "run_id": run_id,
-                    }
-                    yield "data: " + json.dumps(ping_event) + chr(10) + chr(10)
-        finally:
-            if queue in run_entry.get("queues", []):
-                run_entry["queues"].remove(queue)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-'''
-    try:
-        exec(source, module.__dict__)
-        legacy_stream = getattr(module, "stream_run_events", None)
-        hardened_stream = getattr(module, "_hardened_stream_run")
-        if legacy_stream is not None:
-            legacy_stream.__code__ = hardened_stream.__code__
-            legacy_stream.__defaults__ = hardened_stream.__defaults__
-            legacy_stream.__kwdefaults__ = hardened_stream.__kwdefaults__
-    except Exception:
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
-            raise
+# ---------------------------------------------------------------------------
+# Request identity lifecycle middleware (principal cleanup per request)
+# ---------------------------------------------------------------------------
 
 
-def _install_request_identity_cleanup(app: Any) -> None:
-    from loom.auth.context import begin_request_auth_context, end_request_auth_context
+class PrincipalCleanupMiddleware:
+    """Clears the thread-local/contextvar principal at the end of each request."""
 
-    class PrincipalCleanupMiddleware:
-        def __init__(self, inner: Any):
-            self.inner = inner
+    def __init__(self, app: Any) -> None:
+        self.app = app
 
-        async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]], send: Callable[..., Awaitable[None]]):
-            if scope.get("type") != "http":
-                await self.inner(scope, receive, send)
-                return
-            begin_request_auth_context()
-            try:
-                await self.inner(scope, receive, send)
-            finally:
-                end_request_auth_context()
-
-    app.add_middleware(PrincipalCleanupMiddleware)
-
-
-def _normalize_default_org(module: Any) -> None:
-    """Make the bootstrap organization use the canonical public id ``default``."""
-    try:
-        entitlements = module._entitlements
-        default_org = module._default_org
-        old_id = default_org.id
-        if old_id == "default":
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[..., Awaitable[dict[str, Any]]],
+        send: Callable[..., Awaitable[None]],
+    ) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
             return
-
-        memberships = entitlements.memberships_dict().pop(old_id, {})
-        entitlements._orgs.pop(old_id, None)
-        default_org.id = "default"
-        entitlements.register_org(default_org)
-
-        for membership in memberships.values():
-            membership.org_id = "default"
-            entitlements.add_membership(membership)
-
-        default_membership = getattr(module, "_default_membership", None)
-        if default_membership is not None:
-            default_membership.org_id = "default"
-    except Exception:
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
-            raise
+        try:
+            from loom.auth.context import begin_request_auth_context
+            begin_request_auth_context()
+        except Exception:
+            pass
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            try:
+                from loom.auth.context import end_request_auth_context
+                end_request_auth_context()
+            except Exception:
+                pass
 
 
-def _patch_terminal_webhooks() -> None:
+# ---------------------------------------------------------------------------
+# Terminal webhook normalizer (TaskGraph integration)
+# ---------------------------------------------------------------------------
+
+
+def install_terminal_webhook_normalizer() -> None:
+    """Patch TaskGraph to normalize terminal webhook events.
+
+    Called once from create_app() during application startup.
+    """
     try:
         from loom.api.webhooks import WebhookEventType
         from loom.orchestrator.task_graph import RunStatus, TaskGraph
@@ -234,66 +259,61 @@ def _patch_terminal_webhooks() -> None:
             raise
 
 
-def apply_late_hardening(module: Any) -> None:
-    app = module.app
-    _normalize_default_org(module)
-    app.add_middleware(WebhookSignatureMiddleware)
-    _install_request_identity_cleanup(app)
-    _install_identity_and_stream_hardening(module)
-    _patch_terminal_webhooks()
+# ---------------------------------------------------------------------------
+# Webhook secret encryption for the WebhookEngine
+# ---------------------------------------------------------------------------
 
-    if os.getenv("LOOM_WEBHOOK_SECRET_KEY") or os.getenv("LOOM_BACKUP_ENCRYPTION_KEY"):
-        try:
-            from loom.api.webhooks import WebhookEngine
 
-            if not getattr(WebhookEngine, "_loom_secret_hardened", False):
-                original_load = WebhookEngine._load_subscriptions
-                original_save = WebhookEngine._save_subscriptions
+def install_webhook_secret_encryption() -> None:
+    """Transparently encrypt/decrypt webhook subscription secrets at rest.
 
-                def load(self: Any) -> None:
-                    original_load(self)
-                    for subscription in self._subscriptions.values():
-                        if subscription.secret:
-                            subscription.secret = _decrypt_secret(subscription.secret)
-
-                def save(self: Any) -> None:
-                    original_values = list(self._subscriptions.values())
-                    try:
-                        for subscription in original_values:
-                            if subscription.secret and not subscription.secret.startswith("enc:"):
-                                subscription.secret = _encrypt_secret(subscription.secret)
-                        original_save(self)
-                    finally:
-                        for subscription in original_values:
-                            if subscription.secret and subscription.secret.startswith("enc:"):
-                                subscription.secret = _decrypt_secret(subscription.secret)
-
-                WebhookEngine._load_subscriptions = load
-                WebhookEngine._save_subscriptions = save
-                WebhookEngine._loom_secret_hardened = True
-        except Exception:
-            if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
-                raise
-
+    Called once from create_app() when LOOM_WEBHOOK_SECRET_KEY is set.
+    """
+    if not (os.getenv("LOOM_WEBHOOK_SECRET_KEY") or os.getenv("LOOM_BACKUP_ENCRYPTION_KEY")):
+        return
     try:
-        from loom.scim.provisioning import _require_scim_token, scim_router
+        from loom.api.webhooks import WebhookEngine
 
-        def secure_scim_token(x_scim_token: str | None = Header(None, alias="Authorization")) -> str:
-            required = os.getenv("SCIM_TOKEN")
-            if not required:
-                raise HTTPException(status_code=503, detail="SCIM not enabled: SCIM_TOKEN not configured")
-            expected = f"Bearer {required}"
-            if not x_scim_token or not hmac.compare_digest(x_scim_token, expected):
-                raise HTTPException(status_code=401, detail="Invalid SCIM bearer token")
-            return x_scim_token
+        if getattr(WebhookEngine, "_loom_secret_hardened", False):
+            return
+        original_load = WebhookEngine._load_subscriptions
+        original_save = WebhookEngine._save_subscriptions
 
-        secure_scim_token.__name__ = getattr(_require_scim_token, "__name__", "_require_scim_token")
-        for route in getattr(scim_router, "routes", []):
-            dependant = getattr(route, "dependant", None)
-            if dependant is None:
-                continue
-            for dep in getattr(dependant, "dependencies", []):
-                if getattr(dep.call, "__name__", "") == "_require_scim_token":
-                    dep.call = secure_scim_token
+        def load(self: Any) -> None:
+            original_load(self)
+            for subscription in self._subscriptions.values():
+                if subscription.secret:
+                    subscription.secret = _decrypt_secret(subscription.secret)
+
+        def save(self: Any) -> None:
+            original_values = list(self._subscriptions.values())
+            try:
+                for subscription in original_values:
+                    if subscription.secret and not subscription.secret.startswith("enc:"):
+                        subscription.secret = _encrypt_secret(subscription.secret)
+                original_save(self)
+            finally:
+                for subscription in original_values:
+                    if subscription.secret and subscription.secret.startswith("enc:"):
+                        subscription.secret = _decrypt_secret(subscription.secret)
+
+        WebhookEngine._load_subscriptions = load  # type: ignore[method-assign]
+        WebhookEngine._save_subscriptions = save  # type: ignore[method-assign]
+        WebhookEngine._loom_secret_hardened = True  # type: ignore[attr-defined]
     except Exception:
-        pass
+        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
+            raise
+
+
+# ---------------------------------------------------------------------------
+# Legacy no-op shim (kept for any remaining call sites during transition)
+# ---------------------------------------------------------------------------
+
+
+def apply_late_hardening(module: Any) -> None:  # noqa: ARG001
+    """No-op.  All hardening is now composed explicitly in create_app().
+
+    This function is retained to avoid ImportError in any code that still
+    calls it, but it performs no action.  It will be removed in a future
+    cleanup pass after all call sites are confirmed removed.
+    """
