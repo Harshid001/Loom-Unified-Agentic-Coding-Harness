@@ -107,9 +107,23 @@ async def security_headers_middleware(request: Request, call_next):
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("loom.api")
 
+def _safe_prometheus_metric(metric_cls: Any, name: str, documentation: str, *args: Any, **kwargs: Any) -> Any:
+    try:
+        return metric_cls(name, documentation, *args, **kwargs)
+    except Exception:
+        try:
+            from prometheus_client import REGISTRY
+            collector = REGISTRY._names_to_collectors.get(name)
+            if collector is not None:
+                return collector
+        except Exception:
+            pass
+        return DummyMetricFactory()()
+
+
 # PRD-015: Prometheus Metrics Instrumentation
-REQUEST_COUNT = Counter("loom_requests_total", "Total requests processed", ["method", "endpoint", "status"])
-REQUEST_LATENCY = Histogram("loom_request_duration_seconds", "Request latency", ["endpoint"])
+REQUEST_COUNT = _safe_prometheus_metric(Counter, "loom_requests_total", "Total requests processed", ["method", "endpoint", "status"])
+REQUEST_LATENCY = _safe_prometheus_metric(Histogram, "loom_request_duration_seconds", "Request latency", ["endpoint"])
 
 # PRD-108 & PRD-007: In-Memory Sliding-Window Rate Limiting Store with Bounded Cleanup
 RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))

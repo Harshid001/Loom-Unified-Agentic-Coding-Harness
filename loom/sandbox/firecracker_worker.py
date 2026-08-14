@@ -41,12 +41,26 @@ APPROVED_HASH_FILE = Path(os.getenv(
 if not WORKER_TOKEN:
     raise RuntimeError("LOOM_FIRECRACKER_WORKER_TOKEN must be configured")
 
-VM_BOOT_TOTAL = Counter("firecracker_vm_boot_total", "Firecracker VM boots attempted")
-VM_FAILURES_TOTAL = Counter("firecracker_vm_failures_total", "Firecracker VM failures")
-VM_CLEANUP_FAILURES_TOTAL = Counter("firecracker_vm_cleanup_failures_total", "Firecracker VM cleanup failures")
-EXECUTION_DURATION = Histogram("firecracker_execution_duration", "Firecracker execution duration seconds")
-ACTIVE_VMS = Gauge("firecracker_active_vms", "Active Firecracker VMs")
-WORKER_QUEUE_DEPTH = Gauge("firecracker_worker_queue_depth", "Firecracker worker queue depth")
+def _safe_metric(metric_cls: Any, name: str, documentation: str, *args: Any, **kwargs: Any) -> Any:
+    try:
+        return metric_cls(name, documentation, *args, **kwargs)
+    except Exception:
+        try:
+            from prometheus_client import REGISTRY
+            collector = REGISTRY._names_to_collectors.get(name)
+            if collector is not None:
+                return collector
+        except Exception:
+            pass
+        return metric_cls(name, documentation, *args, **kwargs)
+
+
+VM_BOOT_TOTAL = _safe_metric(Counter, "firecracker_vm_boot_total", "Firecracker VM boots attempted")
+VM_FAILURES_TOTAL = _safe_metric(Counter, "firecracker_vm_failures_total", "Firecracker VM failures")
+VM_CLEANUP_FAILURES_TOTAL = _safe_metric(Counter, "firecracker_vm_cleanup_failures_total", "Firecracker VM cleanup failures")
+EXECUTION_DURATION = _safe_metric(Histogram, "firecracker_execution_duration", "Firecracker execution duration seconds")
+ACTIVE_VMS = _safe_metric(Gauge, "firecracker_active_vms", "Active Firecracker VMs")
+WORKER_QUEUE_DEPTH = _safe_metric(Gauge, "firecracker_worker_queue_depth", "Firecracker worker queue depth")
 app.mount("/metrics", WSGIMiddleware(make_asgi_app()))
 
 
