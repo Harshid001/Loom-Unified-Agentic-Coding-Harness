@@ -13,6 +13,10 @@ from loom.runtime.job_queue import JobQueue, RunJob
 logger = logging.getLogger("loom.runtime.worker")
 
 
+class ExecutionLeaseLost(RuntimeError):
+    """Raised when a worker can no longer prove ownership of a running job."""
+
+
 class RunWorker:
     def __init__(self) -> None:
         self.queue = JobQueue()
@@ -33,10 +37,23 @@ class RunWorker:
                 if claimed is None:
                     continue
                 job = claimed.job
-                heartbeat = asyncio.create_task(self._heartbeat(job, claimed.lease_token))
+                lease_lost = asyncio.Event()
+                heartbeat = asyncio.create_task(self._heartbeat(job, claimed.lease_token, lease_lost))
                 try:
                     await self.queue.mark_started(job, claimed.lease_token)
-                    await execute_run_job(job)
+                    execution = asyncio.create_task(execute_run_job(job))
+                    completed, _ = await asyncio.wait(
+                        {execution, asyncio.create_task(lease_lost.wait())},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if execution not in completed:
+                        execution.cancel()
+                        try:
+                            await execution
+                        except asyncio.CancelledError:
+                            pass
+                        raise ExecutionLeaseLost(f"Execution lease lost for run {job.run_id}")
+                    await execution
                     await self.queue.mark_finished(job, "succeeded")
                     await self.queue.ack(claimed.message_id)
                 except Exception as exc:
@@ -84,11 +101,12 @@ class RunWorker:
             await self.queue.mark_worker_heartbeat()
             await asyncio.sleep(self.heartbeat_seconds)
 
-    async def _heartbeat(self, job: RunJob, lease_token: str) -> None:
+    async def _heartbeat(self, job: RunJob, lease_token: str, lease_lost: asyncio.Event) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_seconds)
             if not await self.queue.heartbeat(job, lease_token):
                 logger.critical("Execution lease lost for run %s", job.run_id)
+                lease_lost.set()
                 return
 
 
