@@ -11,18 +11,17 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException
 
-from loom.api.dependencies import AuthDep, get_entitlements, get_records_store
+from loom.api.dependencies import AuthDep, get_entitlements
 from loom.api.security import PrincipalDep, require_run_access
+from loom.api.server import ACTIVE_RUNS, CiReportRequest, ControlRequest
 from loom.auth.context import AuthenticatedPrincipal
 from loom.business.audit_log import get_audit_logger
-from loom.business.models import AuditAction, MembershipRole
+from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
-from loom.db.records_store import get_run_record_store
 from loom.orchestrator.state import OrchestratorState
 from loom.sandbox.local_process import LocalProcessSandbox
-from loom.api.server import ACTIVE_RUNS, ControlRequest, CiReportRequest
 
 compat_router = APIRouter(tags=["compat"])
 
@@ -85,7 +84,7 @@ def get_records(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
 @compat_router.post("/api/v1/runs/{run_id}/ci-report")
 @compat_router.post("/api/runs/{run_id}/ci-report")
 def ci_report(run_id: str, req: CiReportRequest, principal: PrincipalDep) -> dict[str, Any]:
-    run = require_run_access(run_id, Action.REPORT_CI, principal=principal)
+    require_run_access(run_id, Action.REPORT_CI, principal=principal)
     checkpoint = _checkpoint(run_id)
     if not req.ci_failure_detected:
         return {"rollback_needed": False, "run_id": run_id}
