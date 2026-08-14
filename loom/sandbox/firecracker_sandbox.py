@@ -62,7 +62,7 @@ class FirecrackerSandbox(BaseSandbox):
                 duration_seconds=float(data.get("duration_seconds", time.time() - started)),
                 timed_out=bool(data.get("timed_out", False)),
             )
-        except httpx.HTTPError as exc:
+        except httpx.HTTPError:
             return CommandResult(
                 command=" ".join(str(x) for x in cast(List[str], payload.get("argv", []))),
                 exit_code=125,
