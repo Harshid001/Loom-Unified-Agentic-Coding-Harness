@@ -63,8 +63,11 @@ export function validateRequestAuth(req: NextRequest): { isAuthorized: boolean; 
   }
 
   const cookieToken = req.cookies.get(DASHBOARD_SESSION_COOKIE)?.value;
-  if (cookieToken && validateDashboardSession(cookieToken)) {
-    return { isAuthorized: true };
+  if (cookieToken) {
+    if (validateDashboardSession(cookieToken)) {
+      return { isAuthorized: true };
+    }
+    return { isAuthorized: false, reason: 'Invalid dashboard session cookie' };
   }
 
   const authHeader = req.headers.get('Authorization') || req.headers.get('x-dashboard-auth');
