@@ -307,6 +307,29 @@ class WebhookEngine:
 
         return deliveries
 
+    async def handle_github(self, payload: Dict[str, Any], event_type: str) -> Dict[str, Any]:
+        """Normalize a verified inbound GitHub webhook for the legacy API route."""
+        repository = payload.get("repository") or {}
+        action = str(payload.get("action") or "")
+        return {
+            "received": True,
+            "provider": "github",
+            "event": event_type,
+            "action": action,
+            "repo": str(repository.get("full_name") or ""),
+        }
+
+    async def handle_gitlab(self, payload: Dict[str, Any], event_type: str) -> Dict[str, Any]:
+        """Normalize a verified inbound GitLab webhook for the legacy API route."""
+        project = payload.get("project") or {}
+        return {
+            "received": True,
+            "provider": "gitlab",
+            "event": event_type,
+            "object_kind": str(payload.get("object_kind") or ""),
+            "repo": str(project.get("path_with_namespace") or ""),
+        }
+
     def dispatch_sync(
         self,
         event_type: WebhookEventType,
