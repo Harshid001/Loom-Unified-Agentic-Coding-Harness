@@ -133,12 +133,12 @@ def _attach_routers(app: FastAPI) -> None:
     app.include_router(scim_router)
 
     from loom.api.server import (
+        router_admin,
         router_auth,
+        router_health,
+        router_integrations,
         router_runs,
         router_webhooks,
-        router_integrations,
-        router_admin,
-        router_health,
     )
     app.include_router(router_health)
     app.include_router(router_auth)
