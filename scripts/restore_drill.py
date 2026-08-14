@@ -30,8 +30,8 @@ def main() -> int:
         if not args.confirm_disposable:
             raise SystemExit("Refusing restore drill: --confirm-disposable is required for a database target")
         if live_url and args.database_url == live_url:
-            raise SystemExit("Refusing restore drill: target DATABASE_URL matches the configured live DATABASE_URL")
-        os.environ["DATABASE_URL"] = args.database_url
+            raise SystemExit("Refusing restore drill: target matches the configured live DATABASE_URL")
+        os.environ["LOOM_RESTORE_TARGET_DATABASE_URL"] = args.database_url
 
     backup_dir = Path(args.backup_dir).resolve()
     restore_home = Path(args.restore_home).resolve()
@@ -44,7 +44,11 @@ def main() -> int:
     backup_mtime = backup.stat().st_mtime
 
     restore_started = time.monotonic()
-    ok = restore_backup(backup, target_loom_home=restore_home)
+    ok = restore_backup(
+        backup,
+        target_loom_home=restore_home,
+        target_database_url=args.database_url,
+    )
     restore_elapsed = time.monotonic() - restore_started
     total_elapsed = time.monotonic() - started
 
