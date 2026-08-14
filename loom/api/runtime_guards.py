@@ -1,16 +1,15 @@
-"""Authoritative request guards applied before FastAPI route dispatch.
-
-This layer intentionally lives below FastAPI dependencies so production policy cannot
-be bypassed by stale/cached route callables or legacy aliases.
-"""
+"""Authoritative request guards applied before FastAPI route dispatch."""
 
 from __future__ import annotations
 
 import json
 import os
 from typing import Any, Awaitable, Callable
+from urllib.parse import parse_qs
 
 from fastapi import HTTPException
+
+from loom.auth.runtime_principal import principal_from_headers
 
 MAX_BODY_BYTES = 10 * 1024 * 1024
 
@@ -29,27 +28,11 @@ def _token_from_headers(headers: dict[str, str]) -> str | None:
 
 
 def _principal_from_headers(headers: dict[str, str]) -> Any | None:
-    token = _token_from_headers(headers)
-    if not token:
-        return None
-    configured = os.getenv("API_KEY")
-    try:
-        from loom.auth.api_tokens import get_api_token_store
-        from loom.auth.context import get_effective_principal, get_service_principal
-
-        if configured and token == configured:
-            return get_service_principal()
-        record = get_api_token_store().verify(token)
-        if record is not None:
-            return get_effective_principal()
-    except Exception:
-        return None
-    return None
+    return principal_from_headers(headers)
 
 
 def _load_checkpoint(run_id: str) -> dict[str, Any] | None:
     from pathlib import Path
-
     path = Path(os.getenv("LOOM_CHECKPOINT_DIR", str(Path.home() / ".loom" / "checkpoints"))) / f"checkpoint_{run_id}.json"
     if not path.exists():
         return None
@@ -91,14 +74,12 @@ async def _read_body(receive: Callable[..., Awaitable[dict[str, Any]]]) -> tuple
 
 def _replay_receive(body: bytes, terminal: dict[str, Any] | None = None) -> Callable[..., Awaitable[dict[str, Any]]]:
     sent = False
-
     async def receive() -> dict[str, Any]:
         nonlocal sent
         if sent:
             return terminal or {"type": "http.disconnect"}
         sent = True
         return {"type": "http.request", "body": body, "more_body": False}
-
     return receive
 
 
@@ -125,9 +106,7 @@ class RuntimeGuardMiddleware:
             except ValueError:
                 pass
 
-        # For body-bearing requests, consume and replay the body so chunked requests
-        # cannot bypass the size ceiling.
-        if method in {"POST", "PUT", "PATCH"} and "http.request" in {"http.request"}:
+        if method in {"POST", "PUT", "PATCH"}:
             try:
                 body, receive = await _read_body(receive)
             except HTTPException as exc:
@@ -136,7 +115,45 @@ class RuntimeGuardMiddleware:
         else:
             body = b""
 
-        # Protect resource-specific reads/streams before route dispatch.
+        # Production run listing is backed by the relational store rather than
+        # scanning every checkpoint file. This also makes tenant scoping explicit.
+        if _production() and method == "GET" and path.rstrip("/") in {"/api/runs", "/api/v1/runs"}:
+            if principal is None:
+                await self._reject(send, 401, "Authentication required")
+                return
+            query = parse_qs((scope.get("query_string") or b"").decode("utf-8", errors="replace"))
+            try:
+                offset = max(0, int(query.get("offset", ["0"])[0]))
+                limit = min(100, max(1, int(query.get("limit", ["50"])[0])))
+            except ValueError:
+                await self._reject(send, 400, "Invalid pagination parameters")
+                return
+            from loom.db.records_store import get_run_record_store
+            try:
+                records = get_run_record_store().list_runs(org_id=principal.org_id, limit=limit, offset=offset)
+            except Exception:
+                await self._reject(send, 503, "Run store unavailable")
+                return
+            data = [
+                {
+                    "id": record.run_id,
+                    "issue": record.issue_text,
+                    "status": record.status,
+                    "repo_path": record.repo_id,
+                    "created_at": record.started_at,
+                    "cost": record.cost_usd,
+                }
+                for record in records
+            ]
+            payload = json.dumps(data).encode()
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(payload)).encode())],
+            })
+            await send({"type": "http.response.body", "body": payload, "more_body": False})
+            return
+
         if _production() and "/runs/" in path:
             pieces = path.split("/")
             try:
@@ -148,7 +165,6 @@ class RuntimeGuardMiddleware:
                 await self._reject(send, 404, "Run not found")
                 return
 
-        # No-evidence/no-claim: AST is only served when an actual AST summary exists.
         if _production() and path.endswith("/ast"):
             run_id = path.rstrip("/").split("/")[-2]
             checkpoint = _load_checkpoint(run_id)
@@ -157,7 +173,6 @@ class RuntimeGuardMiddleware:
                 await self._reject(send, 404, "AST evidence unavailable")
                 return
 
-        # Production execution is always real; never accept mock execution.
         if _production() and method in {"POST", "PUT", "PATCH"} and path.rstrip("/").endswith("/run"):
             try:
                 payload = json.loads(body or b"{}")
@@ -167,7 +182,6 @@ class RuntimeGuardMiddleware:
                 await self._reject(send, 400, "Mock execution is disabled in production")
                 return
 
-        # SSRF prevention for Slack webhook notification requests.
         if _production() and method == "POST" and "integrations/slack/notify" in path:
             try:
                 payload = json.loads(body or b"{}")
@@ -181,36 +195,6 @@ class RuntimeGuardMiddleware:
                 except HTTPException as exc:
                     await self._reject(send, exc.status_code, str(exc.detail))
                     return
-
-        # For list endpoints, buffer and tenant-filter the JSON response.
-        if _production() and method == "GET" and path.rstrip("/") in {"/api/runs", "/api/v1/runs"}:
-            messages: list[dict[str, Any]] = []
-            body_chunks: list[bytes] = []
-
-            async def capture(message: dict[str, Any]) -> None:
-                messages.append(message)
-                if message.get("type") == "http.response.body":
-                    body_chunks.append(message.get("body", b"") or b"")
-
-            await self.app(scope, receive, capture)
-            raw = b"".join(body_chunks)
-            try:
-                data = json.loads(raw or b"[]")
-                if isinstance(data, list) and principal is not None:
-                    data = [item for item in data if isinstance(item, dict) and _owns_run(str(item.get("id", "")), principal)]
-                new_body = json.dumps(data).encode()
-                start = next((m for m in messages if m.get("type") == "http.response.start"), None)
-                if start:
-                    headers_out = [(k, v) for k, v in start.get("headers", []) if k.lower() != b"content-length"]
-                    headers_out.append((b"content-length", str(len(new_body)).encode()))
-                    await send({**start, "headers": headers_out})
-                    await send({"type": "http.response.body", "body": new_body, "more_body": False})
-                    return
-            except (TypeError, ValueError, json.JSONDecodeError):
-                pass
-            for message in messages:
-                await send(message)
-            return
 
         await self.app(scope, receive, send)
 
