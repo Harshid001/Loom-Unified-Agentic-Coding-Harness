@@ -21,6 +21,7 @@ from loom.api.late_hardening import (
 )
 from loom.api.route_security_guards import install_route_security_guards
 from loom.api.runtime_guards import install_runtime_guards
+from loom.auth.runtime_principal import principal_from_headers
 
 logger = logging.getLogger("loom.api")
 
@@ -41,6 +42,10 @@ def create_app(
         docs_url=docs_url,
         redoc_url=redoc_url,
     )
+
+    # Keep runtime guards and route guards on one authoritative credential resolver.
+    import loom.api.runtime_guards as runtime_guards
+    runtime_guards._principal_from_headers = principal_from_headers
 
     app.add_middleware(PrincipalCleanupMiddleware)
     install_runtime_guards(app)
