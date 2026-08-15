@@ -30,7 +30,7 @@
     "jsdom": "^24.0.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5.3.3",
+    "typescript": "^7.0.2",
     "vitest": "^3.0.0"
   },
   "overrides": {
