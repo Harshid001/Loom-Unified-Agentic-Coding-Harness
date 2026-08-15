@@ -30,6 +30,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase Repository Name
+        id: repo
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
       - name: Build and Push API Container Image
         uses: docker/build-push-action@v6
         with:
@@ -37,8 +41,8 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/loom-api:${{ github.sha }}
-            ghcr.io/${{ github.repository }}/loom-api:latest
+            ghcr.io/${{ steps.repo.outputs.name }}/loom-api:${{ github.sha }}
+            ghcr.io/${{ steps.repo.outputs.name }}/loom-api:latest
 
       - name: Build and Push Web Dashboard Image
         uses: docker/build-push-action@v6
@@ -47,8 +51,8 @@ jobs:
           file: web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/loom-dashboard:${{ github.sha }}
-            ghcr.io/${{ github.repository }}/loom-dashboard:latest
+            ghcr.io/${{ steps.repo.outputs.name }}/loom-dashboard:${{ github.sha }}
+            ghcr.io/${{ steps.repo.outputs.name }}/loom-dashboard:latest
 
   deploy-staging:
     name: Staging Deployment & Live Smoke Gate

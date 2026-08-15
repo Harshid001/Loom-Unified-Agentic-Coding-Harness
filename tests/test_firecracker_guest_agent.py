@@ -1,4 +1,5 @@
 import json
+import sys
 import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -74,7 +75,7 @@ def test_exec_valid(tmp_path: Path, monkeypatch):
     workspace.mkdir()
     monkeypatch.setattr(firecracker_guest_agent, "WORKSPACE", workspace)
 
-    result = _exec({"argv": ["python", "-c", "print('guest agent')"], "cwd": str(workspace), "timeout": 5})
+    result = _exec({"argv": [sys.executable, "-c", "print('guest agent')"], "cwd": str(workspace), "timeout": 5})
     assert result["status"] == "ok"
     assert result["exit_code"] == 0
     assert "guest agent" in result["stdout"]
@@ -104,7 +105,7 @@ def test_handle_exec(tmp_path: Path, monkeypatch):
 
     mock_sock = MagicMock()
     mock_sock.makefile.return_value.readline.return_value = (
-        json.dumps({"op": "exec", "argv": ["python", "-c", "print('exec ok')"], "cwd": str(workspace)}).encode() + b"\n"
+        json.dumps({"op": "exec", "argv": [sys.executable, "-c", "print('exec ok')"], "cwd": str(workspace)}).encode() + b"\n"
     )
 
     _handle(mock_sock)
@@ -113,3 +114,4 @@ def test_handle_exec(tmp_path: Path, monkeypatch):
     data = json.loads(sent)
     assert data["status"] == "ok"
     assert "exec ok" in data["stdout"]
+

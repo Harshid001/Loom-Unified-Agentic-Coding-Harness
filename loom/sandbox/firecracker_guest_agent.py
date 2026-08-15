@@ -41,12 +41,15 @@ def _safe_extract(tar_path: Path, destination: Path) -> None:
         archive.extractall(root)
 
 
-def _apply_limits(timeout: int) -> None:
+def _apply_child_limits(timeout: int) -> None:
     if resource is None:
         return
-    resource.setrlimit(resource.RLIMIT_CPU, (max(1, timeout), max(1, timeout + 1)))  # type: ignore[attr-defined]
-    resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))  # type: ignore[attr-defined]
-    resource.setrlimit(resource.RLIMIT_NPROC, (512, 512))  # type: ignore[attr-defined]
+    try:
+        resource.setrlimit(resource.RLIMIT_CPU, (max(1, timeout), max(1, timeout + 1)))  # type: ignore[attr-defined]
+        resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))  # type: ignore[attr-defined]
+        resource.setrlimit(resource.RLIMIT_NPROC, (512, 512))  # type: ignore[attr-defined]
+    except (ValueError, OSError):
+        pass
 
 
 def _validate_env(env: Dict[str, str]) -> Dict[str, str]:
@@ -83,7 +86,8 @@ def _exec(payload: Dict[str, Any]) -> Dict[str, Any]:
         "HOME": "/workspace",
     }
     env.update(_validate_env(payload.get("env") or {}))
-    _apply_limits(timeout)
+
+    preexec = (lambda: _apply_child_limits(timeout)) if resource is not None and os.name != "nt" else None
     process = subprocess.Popen(
         argv,
         cwd=cwd,
@@ -92,6 +96,7 @@ def _exec(payload: Dict[str, Any]) -> Dict[str, Any]:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
+        preexec_fn=preexec,
     )
     try:
         stdout, stderr = process.communicate(timeout=timeout)
