@@ -36,3 +36,6 @@ Thumbs.db
 # Scratch & temporary artifacts
 scratch/
 artifacts/
+test_loom_*.py
+
+

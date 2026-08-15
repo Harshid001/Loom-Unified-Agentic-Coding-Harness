@@ -1,0 +1,29 @@
+groups:
+  - name: loom_slo_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(loom_requests_total{status=~"5.."}[5m]) / rate(loom_requests_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High API error rate exceeding 99.0% SLO target"
+          description: "5xx error rate is currently {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.99, rate(loom_request_duration_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p99 API latency above 2 seconds"
+          description: "p99 request latency is {{ $value }}s"
+
+      - alert: BackupFailure
+        expr: loom_backup_last_status == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Production database backup failed"
+          description: "The last scheduled backup failed or did not produce an encrypted archive"

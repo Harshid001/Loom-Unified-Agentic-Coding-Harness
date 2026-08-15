@@ -9,6 +9,7 @@ from loom.adapters.router import TaskType
 from loom.business.audit_log import get_audit_logger
 from loom.business.models import AuditAction
 from loom.business.path_policy import evaluate_commit_gateway
+from loom.context.sanitizer import PromptSanitizer
 from loom.orchestrator.agents.base_agent import BaseAgent
 from loom.orchestrator.state import OrchestratorState
 from loom.sandbox.factory import sandbox_for_state
@@ -24,11 +25,14 @@ class PatcherAgent(BaseAgent):
         snapshot_id = sandbox.create_snapshot("pre_patch")
         state.snapshot_id = snapshot_id
 
+        sanitizer = PromptSanitizer()
         plan_record = state.shared_data.get("plan")
         plan_text = plan_record.get("plan") if isinstance(plan_record, dict) else ""
+        sanitized_issue = sanitizer.wrap_untrusted_content(state.issue_description, "issue_description")
+        sanitized_repro = sanitizer.wrap_untrusted_content(state.reproduction_test or "", "reproduction_test")
         prompt = (
-            f"Generate patch solution for issue: {state.issue_description}\n"
-            f"Reproduction test: {state.reproduction_test}\n"
+            f"Generate patch solution for issue:\n{sanitized_issue}\n"
+            f"Reproduction test:\n{sanitized_repro}\n"
             f"Fix plan: {plan_text}\n"
             f"Repository context: {state.shared_data.get('onboarding_summary')}"
         )
@@ -181,11 +185,11 @@ class PatcherAgent(BaseAgent):
             patch_file = Path(state.repo_path) / ".loom_patch.diff"
             try:
                 patch_file.write_text(patch_diff, encoding="utf-8")
-                apply_res = sandbox.run_command(f"git apply {shlex.quote(str(patch_file))}")
+                apply_res = await sandbox.arun_command(f"git apply {shlex.quote(str(patch_file))}")
                 if apply_res.exit_code == 0:
                     apply_status = "applied"
                 else:
-                    fallback_res = sandbox.run_command(f"patch -p1 -i {shlex.quote(str(patch_file))}")
+                    fallback_res = await sandbox.arun_command(f"patch -p1 -i {shlex.quote(str(patch_file))}")
                     if fallback_res.exit_code == 0:
                         apply_status = "applied_via_fallback"
                     else:

@@ -91,10 +91,28 @@ class EgressEnforcer:
     def check_command_egress(self, command: str, tier: SandboxTier) -> List[str]:
         import re
         blocked: List[str] = []
+        # Check HTTP / HTTPS URLs
         for match in re.compile(r'https?://([^\s/"\'<>]+)').finditer(command):
             target = match.group(1)
             if not self.check_egress(target, command, tier):
                 blocked.append(target)
+        # Check SSH URLs and Git remotes
+        for match in re.compile(r'ssh://([^\s/"\'<>]+)').finditer(command):
+            target = match.group(1)
+            if not self.check_egress(target, command, tier):
+                blocked.append(target)
+        for match in re.compile(r'git@([^\s/:\'<>]+):').finditer(command):
+            target = match.group(1)
+            if not self.check_egress(target, command, tier):
+                blocked.append(target)
+        # Check suspicious outbound networking tools
+        net_tools = ("curl ", "wget ", "nc ", "netcat ", "ssh ", "scp ", "rsync ", "telnet ", "ftp ", "dig ", "nslookup ", "ping ", "nmap ")
+        cmd_lower = command.lower().strip()
+        for tool in net_tools:
+            if cmd_lower.startswith(tool) or f" {tool}" in cmd_lower or f";{tool}" in cmd_lower or f"|{tool}" in cmd_lower:
+                tool_name = tool.strip()
+                if not self.check_egress(tool_name, command, tier):
+                    blocked.append(tool_name)
         return blocked
 
     @property

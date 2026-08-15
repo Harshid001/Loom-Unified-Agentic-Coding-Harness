@@ -34,12 +34,12 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 try:
-    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -59,12 +59,17 @@ except ImportError:
         def observe(self, amount: float) -> None:
             pass
 
+        def set(self, value: float) -> None:
+            pass
+
     class DummyMetricFactory:
         def __call__(self, *args: Any, **kwargs: Any) -> DummyMetric:
             return DummyMetric()
 
     Counter = DummyMetricFactory()  # type: ignore
     Histogram = DummyMetricFactory()  # type: ignore
+    Gauge = DummyMetricFactory()  # type: ignore
+
 
 from loom.adapters.router import ModelRouter
 from loom.api.dependencies import (
@@ -117,8 +122,19 @@ def _safe_prometheus_metric(metric_cls: Any, name: str, documentation: str, *arg
 REQUEST_COUNT = _safe_prometheus_metric(Counter, "loom_requests_total", "Total requests processed", ["method", "endpoint", "status"])
 REQUEST_LATENCY = _safe_prometheus_metric(Histogram, "loom_request_duration_seconds", "Request latency", ["endpoint"])
 
-# Process-local active run store (Phase 4 will replace with RedisRunStore)
+# Process-local active run store with TTL eviction
 ACTIVE_RUNS: Dict[str, Dict[str, Any]] = {}
+
+
+def prune_active_runs(max_age_seconds: int = 3600, max_entries: int = 1000) -> None:
+    now = time.time()
+    stale = [rid for rid, entry in list(ACTIVE_RUNS.items()) if now - entry.get("created_at", now) > max_age_seconds]
+    for rid in stale:
+        ACTIVE_RUNS.pop(rid, None)
+    if len(ACTIVE_RUNS) > max_entries:
+        sorted_runs = sorted(ACTIVE_RUNS.items(), key=lambda item: item[1].get("created_at", 0))
+        for rid, _ in sorted_runs[:len(ACTIVE_RUNS) - max_entries]:
+            ACTIVE_RUNS.pop(rid, None)
 
 
 def _evidence_dir() -> Path:
@@ -146,6 +162,8 @@ class RunRequest(BaseModel):
     mock: bool = True
     async_mode: bool = False
     sandbox_tier: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
 
 
 class ControlRequest(BaseModel):
@@ -244,10 +262,25 @@ def resolve_request_org(client_org_id: Optional[str] = None) -> str:
 
 router_health = APIRouter(tags=["health"])
 
+BACKUP_LAST_STATUS = Gauge("loom_backup_last_status", "Status of the last production database backup (1=success, 0=failed)")
+
 
 @router_health.get("/metrics")
 def metrics() -> Response:
+    if PROMETHEUS_AVAILABLE:
+        try:
+            status_file_raw = os.getenv(
+                "LOOM_BACKUP_STATUS_FILE",
+                str(Path.home() / ".loom" / "backups" / "backup-status.json"),
+            )
+            status_file = Path(status_file_raw)
+            if status_file.exists():
+                data = json.loads(status_file.read_text(encoding="utf-8"))
+                BACKUP_LAST_STATUS.set(1.0 if data.get("status") == "success" else 0.0)
+        except Exception:
+            pass
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 
 
 @router_health.get("/api/v1/health/liveness")
@@ -413,9 +446,25 @@ async def create_run(
     req: RunRequest,
     _rbac: RBACEnforcer = Depends(require_run_permission),
     org_id: str = Depends(resolve_org_id),
+    idempotency_key_header: Optional[str] = Header(None, alias="Idempotency-Key"),
+    x_idempotency_key_header: Optional[str] = Header(None, alias="X-Idempotency-Key"),
 ) -> Any:
     entitlements = get_entitlements()
     org = entitlements.get_org(org_id) or entitlements._orgs.get(next(iter(getattr(entitlements, "_orgs", {})), ""), None)
+
+    idempotency_key = req.idempotency_key or idempotency_key_header or x_idempotency_key_header
+    from loom.infra.distributed import RedisCoordinator
+
+    coordinator = RedisCoordinator()
+    if idempotency_key and coordinator.enabled:
+        existing_run_id = await coordinator.get_idempotent_run(org_id, idempotency_key)
+        if existing_run_id:
+            return {
+                "run_id": existing_run_id,
+                "status": "EXISTING",
+                "stream_url": f"/api/v1/stream/{existing_run_id}",
+                "idempotent": True,
+            }
 
     sandbox_tier = (req.sandbox_tier or "A").upper()
     if sandbox_tier not in ("A", "B", "C"):
@@ -458,8 +507,14 @@ async def create_run(
             detail="ALLOWED_REPO_ROOTS environment variable must be configured in production mode to restrict repository access.",
         )
 
+    prune_active_runs()
+
     repo_path = str(raw_path)
     run_id = f"run_{uuid.uuid4().hex[:8]}"
+
+    if idempotency_key and coordinator.enabled:
+        await coordinator.reserve_idempotency_key(org_id, idempotency_key, run_id)
+
 
     state = OrchestratorState(run_id=run_id, repo_path=repo_path, issue_description=req.issue)
     state.shared_data["org_id"] = org_id
@@ -472,7 +527,7 @@ async def create_run(
     cost_tracker = CostTracker(run_id=run_id)
     records_store = get_records_store()
 
-    run_entry: Dict[str, Any] = {"queues": [], "events": [], "state": state}
+    run_entry: Dict[str, Any] = {"queues": [], "events": [], "state": state, "created_at": time.time()}
     ACTIVE_RUNS[run_id] = run_entry
 
     def broadcast_event(event_type: str, step_name: str, data: Dict[str, Any]) -> None:
@@ -644,7 +699,15 @@ async def control_run(
         if snapshot_id:
             sandbox = LocalProcessSandbox(graph.state.repo_path)
             success = sandbox.restore_snapshot(snapshot_id)
-            return {"success": success, "snapshot_id": snapshot_id}
+            if success:
+                from loom.orchestrator.task_graph import RunStatus
+                graph.run_status = RunStatus.ROLLED_BACK
+                records_store = get_records_store()
+                run_rec = records_store.get_run(req.run_id)
+                if run_rec:
+                    run_rec.status = "rolled_back"
+                    records_store.record_run(run_rec)
+            return {"success": success, "snapshot_id": snapshot_id, "status": "rolled_back"}
         raise HTTPException(status_code=400, detail="No snapshot ID available for rollback")
     elif action == "approve_patch":
         graph.state.shared_data["patch_approved"] = True
@@ -666,22 +729,26 @@ def get_run_ast(
 
     checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
+        if run_id not in ACTIVE_RUNS:
+            record_store = get_records_store()
+            if not record_store.get_run(run_id):
+                raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
         return {
-            "symbols": ["ModelRouter", "TaskGraph", "WorktreeManager", "LiteLLMAdapter", "TieredMemoryStore"],
-            "files_indexed": 243,
-            "modules": 12,
+            "symbols": [],
+            "files_indexed": 0,
+            "modules": 0,
             "sanitizer_status": "safe",
-            "token_usage": {"used": 4120, "max": 200000},
+            "token_usage": {"used": 0, "max": 0},
         }
     data = json.loads(checkpoint_file.read_text(encoding="utf-8"))
     return data.get("shared_data", {}).get(
         "ast_summary",
         {
-            "symbols": ["ModelRouter", "TaskGraph", "WorktreeManager", "LiteLLMAdapter", "TieredMemoryStore"],
-            "files_indexed": 243,
-            "modules": 12,
+            "symbols": [],
+            "files_indexed": 0,
+            "modules": 0,
             "sanitizer_status": "safe",
-            "token_usage": {"used": 4120, "max": 200000},
+            "token_usage": {"used": 0, "max": 0},
         },
     )
 
@@ -863,7 +930,7 @@ def list_webhook_subscriptions(
     principal: PrincipalDep,
 ) -> list:
     engine = get_webhook_engine()
-    return [s.model_dump() for s in engine.get_subscriptions(org_id=principal.org_id)]
+    return [s.model_dump(exclude={"secret"}) for s in engine.get_subscriptions(org_id=principal.org_id)]
 
 
 @router_webhooks.post("/api/v1/webhooks/subscriptions")
@@ -871,6 +938,7 @@ def list_webhook_subscriptions(
 def create_webhook_subscription(
     req: WebhookSubscribeRequest,
     principal: PrincipalDep,
+    _admin: RBACEnforcer = Depends(require_admin_permission),
 ) -> dict:
     if req.org_id != principal.org_id:
         raise HTTPException(status_code=403, detail="Cannot create subscription for another organization")
@@ -894,7 +962,7 @@ def create_webhook_subscription(
     )
     engine = get_webhook_engine()
     result = engine.register(sub)
-    return result.model_dump()
+    return result.model_dump(exclude={"secret"})
 
 
 @router_webhooks.delete("/api/v1/webhooks/subscriptions/{sub_id}")
@@ -902,6 +970,7 @@ def create_webhook_subscription(
 def delete_webhook_subscription(
     sub_id: str,
     principal: PrincipalDep,
+    _admin: RBACEnforcer = Depends(require_admin_permission),
 ) -> dict:
     engine = get_webhook_engine()
     subs = engine.get_subscriptions(org_id=principal.org_id)

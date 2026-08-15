@@ -93,3 +93,4 @@ def test_litellm_adapter_exception_in_production():
         assert "Applied patch" in res.content
 
     asyncio.run(run())
+

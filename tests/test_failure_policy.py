@@ -11,3 +11,12 @@ def test_timeout_is_retried():
     error = TimeoutError("provider timed out")
     assert classify_failure(error) == FailureClass.TRANSIENT
     assert should_retry(error) is True
+
+
+def test_budget_exceeded_is_not_retried():
+    from loom.runtime.budget import BudgetExceeded
+
+    error = BudgetExceeded("maximum run cost of $10.0 exceeded")
+    assert classify_failure(error) == FailureClass.BUDGET_EXCEEDED
+    assert should_retry(error) is False
+

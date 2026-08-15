@@ -319,12 +319,13 @@ def reset_scim_provisioner() -> None:
 
 
 def _require_scim_token(x_scim_token: Optional[str] = Header(None, alias="Authorization")) -> str:
+    import hmac
     import os
 
     required = os.getenv("SCIM_TOKEN")
     if not required:
         raise HTTPException(status_code=503, detail="SCIM not enabled: SCIM_TOKEN not configured")
-    if not x_scim_token or x_scim_token != f"Bearer {required}":
+    if not x_scim_token or not hmac.compare_digest(x_scim_token, f"Bearer {required}"):
         raise HTTPException(status_code=401, detail="Invalid SCIM bearer token")
     return x_scim_token
 

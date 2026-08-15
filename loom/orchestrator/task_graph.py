@@ -46,6 +46,8 @@ class RunStatus(str, Enum):
     MERGED = "merged"
     FAILED = "failed"
     ROLLED_BACK = "rolled_back"
+    CANCELLED = "cancelled"
+    PAUSED = "paused"
 
 
 RETRY_BASE_SECONDS = 5.0
@@ -64,29 +66,52 @@ def compute_merge_decision(
     verification_passed: bool,
     confidence: float,
     threshold: float,
-    verification_decision: str = "human_review",
+    verification_decision: Optional[str] = None,
     conflict_detected: bool = False,
 ) -> Dict[str, Any]:
-    """Compute the merge decision (PRD §3.5). Conflicts and security holds never auto-merge.
+    """Compute the merge decision (PRD §3.5). Conflicts, security holds, and verification rejections never auto-merge.
 
     `actor` records who is responsible for the final merge decision (PRD §3.7):
     "agent" when auto-merged, "human" when review is required, "none" when the
     run was blocked or failed outright.
     """
-    security_hold = verification_decision == "security_hold"
-    can_auto_merge = verification_passed and not security_hold and not conflict_detected
-    auto_merge = can_auto_merge and confidence >= threshold
-    needs_human_review = (verification_passed and not auto_merge) or conflict_detected
-    if auto_merge:
-        actor = "agent"
-    elif needs_human_review:
-        actor = "human"
+    if verification_decision is None:
+        effective_decision = "auto_merge" if verification_passed else "reject_unverified"
     else:
+        effective_decision = str(verification_decision)
+
+    security_hold = effective_decision == "security_hold"
+    is_rejected = effective_decision.startswith("reject_")
+
+    if not verification_passed:
+        auto_merge = False
+        needs_human_review = False
         actor = "none"
+    elif security_hold:
+        auto_merge = False
+        needs_human_review = True
+        actor = "human"
+    elif is_rejected:
+        auto_merge = False
+        needs_human_review = False
+        actor = "none"
+    elif conflict_detected:
+        auto_merge = False
+        needs_human_review = True
+        actor = "human"
+    elif effective_decision == "auto_merge" and confidence >= threshold:
+        auto_merge = True
+        needs_human_review = False
+        actor = "agent"
+    else:
+        auto_merge = False
+        needs_human_review = True
+        actor = "human"
+
     return {
         "confidence_score": confidence,
         "auto_merge_threshold": threshold,
-        "verification_decision": verification_decision,
+        "verification_decision": effective_decision,
         "security_hold": security_hold,
         "conflict_detected": conflict_detected,
         "auto_merge": auto_merge,
@@ -290,6 +315,9 @@ class TaskGraph:
                     sandbox_tier_val = self.state.shared_data.get("sandbox_tier", "A")
                     self.cost_tracker.add_usage(node_name, p_tokens, c_tokens, cost, model_id=model_name, sandbox_tier=str(sandbox_tier_val))
 
+                ctx_input_str = str(self.state.shared_data.get("onboarding_summary") or self.state.issue_description or node_name)
+                ctx_hash = hashlib.sha256(ctx_input_str.encode("utf-8")).hexdigest()
+
                 try:
                     ledger = get_usage_ledger()
                     ledger.record(
@@ -304,6 +332,7 @@ class TaskGraph:
                             sandbox_tier=self.state.shared_data.get("sandbox_tier", "A"),
                             wall_clock_ms=int((time.time() - status.started_at) * 1000) if status.started_at else 0,
                             cost_usd=cost,
+                            input_context_hash=ctx_hash,
                         )
                     )
                 except Exception as ledger_err:
@@ -522,7 +551,7 @@ class TaskGraph:
             threshold = float(self.state.shared_data.get("auto_merge_threshold", 0.95))
         except (TypeError, ValueError):
             threshold = 0.95
-        verification_decision = str(self.state.shared_data.get("verification_decision", "human_review"))
+        verification_decision = self.state.shared_data.get("verification_decision")
         merge_decision = compute_merge_decision(
             verification_passed=self.state.verification_passed,
             confidence=confidence,
@@ -534,13 +563,17 @@ class TaskGraph:
 
         # Final status is derived from the verification result and merge decision.
         # MERGED is impossible unless verification passed and auto-merge was selected.
-        if self.run_status in (RunStatus.FAILED, RunStatus.ROLLED_BACK):
+        if self.run_status in (RunStatus.FAILED, RunStatus.ROLLED_BACK, RunStatus.CANCELLED):
             pass
+        elif self.is_cancelled:
+            self.run_status = RunStatus.CANCELLED
+        elif self.state.shared_data.get("budget_exceeded"):
+            self.run_status = RunStatus.FAILED
         elif merge_decision["security_hold"]:
             self.run_status = RunStatus.SECURITY_HOLD
         elif merge_decision["conflict_detected"]:
             self.run_status = RunStatus.CONFLICT_RESOLUTION
-        elif not self.state.verification_passed:
+        elif not self.state.verification_passed or str(verification_decision).startswith("reject_"):
             self.run_status = RunStatus.FAILED
         elif merge_decision["auto_merge"]:
             self.run_status = RunStatus.MERGED
@@ -555,6 +588,11 @@ class TaskGraph:
             self._fire_webhook(WebhookEventType.RUN_SECURITY_HOLD, {"merge_decision": merge_decision})
         elif self.run_status == RunStatus.ROLLED_BACK:
             self._fire_webhook(WebhookEventType.RUN_ROLLED_BACK, {"merge_decision": merge_decision})
+        elif self.run_status == RunStatus.CANCELLED:
+            self._fire_webhook(
+                WebhookEventType.RUN_FAILED,
+                {"merge_decision": merge_decision, "reason": "cancelled"},
+            )
         elif self.run_status == RunStatus.CONFLICT_RESOLUTION:
             self._fire_webhook(
                 WebhookEventType.RUN_FAILED,

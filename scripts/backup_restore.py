@@ -81,7 +81,10 @@ def _safe_extract(tar: tarfile.TarFile, destination: Path) -> None:
             link_target = (member_path.parent / member.linkname).resolve()
             if destination not in link_target.parents and link_target != destination:
                 raise ValueError(f"Unsafe archive link target: {member.name} -> {member.linkname}")
-    tar.extractall(path=destination)
+    if hasattr(tarfile, "data_filter"):
+        tar.extractall(path=destination, filter="data")
+    else:
+        tar.extractall(path=destination)
 
 
 def _sqlite_consistent_copy(source: Path, destination: Path) -> None:

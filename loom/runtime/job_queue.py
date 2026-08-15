@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -10,6 +11,8 @@ from dataclasses import asdict, dataclass
 from typing import Any, Optional, cast
 
 from loom.infra.distributed import RedisCoordinator
+
+logger = logging.getLogger("loom.runtime.job_queue")
 
 
 @dataclass(frozen=True)
@@ -112,8 +115,8 @@ class JobQueue:
                 result = await self._decode_and_claim(str(message_id), values)
                 if result is not None:
                     return result
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("xautoclaim check: %s", exc)
 
         result = cast(Any, await self.coordinator.client.xreadgroup(self.GROUP, self.consumer, {self.STREAM: ">"}, count=1, block=block_ms))
         if not result:

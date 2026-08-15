@@ -47,9 +47,9 @@ def get_records_store() -> RunRecordStore:
 
 
 def is_dev_mode() -> bool:
-    env = os.getenv("LOOM_ENV", "").lower()
-    dev_flag = os.getenv("DEV_MODE", "").lower()
-    return env == "development" and dev_flag in {"true", "1", "yes", "on"}
+    from loom.runtime.bootstrap import is_production
+
+    return not is_production()
 
 
 def get_required_api_key() -> str | None:
@@ -88,8 +88,6 @@ async def verify_api_key(
         set_principal(get_service_principal())
         return x_api_key or "dev_key"
 
-    # Preserve the historical diagnostic while remaining fail-closed.  This is
-    # useful operationally when production is started without API_KEY.
     detail = "API_KEY environment variable is not configured" if not required_key else "Authentication required"
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 

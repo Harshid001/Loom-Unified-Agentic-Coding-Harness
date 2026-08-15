@@ -12,14 +12,12 @@ import hmac
 import ipaddress
 import os
 import socket
-import time
-from collections import defaultdict, deque
-from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
 
+from loom.infra.distributed import ProductionSecurityError, RedisRateLimiter  # noqa: F401
 
 PRIVATE_NETS = (
     ipaddress.ip_network("10.0.0.0/8"),
@@ -33,13 +31,6 @@ PRIVATE_NETS = (
 )
 
 
-@dataclass
-class RateLimitState:
-    timestamps: deque[float]
-
-
-class ProductionSecurityError(RuntimeError):
-    pass
 
 
 class APIHardeningMiddleware:
@@ -166,51 +157,18 @@ def trusted_client_ip(scope: dict[str, Any]) -> str:
     return peer
 
 
-class RedisRateLimiter:
-    def __init__(self, limit: int, window_seconds: int = 60):
-        self.limit = limit
-        self.window = window_seconds
-        self._local: dict[str, RateLimitState] = defaultdict(lambda: RateLimitState(deque()))
-        self._redis: Any | None = None
+def extract_client_ip(request: Any) -> str:
+    """Extract client IP from Request with proxy awareness."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded and os.getenv("TRUST_PROXY", "false").lower() in {"1", "true", "yes"}:
+        return forwarded.split(",", 1)[0].strip()
+    return request.client.host if getattr(request, "client", None) else "127.0.0.1"
 
-    async def _client(self) -> Any:
-        if self._redis is not None:
-            return self._redis
-        url = os.getenv("REDIS_URL")
-        if not url:
-            return None
-        try:
-            from redis.asyncio import from_url
-            self._redis = from_url(url, decode_responses=True)
-            return self._redis
-        except Exception:
-            return None
-
-    async def allow(self, key: str) -> bool:
-        client = await self._client()
-        if client is not None:
-            try:
-                redis_key = f"loom:rl:{key}"
-                current = await client.incr(redis_key)
-                if current == 1:
-                    await client.expire(redis_key, self.window)
-                return int(current) <= self.limit
-            except Exception:
-                if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}:
-                    raise ProductionSecurityError("Rate-limit Redis is unavailable in production")
-        if os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"} and os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() not in {"1", "true", "yes"}:
-            raise ProductionSecurityError("REDIS_URL is required for production rate limiting")
-        now = time.time()
-        state = self._local[key]
-        while state.timestamps and now - state.timestamps[0] >= self.window:
-            state.timestamps.popleft()
-        if len(state.timestamps) >= self.limit:
-            return False
-        state.timestamps.append(now)
-        return True
 
 
 def validate_webhook_url(url: str, allow_hosts: set[str] | None = None) -> None:
+
+
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
         raise HTTPException(status_code=400, detail="Webhook URL must use HTTPS")

@@ -39,6 +39,22 @@ class RunBudget:
             max_tokens=_int("LOOM_MAX_RUN_TOKENS"),
         )
 
+    def check_limits(
+        self,
+        cost_usd: float = 0.0,
+        elapsed_seconds: float = 0.0,
+        tokens_used: int = 0,
+        agent_steps: int = 0,
+    ) -> None:
+        if self.max_cost_usd is not None and cost_usd > self.max_cost_usd:
+            raise BudgetExceeded(f"Hard cost budget exceeded: ${cost_usd:.2f} > ${self.max_cost_usd:.2f}")
+        if self.max_duration_seconds is not None and elapsed_seconds > self.max_duration_seconds:
+            raise BudgetExceeded(f"Hard duration budget exceeded: {elapsed_seconds:.1f}s > {self.max_duration_seconds:.1f}s")
+        if self.max_tokens is not None and tokens_used > self.max_tokens:
+            raise BudgetExceeded(f"Hard token budget exceeded: {tokens_used} > {self.max_tokens}")
+        if self.max_agent_steps is not None and agent_steps > self.max_agent_steps:
+            raise BudgetExceeded(f"Hard agent steps budget exceeded: {agent_steps} > {self.max_agent_steps}")
+
 
 class BudgetExceeded(RuntimeError):
     """Raised when an autonomous run exceeds a configured hard limit."""

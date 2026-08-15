@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from loom.sandbox.base import BaseSandbox, CommandResult
 from loom.sandbox.worktree import WorktreeManager
@@ -32,6 +32,19 @@ class LocalProcessSandbox(BaseSandbox):
         if not exec_cwd.is_relative_to(self.repo_path) and exec_cwd != self.repo_path:
             exec_cwd = self.repo_path
 
+        allowed_roots = os.getenv("ALLOWED_REPO_ROOTS")
+        if allowed_roots:
+            roots = [Path(r.strip()).resolve() for r in allowed_roots.split(",") if r.strip()]
+            if roots and not any(exec_cwd == r or exec_cwd.is_relative_to(r) for r in roots):
+                return CommandResult(
+                    command=str(cmd),
+                    exit_code=126,
+                    stdout="",
+                    stderr=f"Sandbox policy: working directory {exec_cwd} is outside ALLOWED_REPO_ROOTS",
+                    duration_seconds=0.0,
+                    timed_out=False,
+                )
+
         full_env = os.environ.copy()
         if env:
             full_env.update(env)
@@ -56,16 +69,19 @@ class LocalProcessSandbox(BaseSandbox):
 
         start_time = time.time()
         try:
-            res = subprocess.run(
-                cmd_args,
-                shell=False,
-                cwd=str(exec_cwd),
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=full_env,
-                stdin=subprocess.DEVNULL,
-            )
+            run_kwargs: Dict[str, Any] = {
+                "shell": False,
+                "cwd": str(exec_cwd),
+                "capture_output": True,
+                "text": True,
+                "timeout": timeout,
+                "env": full_env,
+                "stdin": subprocess.DEVNULL,
+            }
+            if os.name == "posix":
+                run_kwargs["start_new_session"] = True
+
+            res = subprocess.run(cmd_args, **run_kwargs)
             return CommandResult(
                 command=cmd_str,
                 exit_code=res.returncode,
@@ -104,6 +120,28 @@ class LocalProcessSandbox(BaseSandbox):
     ) -> CommandResult:
         """Backward-compatible alias for run_command()."""
         return self.run_command(cmd, cwd=cwd, timeout=timeout, env=env)
+
+    async def arun_command(
+        self,
+        cmd: Union[str, List[str]],
+        cwd: Optional[str] = None,
+        timeout: int = 60,
+        env: Optional[Dict[str, str]] = None,
+    ) -> CommandResult:
+        """Asynchronously run a command without blocking the event loop."""
+        import asyncio
+        return await asyncio.to_thread(self.run_command, cmd, cwd, timeout, env)
+
+    async def aexecute(
+        self,
+        cmd: Union[str, List[str]],
+        cwd: Optional[str] = None,
+        timeout: int = 60,
+        env: Optional[Dict[str, str]] = None,
+    ) -> CommandResult:
+        """Alias for arun_command."""
+        return await self.arun_command(cmd, cwd=cwd, timeout=timeout, env=env)
+
 
     def create_snapshot(self, label: str) -> str:
         return self.worktree_manager.create_snapshot(label)

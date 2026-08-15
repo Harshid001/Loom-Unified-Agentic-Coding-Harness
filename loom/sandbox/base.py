@@ -27,6 +27,20 @@ class BaseSandbox(ABC):
         """Alias for run_command."""
         return self.run_command(cmd, cwd=cwd, timeout=timeout, env=env)
 
+    async def arun_command(
+        self, cmd: str, cwd: Optional[str] = None, timeout: int = 60, env: Optional[Dict[str, str]] = None
+    ) -> CommandResult:
+        """Asynchronously run a command inside the sandbox without blocking the event loop."""
+        import asyncio
+        return await asyncio.to_thread(self.run_command, cmd, cwd, timeout, env)
+
+    async def aexecute(
+        self, cmd: str, cwd: Optional[str] = None, timeout: int = 60, env: Optional[Dict[str, str]] = None
+    ) -> CommandResult:
+        """Alias for arun_command."""
+        return await self.arun_command(cmd, cwd=cwd, timeout=timeout, env=env)
+
+
     @abstractmethod
     def create_snapshot(self, label: str) -> str:
         """Create a filesystem / Git snapshot."""

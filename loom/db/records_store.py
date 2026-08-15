@@ -84,15 +84,31 @@ def _to_row(model: Any, columns: List[str]) -> tuple:
 def _from_row(cls: Any, row: Any, columns: List[str]) -> Any:
     data: dict[str, Any] = {}
     for col, value in zip(columns, row):
-        if col in ("model_sequence", "merge_decision", "risk_flags", "details"):
+        if col in ("model_sequence", "risk_flags"):
             if isinstance(value, str):
-                data[col] = json.loads(value)
+                try:
+                    data[col] = json.loads(value)
+                except Exception:
+                    data[col] = []
+            elif value is None:
+                data[col] = []
+            else:
+                data[col] = value
+        elif col in ("merge_decision", "details"):
+            if isinstance(value, str):
+                try:
+                    data[col] = json.loads(value)
+                except Exception:
+                    data[col] = {}
+            elif value is None:
+                data[col] = {}
             else:
                 data[col] = value
         elif col in ("verification_passed", "context_truncated"):
             data[col] = bool(value)
         else:
-            data[col] = value
+            if value is not None:
+                data[col] = value
     return cls(**data)
 
 
@@ -278,6 +294,7 @@ class RunRecordStore:
             )
             """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_org_started ON runs(org_id, started_at)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_steps (
@@ -293,7 +310,8 @@ class RunRecordStore:
                 retry_count INTEGER,
                 context_truncated INTEGER,
                 status TEXT,
-                recorded_at REAL
+                recorded_at REAL,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
             )
             """
         )
@@ -308,7 +326,8 @@ class RunRecordStore:
                 files_touched INTEGER,
                 risk_flags TEXT,
                 apply_status TEXT,
-                recorded_at REAL
+                recorded_at REAL,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
             )
             """
         )
@@ -322,7 +341,8 @@ class RunRecordStore:
                 status TEXT,
                 evidence_ref TEXT,
                 details TEXT,
-                recorded_at REAL
+                recorded_at REAL,
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
             )
             """
         )
@@ -340,17 +360,27 @@ class RunRecordStore:
                             """
                             INSERT INTO runs (run_id, org_id, repo_id, issue_text, status, sandbox_tier,
                                 model_sequence, verification_passed, confidence_score, merge_decision,
-                                cost_usd, started_at, completed_at)
+                                cost_usd, started_at, completed_at, started_at_tz, completed_at_tz)
                             VALUES (:run_id, :org_id, :repo_id, :issue_text, :status, :sandbox_tier,
                                 :model_sequence, :verification_passed, :confidence_score, :merge_decision,
-                                :cost_usd, :started_at, :completed_at)
+                                :cost_usd, :started_at, :completed_at,
+                                CASE WHEN :started_at IS NOT NULL THEN to_timestamp(:started_at) ELSE NULL END,
+                                CASE WHEN :completed_at IS NOT NULL THEN to_timestamp(:completed_at) ELSE NULL END)
                             ON CONFLICT (run_id) DO UPDATE SET
+                                org_id = EXCLUDED.org_id,
+                                repo_id = EXCLUDED.repo_id,
+                                issue_text = EXCLUDED.issue_text,
                                 status = EXCLUDED.status,
+                                sandbox_tier = EXCLUDED.sandbox_tier,
+                                model_sequence = EXCLUDED.model_sequence,
                                 verification_passed = EXCLUDED.verification_passed,
                                 confidence_score = EXCLUDED.confidence_score,
                                 merge_decision = EXCLUDED.merge_decision,
                                 cost_usd = EXCLUDED.cost_usd,
-                                completed_at = EXCLUDED.completed_at
+                                started_at = EXCLUDED.started_at,
+                                completed_at = EXCLUDED.completed_at,
+                                started_at_tz = EXCLUDED.started_at_tz,
+                                completed_at_tz = EXCLUDED.completed_at_tz
                             """
                         ),
                         {
@@ -380,11 +410,17 @@ class RunRecordStore:
                     cost_usd, started_at, completed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
+                    org_id = excluded.org_id,
+                    repo_id = excluded.repo_id,
+                    issue_text = excluded.issue_text,
                     status = excluded.status,
+                    sandbox_tier = excluded.sandbox_tier,
+                    model_sequence = excluded.model_sequence,
                     verification_passed = excluded.verification_passed,
                     confidence_score = excluded.confidence_score,
                     merge_decision = excluded.merge_decision,
                     cost_usd = excluded.cost_usd,
+                    started_at = excluded.started_at,
                     completed_at = excluded.completed_at
                 """,
                 tuple(_to_row(run, _RUN_COLUMNS)),
@@ -401,14 +437,19 @@ class RunRecordStore:
             if engine:
                 with engine.connect() as conn:
                     conn.execute(
+                        text("INSERT INTO runs (run_id, org_id, status) VALUES (:run_id, 'default', 'unknown') ON CONFLICT (run_id) DO NOTHING"),
+                        {"run_id": step.run_id},
+                    )
+                    conn.execute(
                         text(
                             """
                             INSERT INTO agent_steps (id, run_id, agent_name, input_context_ref, output_ref,
                                 tokens_in, tokens_out, model_id, duration_ms, retry_count, context_truncated,
-                                status, recorded_at)
+                                status, recorded_at, recorded_at_tz)
                             VALUES (:id, :run_id, :agent_name, :input_context_ref, :output_ref,
                                 :tokens_in, :tokens_out, :model_id, :duration_ms, :retry_count, :context_truncated,
-                                :status, :recorded_at)
+                                :status, :recorded_at,
+                                CASE WHEN :recorded_at IS NOT NULL THEN to_timestamp(:recorded_at) ELSE NULL END)
                             ON CONFLICT (id) DO UPDATE SET
                                 input_context_ref = EXCLUDED.input_context_ref,
                                 output_ref = EXCLUDED.output_ref,
@@ -419,7 +460,8 @@ class RunRecordStore:
                                 retry_count = EXCLUDED.retry_count,
                                 context_truncated = EXCLUDED.context_truncated,
                                 status = EXCLUDED.status,
-                                recorded_at = EXCLUDED.recorded_at
+                                recorded_at = EXCLUDED.recorded_at,
+                                recorded_at_tz = EXCLUDED.recorded_at_tz
                             """
                         ),
                         step.model_dump(),
@@ -428,6 +470,7 @@ class RunRecordStore:
             return step
 
         with self.connect() as conn:
+            conn.execute("INSERT OR IGNORE INTO runs (run_id, org_id, status) VALUES (?, 'default', 'unknown')", (step.run_id,))
             qmarks = ", ".join(["?"] * len(_STEP_COLUMNS))
             col_list = ", ".join(_STEP_COLUMNS)
             conn.execute(
@@ -448,17 +491,30 @@ class RunRecordStore:
     def _insert(self, table: str, columns: List[str], model: Any):
         placeholders = ", ".join([f":{c}" for c in columns])
         col_list = ", ".join(columns)
+        run_id = getattr(model, "run_id", None) or (model.get("run_id") if isinstance(model, dict) else None)
         if self.is_postgres:
             from sqlalchemy import text
 
             engine = self._get_pg_engine()
             if engine:
                 with engine.connect() as conn:
-                    conn.execute(text(f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"), model.model_dump())
+                    if run_id:
+                        conn.execute(
+                            text("INSERT INTO runs (run_id, org_id, status) VALUES (:run_id, 'default', 'unknown') ON CONFLICT (run_id) DO NOTHING"),
+                            {"run_id": run_id},
+                        )
+                    if "recorded_at" in columns:
+                        cols_with_tz = col_list + ", recorded_at_tz"
+                        vals_with_tz = placeholders + ", CASE WHEN :recorded_at IS NOT NULL THEN to_timestamp(:recorded_at) ELSE NULL END"
+                        conn.execute(text(f"INSERT INTO {table} ({cols_with_tz}) VALUES ({vals_with_tz})"), model.model_dump())
+                    else:
+                        conn.execute(text(f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"), model.model_dump())
                     conn.commit()
             return
 
         with self.connect() as conn:
+            if run_id:
+                conn.execute("INSERT OR IGNORE INTO runs (run_id, org_id, status) VALUES (?, 'default', 'unknown')", (run_id,))
             qmarks = ", ".join(["?"] * len(columns))
             conn.execute(f"INSERT INTO {table} ({col_list}) VALUES ({qmarks})", _to_row(model, columns))
             conn.commit()

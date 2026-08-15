@@ -27,6 +27,29 @@ jobs:
     name: Python Backend Build & Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: loom
+          POSTGRES_USER: loom
+          POSTGRES_PASSWORD: ci-postgres-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v6
         with:
@@ -40,14 +63,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools
           pip install -e ".[dev]"
-          pip install "ruff==0.16.2" "mypy==2.3.0" "pip-audit==2.10.1" "redis==8.1.0"
+          pip install "ruff==0.16.2" "mypy==2.3.0" "pip-audit==2.10.1" "redis==8.1.0" "psycopg2-binary>=2.9.0"
       - name: Production configuration schema preflight
         env:
           LOOM_ENV: production
           API_KEY: ci-placeholder-api-key
           DASHBOARD_AUTH_TOKEN: ci-placeholder-dashboard-token
           ALLOWED_REPO_ROOTS: /workspace
-          DATABASE_URL: postgresql://loom:ci-placeholder@localhost:5432/loom
+          DATABASE_URL: postgresql://loom:ci-postgres-password@localhost:5432/loom
           REDIS_URL: redis://localhost:6379/0
           LOOM_FIRECRACKER_WORKER_URL: https://firecracker-worker:8101
           LOOM_FIRECRACKER_WORKER_TOKEN: ci-placeholder-firecracker-token
@@ -63,8 +86,14 @@ jobs:
       - name: Run Type Checker
         run: mypy loom/ --ignore-missing-imports
       - name: Run Security Regression Tests
+        env:
+          POSTGRES_URL: postgresql://loom:ci-postgres-password@localhost:5432/loom
+          REDIS_URL: redis://localhost:6379/0
         run: python -m pytest tests/test_security_bootstrap.py tests/test_auth_identity_binding.py tests/test_verification_state.py tests/test_usage_ledger_restart.py tests/test_command_policy.py tests/test_sandbox_security.py tests/test_production_hardening.py tests/test_webhook_secret_encryption.py tests/test_db_migrations.py tests/test_api_tokens.py tests/test_job_queue_leases.py --timeout=60 --timeout_method=thread
       - name: Run Full Test Suite with Coverage
+        env:
+          POSTGRES_URL: postgresql://loom:ci-postgres-password@localhost:5432/loom
+          REDIS_URL: redis://localhost:6379/0
         run: python -m pytest --timeout=60 --timeout_method=thread
 
   frontend-checks:

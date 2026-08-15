@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from loom.api.hardening import APIHardeningMiddleware
+from loom.api.hardening import APIHardeningMiddleware, extract_client_ip
 from loom.api.late_hardening import (
     PrincipalCleanupMiddleware,
     WebhookSignatureMiddleware,
@@ -21,13 +21,10 @@ from loom.api.late_hardening import (
 )
 from loom.api.route_security_guards import install_route_security_guards
 from loom.api.runtime_guards import install_runtime_guards
+from loom.runtime.bootstrap import is_production
 from loom.runtime.production_hardening import install as install_runtime_hardening
 
 logger = logging.getLogger("loom.api")
-
-
-def _production() -> bool:
-    return os.getenv("LOOM_ENV", "").lower() in {"prod", "production"}
 
 
 def create_app(
@@ -88,7 +85,7 @@ def create_app(
     @app.exception_handler(Exception)
     async def production_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled application error on %s %s", request.method, request.url.path)
-        if _production():
+        if is_production():
             return JSONResponse(
                 status_code=500,
                 content={
@@ -100,19 +97,21 @@ def create_app(
             )
         return JSONResponse(status_code=500, content={"detail": str(exc)})
 
-    default_limit = "1000" if os.getenv("LOOM_ENV", "development").lower() == "development" else "60"
+    default_limit = "60" if is_production() else "1000"
     _rate_limit_requests = rate_limit_per_minute or int(os.getenv("RATE_LIMIT_PER_MINUTE", default_limit))
     _rate_limit_window = 60
     _rate_store: dict[str, list[float]] = {}
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next: Any) -> Any:
-        if request.url.path.startswith("/api/"):
+        path = request.url.path
+        if path.startswith("/api/") or path.startswith("/scim/"):
             credential = request.headers.get("x-api-key") or request.headers.get("authorization")
             if credential:
-                client_key = "credential:" + hashlib.sha256(credential.encode()).hexdigest()
+                client_key = "cred:" + hashlib.sha256(credential.encode()).hexdigest()
             else:
-                client_key = "ip:" + (request.client.host if request.client else "127.0.0.1")
+                client_ip = extract_client_ip(request)
+                client_key = "ip:" + client_ip
             now = time.time()
             timestamps = [ts for ts in _rate_store.get(client_key, []) if now - ts < _rate_limit_window]
             if len(timestamps) >= _rate_limit_requests:

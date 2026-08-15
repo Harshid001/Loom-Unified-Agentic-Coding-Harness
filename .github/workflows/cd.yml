@@ -1,0 +1,124 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - prod-hardening-90plus
+      - production-readiness/remediation
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-scan:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push API Container Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/loom-api:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/loom-api:latest
+
+      - name: Build and Push Web Dashboard Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          file: web/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/loom-dashboard:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/loom-dashboard:latest
+
+  deploy-staging:
+    name: Staging Deployment & Live Smoke Gate
+    needs: build-and-scan
+    runs-on: ubuntu-latest
+    environment: staging
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: loom_staging
+          POSTGRES_USER: loom
+          POSTGRES_PASSWORD: staging-postgres-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install -e .
+          pip install "psycopg2-binary>=2.9.0" "sqlalchemy>=2.0.0" "uvicorn[standard]>=0.28.0"
+
+      - name: Apply Staging Postgres Migrations
+        env:
+          LOOM_ENV: production
+        run: |
+          python -m loom.db.migration_runner --url postgresql://loom:staging-postgres-password@localhost:5432/loom_staging --up
+
+      - name: Staging Live Smoke & Health Verification
+        env:
+          LOOM_ENV: production
+          API_KEY: staging-smoke-api-key
+          DASHBOARD_AUTH_TOKEN: staging-smoke-dashboard-token
+          ALLOWED_REPO_ROOTS: /workspace
+          DATABASE_URL: postgresql://loom:staging-postgres-password@localhost:5432/loom_staging
+          REDIS_URL: redis://localhost:6379/0
+          LOOM_FIRECRACKER_WORKER_URL: https://firecracker-worker:8101
+          LOOM_FIRECRACKER_WORKER_TOKEN: staging-placeholder-token
+          LOOM_BACKUP_ENCRYPTION_KEY: staging-placeholder-backup-key
+          LOOM_WEBHOOK_SECRET_KEY: staging-placeholder-webhook-key
+          RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
+          LOOM_TOKEN_ADMIN_ENABLED: "false"
+        run: |
+          python -m uvicorn loom.api.server:app --host 127.0.0.1 --port 8000 &
+          API_PID=$!
+          sleep 3
+          curl -f http://127.0.0.1:8000/healthz || exit 1
+          curl -f -H "Authorization: Bearer staging-smoke-api-key" http://127.0.0.1:8000/metrics || exit 1
+          kill $API_PID || true
+          python -c "from loom.runtime.worker import RunWorker; print('Worker imports cleanly')"
+

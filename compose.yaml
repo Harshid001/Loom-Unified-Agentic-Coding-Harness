@@ -13,10 +13,41 @@ services:
       LOOM_FIRECRACKER_WORKER_URL: ${LOOM_FIRECRACKER_WORKER_URL:?LOOM_FIRECRACKER_WORKER_URL is required}
       LOOM_FIRECRACKER_WORKER_TOKEN: ${LOOM_FIRECRACKER_WORKER_TOKEN:?LOOM_FIRECRACKER_WORKER_TOKEN is required}
       LOOM_BACKUP_ENCRYPTION_KEY: ${LOOM_BACKUP_ENCRYPTION_KEY:?LOOM_BACKUP_ENCRYPTION_KEY is required}
+      LOOM_BACKUP_S3_BUCKET: ${LOOM_BACKUP_S3_BUCKET:?LOOM_BACKUP_S3_BUCKET is required}
+      LOOM_MAX_RUN_COST_USD: ${LOOM_MAX_RUN_COST_USD:-50.0}
+      LOOM_MAX_RUN_DURATION_SECONDS: ${LOOM_MAX_RUN_DURATION_SECONDS:-3600}
+      LOOM_MAX_RUN_TOKENS: ${LOOM_MAX_RUN_TOKENS:-500000}
       RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
       LOOM_TOKEN_ADMIN_ENABLED: "false"
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - loom-data:/home/loomuser/.loom
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      LOOM_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      ALLOWED_REPO_ROOTS: ${ALLOWED_REPO_ROOTS:?ALLOWED_REPO_ROOTS is required}
+      LOOM_FIRECRACKER_WORKER_URL: ${LOOM_FIRECRACKER_WORKER_URL:?LOOM_FIRECRACKER_WORKER_URL is required}
+      LOOM_FIRECRACKER_WORKER_TOKEN: ${LOOM_FIRECRACKER_WORKER_TOKEN:?LOOM_FIRECRACKER_WORKER_TOKEN is required}
+      LOOM_MAX_RUN_COST_USD: ${LOOM_MAX_RUN_COST_USD:-50.0}
+      LOOM_MAX_RUN_DURATION_SECONDS: ${LOOM_MAX_RUN_DURATION_SECONDS:-3600}
+      LOOM_MAX_RUN_TOKENS: ${LOOM_MAX_RUN_TOKENS:-500000}
+    command: ["python", "-m", "loom.runtime.worker"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,7 +99,7 @@ services:
       LOOM_BACKUP_STATUS_FILE: /home/loomuser/.loom/backups/backup-status.json
       LOOM_BACKUP_INTERVAL_SECONDS: ${LOOM_BACKUP_INTERVAL_SECONDS:-3600}
       LOOM_BACKUP_RETENTION_COUNT: ${LOOM_BACKUP_RETENTION_COUNT:-24}
-      LOOM_BACKUP_S3_BUCKET: ${LOOM_BACKUP_S3_BUCKET:-}
+      LOOM_BACKUP_S3_BUCKET: ${LOOM_BACKUP_S3_BUCKET:?LOOM_BACKUP_S3_BUCKET is required}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
     command: ["python", "scripts/backup_scheduler.py"]
     depends_on:
@@ -95,7 +126,42 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      dashboard:
+        condition: service_started
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   loom-data:
   postgres-data:
   redis-data:
+  prometheus-data:
+

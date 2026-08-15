@@ -204,8 +204,16 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
             return await original_stream_run_events(run_id)
 
         async def remote_generator():
+            terminal_seen = False
             for event in await coordinator.list_events(run_id):
                 yield f"data: {json.dumps(event)}\n\n"
+                if isinstance(event, dict) and event.get("type") == "status_change":
+                    st = str(event.get("data", {}).get("status", "")).lower()
+                    if st in {"completed", "failed", "merged", "cancelled", "rolled_back", "security_hold", "evidence_review"}:
+                        terminal_seen = True
+
+            if terminal_seen:
+                return
 
             pubsub = coordinator.client.pubsub()
             channel = f"loom:run:{run_id}:events"
@@ -214,7 +222,16 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
                 while True:
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
                     if message and message.get("type") == "message":
-                        yield f"data: {message['data']}\n\n"
+                        data_val = message["data"]
+                        yield f"data: {data_val}\n\n"
+                        try:
+                            evt = json.loads(data_val) if isinstance(data_val, str) else data_val
+                            if isinstance(evt, dict) and evt.get("type") == "status_change":
+                                st = str(evt.get("data", {}).get("status", "")).lower()
+                                if st in {"completed", "failed", "merged", "cancelled", "rolled_back", "security_hold", "evidence_review"}:
+                                    break
+                        except Exception:
+                            pass
                     else:
                         yield ": keepalive\n\n"
             finally:

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 
+from loom.runtime.budget import RunBudget
 from loom.runtime.executor import execute_run_job
 from loom.runtime.failure_policy import classify_failure, should_retry
 from loom.runtime.job_queue import JobQueue, RunJob
@@ -20,7 +21,8 @@ class ExecutionLeaseLost(RuntimeError):
 class RunWorker:
     def __init__(self) -> None:
         self.queue = JobQueue()
-        self.max_attempts = int(os.getenv("LOOM_JOB_MAX_ATTEMPTS", "3"))
+        budget = RunBudget.from_env()
+        self.max_attempts = budget.max_attempts or int(os.getenv("LOOM_JOB_MAX_ATTEMPTS", "3"))
         self.poll_ms = int(os.getenv("LOOM_JOB_POLL_MS", "5000"))
         self.heartbeat_seconds = int(os.getenv("LOOM_JOB_HEARTBEAT_SECONDS", "30"))
         self._stop = False

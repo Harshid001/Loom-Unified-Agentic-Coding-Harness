@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -51,7 +52,7 @@ class EvidenceBundler:
     SEPARATOR = "|"
 
     def __init__(self, output_dir: Optional[str] = None):
-        self.output_dir = output_dir or str(Path.home() / ".loom" / "evidence")
+        self.output_dir = output_dir or os.getenv("LOOM_EVIDENCE_DIR") or str(Path.home() / ".loom" / "evidence")
         self._chain: List[ChainedBundleEntry] = []
         self._cache: Dict[str, ChainedBundleEntry] = {}
 
@@ -80,11 +81,12 @@ class EvidenceBundler:
         return hashlib.sha256(seed.encode("utf-8")).hexdigest()
 
     def _sign_entry(self, entry: ChainedBundleEntry, hmac_key: Optional[str] = None) -> str:
-        message = self.SEPARATOR.join([entry.chain_hash, entry.payload_hash, entry.prev_hash])
-        if hmac_key:
+        key = hmac_key or os.getenv("LOOM_EVIDENCE_HMAC_KEY")
+        if key:
             import hmac
 
-            return hmac.new(hmac_key.encode(), message.encode(), hashlib.sha256).hexdigest()
+            message = self.SEPARATOR.join([entry.chain_hash, entry.payload_hash, entry.prev_hash])
+            return hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
         return ""
 
     def _load_chain(self) -> List[ChainedBundleEntry]:
@@ -134,7 +136,22 @@ class EvidenceBundler:
         output_dir: Optional[str] = None,
         hmac_key: Optional[str] = None,
     ) -> ChainedBundleEntry:
+        out_dir = Path(output_dir or self.output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
         chain = self._load_chain()
+        # Idempotency guard on resume: prevent duplicate chain entries for the same run_id
+        for existing in chain:
+            if existing.run_id == bundle.run_id:
+                self._cache[bundle.run_id] = existing
+                bundle_path = out_dir / f"evidence_{bundle.run_id}.json"
+                bundle_payload = {
+                    **bundle.model_dump(),
+                    "chain_entry": existing.model_dump(),
+                }
+                bundle_path.write_text(json.dumps(bundle_payload, indent=2), encoding="utf-8")
+                return existing
+
         index = len(chain)
         prev_hash = chain[-1].chain_hash if chain else hashlib.sha256(b"GENESIS").hexdigest()
 
@@ -150,14 +167,13 @@ class EvidenceBundler:
             chain_hash=chain_hash,
         )
 
-        entry.signature = self._sign_entry(entry, hmac_key) if hmac_key else None
+        effective_key = hmac_key or os.getenv("LOOM_EVIDENCE_HMAC_KEY")
+        entry.signature = self._sign_entry(entry, effective_key) if effective_key else None
 
         chain.append(entry)
         self._save_chain(chain)
         self._cache[bundle.run_id] = entry
 
-        out_dir = Path(output_dir or self.output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
         bundle_path = out_dir / f"evidence_{bundle.run_id}.json"
         bundle_payload = {
             **bundle.model_dump(),
@@ -167,6 +183,7 @@ class EvidenceBundler:
 
         return entry
 
+
     def verify_chain(
         self,
         hmac_key: Optional[str] = None,
@@ -175,6 +192,7 @@ class EvidenceBundler:
         if not chain:
             return True, None, []
 
+        effective_key = hmac_key or os.getenv("LOOM_EVIDENCE_HMAC_KEY")
         tampered_indices: List[int] = []
 
         for i, entry in enumerate(chain):
@@ -192,10 +210,11 @@ class EvidenceBundler:
                 tampered_indices.append(i)
                 continue
 
-            if hmac_key and entry.signature:
-                expected_sig = self._sign_entry(entry, hmac_key)
+            if effective_key and entry.signature:
+                expected_sig = self._sign_entry(entry, effective_key)
                 if entry.signature != expected_sig:
                     tampered_indices.append(i)
+
 
         if tampered_indices:
             return False, f"Chain integrity violated at indices: {tampered_indices}", tampered_indices

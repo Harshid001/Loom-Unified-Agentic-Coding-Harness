@@ -58,13 +58,27 @@ class VerifierAgent(BaseAgent):
                 }
                 return state.shared_data["verification_output"]
 
-        res, _repro = runner.full_verification_pipeline(
+        pre_patch_cmds = state.shared_data.get("pre_patch_test_commands")
+        if not pre_patch_cmds:
+            if mock_mode:
+                pre_patch_cmds = ["python -c \"import sys; sys.exit(1)\""]
+            elif state.reproduction_test and (
+                state.reproduction_test.startswith("pytest")
+                or state.reproduction_test.startswith("python")
+                or state.reproduction_test.startswith("npm")
+            ):
+                pre_patch_cmds = [state.reproduction_test]
+            else:
+                pre_patch_cmds = test_cmds
+
+        res, _repro = await runner.full_verification_pipeline_async(
             test_commands=test_cmds,
             repro_script=state.reproduction_test or "",
-            pre_patch_test_commands=[],
+            pre_patch_test_commands=pre_patch_cmds,
             post_patch_test_commands=test_cmds,
             diff_text=state.patch_diff or "",
         )
+
         state.verification_passed = res.overall_success
 
         state.shared_data["confidence_score"] = res.confidence_score

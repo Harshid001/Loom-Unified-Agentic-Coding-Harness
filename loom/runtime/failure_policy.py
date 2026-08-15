@@ -13,15 +13,23 @@ class FailureClass(str, Enum):
     SECURITY = "security"
     CONFIGURATION = "configuration"
     INVALID_INPUT = "invalid_input"
+    BUDGET_EXCEEDED = "budget_exceeded"
     UNKNOWN = "unknown"
 
 
-NON_RETRYABLE = {FailureClass.SECURITY, FailureClass.CONFIGURATION, FailureClass.INVALID_INPUT}
+NON_RETRYABLE = {
+    FailureClass.SECURITY,
+    FailureClass.CONFIGURATION,
+    FailureClass.INVALID_INPUT,
+    FailureClass.BUDGET_EXCEEDED,
+}
 
 
 def classify_failure(error: BaseException) -> FailureClass:
     message = str(error).lower()
     name = type(error).__name__.lower()
+    if "budget" in message or "budgetexceeded" in name:
+        return FailureClass.BUDGET_EXCEEDED
     if "security" in message or "forbidden" in message or "permission" in message:
         return FailureClass.SECURITY
     if "config" in message or "environment" in message or "required" in message:

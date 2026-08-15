@@ -156,17 +156,42 @@ class RedisCoordinator:
             yield cast(dict[str, Any], json.loads(payload))
 
 
-class RedisRateLimiter:
-    """Atomic sliding-window rate limiter backed by a Redis sorted set."""
+class ProductionSecurityError(RuntimeError):
+    pass
 
-    def __init__(self, coordinator: RedisCoordinator):
-        self.coordinator = coordinator
-        self.limit = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
-        self.window_seconds = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+
+class RedisRateLimiter:
+    """Atomic sliding-window rate limiter backed by a Redis sorted set or in-memory fallback."""
+
+    def __init__(
+        self,
+        coordinator: Optional[RedisCoordinator] = None,
+        limit: Optional[int] = None,
+        window_seconds: Optional[int] = None,
+    ):
+        from collections import defaultdict, deque
+
+        self.coordinator = coordinator or RedisCoordinator()
+        self.limit = limit if limit is not None else int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+        self.window_seconds = window_seconds if window_seconds is not None else int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+        self._local: dict[str, deque[float]] = defaultdict(deque)
 
     async def allow(self, key: str) -> bool:
         if not self.coordinator.enabled:
+            is_prod = os.getenv("LOOM_ENV", "production").lower() in {"prod", "production"}
+            allow_fallback = os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").lower() in {"1", "true", "yes"}
+            if is_prod and not allow_fallback:
+                raise ProductionSecurityError("REDIS_URL is required for production rate limiting")
+
+            now = time.time()
+            state = self._local[key]
+            while state and now - state[0] >= self.window_seconds:
+                state.popleft()
+            if len(state) >= self.limit:
+                return False
+            state.append(now)
             return True
+
         now = time.time()
         window_start = now - self.window_seconds
         redis = self.coordinator.client
@@ -182,3 +207,4 @@ class RedisRateLimiter:
             await redis.zrem(zkey, member)
             return False
         return True
+

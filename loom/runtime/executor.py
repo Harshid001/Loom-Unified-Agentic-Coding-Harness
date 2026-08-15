@@ -111,6 +111,23 @@ async def execute_run_job(job: Any) -> OrchestratorState:
     started = time.time()
     stop_watchdog = asyncio.Event()
 
+    async def control_loop() -> None:
+        async for message in coordinator.control_stream(job.run_id):
+            action = str(message.get("action", "")).lower()
+            payload = message.get("payload") or {}
+            if action == "pause":
+                graph.pause()
+            elif action == "resume":
+                graph.resume()
+            elif action == "step":
+                graph.step_over()
+            elif action == "cancel":
+                graph.cancel()
+            elif action == "model_switch" and payload.get("model"):
+                graph.router.set_model(str(payload["model"]))
+
+    control_task = asyncio.create_task(control_loop()) if coordinator.enabled else None
+
     async def enforce_budget() -> None:
         """Poll hard runtime limits and cancel between agent boundaries when exceeded."""
         while not stop_watchdog.is_set():
@@ -147,13 +164,15 @@ async def execute_run_job(job: Any) -> OrchestratorState:
     try:
         if coordinator.enabled:
             await coordinator.update_run_status(job.run_id, "running")
+            await publish("status_change", "pipeline", {"status": "running"})
         final_state = await graph.run(resume_from=resume_from)
         final_state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
         if coordinator.enabled:
-            status = "completed" if final_state.verification_passed else "failed"
+            status = str(graph.run_status.value if hasattr(graph.run_status, "value") else graph.run_status)
             if final_state.shared_data.get("budget_exceeded"):
                 status = "failed"
             await coordinator.update_run_status(job.run_id, status)
+            await publish("status_change", "pipeline", {"status": status})
         return final_state
     except Exception as exc:
         state.shared_data["worker_duration_seconds"] = round(time.time() - started, 3)
@@ -161,6 +180,7 @@ async def execute_run_job(job: Any) -> OrchestratorState:
         state.save_checkpoint()
         if coordinator.enabled:
             await coordinator.update_run_status(job.run_id, "failed")
+            await publish("status_change", "pipeline", {"status": "failed", "error": str(exc)})
         raise
     finally:
         stop_watchdog.set()
@@ -170,4 +190,11 @@ async def execute_run_job(job: Any) -> OrchestratorState:
                 await watchdog
             except asyncio.CancelledError:
                 pass
+        if control_task is not None:
+            control_task.cancel()
+            try:
+                await control_task
+            except asyncio.CancelledError:
+                pass
         await coordinator.close()
+

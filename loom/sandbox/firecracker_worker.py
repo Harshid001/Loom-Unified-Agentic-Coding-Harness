@@ -177,6 +177,7 @@ def execute(req: ExecuteRequest, _: None = Depends(authenticate)):
         if not req.command:
             raise HTTPException(status_code=400, detail="argv or command is required")
         argv = ["/bin/sh", "-lc", req.command]
+
     started = time.monotonic()
     vm_id = f"vm-{uuid.uuid4().hex}"
     metadata = {

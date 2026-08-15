@@ -99,6 +99,20 @@ class WorktreeManager:
             return False
 
         try:
+            snapshot_items = {item.name for item in snapshot_path.iterdir()}
+            # Remove untracked files/directories in repo_path that were created after snapshot
+            for repo_item in self.repo_path.iterdir():
+                if repo_item.name in {".git", ".loom_snapshots"}:
+                    continue
+                if repo_item.name not in snapshot_items:
+                    if repo_item.is_dir() and not repo_item.is_symlink():
+                        shutil.rmtree(repo_item, ignore_errors=True)
+                    else:
+                        try:
+                            repo_item.unlink()
+                        except OSError:
+                            pass
+
             for item in snapshot_path.iterdir():
                 if item.name in [".git", ".loom_snapshots"]:
                     continue
