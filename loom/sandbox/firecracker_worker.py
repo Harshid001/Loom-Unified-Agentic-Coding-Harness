@@ -182,7 +182,7 @@ def execute(req: ExecuteRequest, _: None = Depends(authenticate)):
     metadata = {
         "run_id": req.run_id,
         "vm_id": vm_id,
-        "worker_id": os.getenv("LOOM_FIRECRACKER_WORKER_ID", os.uname().nodename),  # type: ignore[attr-defined]
+        "worker_id": os.getenv("LOOM_FIRECRACKER_WORKER_ID", os.uname().nodename if hasattr(os, "uname") else "worker-host"),
         "org_id": req.org_id,
         "repo_path": str(repo),
         "kernel_hash": sha256_file(KERNEL_PATH),

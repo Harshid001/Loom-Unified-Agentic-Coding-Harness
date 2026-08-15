@@ -97,8 +97,13 @@ async def verify_api_key(
 AuthDep = Annotated[str, Depends(verify_api_key)]
 
 
+def is_dev_headers_trusted() -> bool:
+    dev_trust = os.getenv("LOOM_DEV_TRUST_HEADERS", "").lower()
+    return is_dev_mode() and dev_trust in {"1", "true", "yes", "on"}
+
+
 def resolve_org_id(x_org_id: str = Header(default="", alias="X-Org-Id")) -> str:
-    if is_dev_mode():
+    if is_dev_headers_trusted():
         entitlements = get_entitlements()
         orgs = list(getattr(entitlements, "_orgs", {}).keys())
         return x_org_id or (orgs[0] if orgs else "default")

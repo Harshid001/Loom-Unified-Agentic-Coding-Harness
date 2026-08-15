@@ -25,6 +25,7 @@ build/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 
 # IDE / OS files
 .DS_Store

@@ -23,7 +23,9 @@ module.exports = {
         PORT: 3000
       },
       env_production: {
-        PORT: 3000
+        PORT: 3000,
+        NODE_ENV: "production",
+        args: "run start"
       }
     }
   ]

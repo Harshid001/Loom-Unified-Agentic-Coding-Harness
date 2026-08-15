@@ -76,10 +76,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
     read_only: true
-    tmpfs:
-      - /tmp
     volumes:
       - loom-data:/home/loomuser/.loom
+
+  dashboard:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      LOOM_API_URL: http://api:8000
+      NODE_ENV: production
+      PORT: 3000
+      DASHBOARD_AUTH_TOKEN: ${DASHBOARD_AUTH_TOKEN:?DASHBOARD_AUTH_TOKEN is required}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   loom-data:

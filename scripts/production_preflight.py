@@ -59,6 +59,9 @@ def validate_environment(*, allow_placeholders: bool = False) -> list[str]:
     if os.getenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "false").strip().lower() in {"1", "true", "yes"}:
         errors.append("RATE_LIMIT_ALLOW_LOCAL_FALLBACK must be false for staging and production")
 
+    if os.getenv("LOOM_DEV_TRUST_HEADERS", "false").strip().lower() in {"1", "true", "yes"}:
+        errors.append("LOOM_DEV_TRUST_HEADERS must be false for staging and production")
+
     return errors
 
 

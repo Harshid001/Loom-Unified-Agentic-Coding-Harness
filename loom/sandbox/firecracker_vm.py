@@ -199,11 +199,17 @@ class FirecrackerVM:
     def destroy(self) -> None:
         if self.process and self.process.poll() is None:
             try:
-                os.killpg(self.process.pid, signal.SIGTERM)  # type: ignore[attr-defined]
+                if hasattr(os, "killpg") and hasattr(signal, "SIGTERM"):
+                    os.killpg(self.process.pid, signal.SIGTERM)  # type: ignore[attr-defined]
+                else:
+                    self.process.terminate()
                 self.process.wait(timeout=3)
             except (OSError, subprocess.TimeoutExpired):
                 try:
-                    os.killpg(self.process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
+                    if hasattr(os, "killpg") and hasattr(signal, "SIGKILL"):
+                        os.killpg(self.process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
+                    else:
+                        self.process.kill()
                 except OSError:
                     pass
         self.process = None
@@ -232,8 +238,9 @@ def reconcile_runtime(runtime_dir: Path) -> Dict[str, int]:
                         failed += 1
                         continue
                 try:
-                    os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]
-                except ProcessLookupError:
+                    sig = getattr(signal, "SIGKILL", 9)
+                    os.kill(pid, sig)
+                except (ProcessLookupError, OSError):
                     pass
             shutil.rmtree(vm_dir, ignore_errors=True)
             cleaned += 1

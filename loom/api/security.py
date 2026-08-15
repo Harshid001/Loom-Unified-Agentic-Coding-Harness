@@ -6,6 +6,7 @@ or more callables from this module. No runtime route mutation occurs here.
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -16,6 +17,13 @@ from loom.business.audit_log import get_audit_logger
 from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
 from loom.db.records_store import get_run_record_store
+
+
+def is_dev_headers_trusted() -> bool:
+    """Return whether dev-mode client headers should override principal identity."""
+    dev_trust = os.getenv("LOOM_DEV_TRUST_HEADERS", "").lower()
+    return is_dev_mode() and dev_trust in {"1", "true", "yes", "on"}
+
 
 # ---------------------------------------------------------------------------
 # Principal extraction
@@ -36,36 +44,40 @@ PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 
 async def require_run_permission(
     principal: PrincipalDep,
-    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
 ) -> RBACEnforcer:
-    enforcer = get_rbac(principal.org_id, x_user_id)
+    effective_user_id = x_user_id if (x_user_id and is_dev_headers_trusted()) else principal.user_id
+    enforcer = get_rbac(principal.org_id, effective_user_id)
     enforcer.authorize(Action.TRIGGER_RUN, resource=f"org:{principal.org_id}")
     return enforcer
 
 
 async def require_admin_permission(
     principal: PrincipalDep,
-    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
 ) -> RBACEnforcer:
-    enforcer = get_rbac(principal.org_id, x_user_id)
+    effective_user_id = x_user_id if (x_user_id and is_dev_headers_trusted()) else principal.user_id
+    enforcer = get_rbac(principal.org_id, effective_user_id)
     enforcer.authorize(Action.MODIFY_ENTITLEMENTS, resource=f"org:{principal.org_id}")
     return enforcer
 
 
 async def require_auditor_permission(
     principal: PrincipalDep,
-    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
 ) -> RBACEnforcer:
-    enforcer = get_rbac(principal.org_id, x_user_id)
+    effective_user_id = x_user_id if (x_user_id and is_dev_headers_trusted()) else principal.user_id
+    enforcer = get_rbac(principal.org_id, effective_user_id)
     enforcer.authorize(Action.EXPORT_EVIDENCE, resource=f"org:{principal.org_id}")
     return enforcer
 
 
 async def require_token_admin(
     principal: PrincipalDep,
-    x_user_id: str = Header(default="dev_user", alias="X-User-Id"),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
 ) -> AuthenticatedPrincipal:
-    enforcer = get_rbac(principal.org_id, x_user_id)
+    effective_user_id = x_user_id if (x_user_id and is_dev_headers_trusted()) else principal.user_id
+    enforcer = get_rbac(principal.org_id, effective_user_id)
     enforcer.authorize(Action.MODIFY_ENTITLEMENTS, resource=f"org:{principal.org_id}")
     return principal
 
@@ -110,9 +122,10 @@ def require_entitlement(feature_key):
         x_org_id: str = Header(default="", alias="X-Org-Id"),
     ) -> bool:
         principal = require_authenticated_principal()
-        org_id = principal.org_id if not is_dev_mode() else (x_org_id or principal.org_id)
+        org_id = (x_org_id if (x_org_id and is_dev_headers_trusted()) else principal.org_id)
         result = get_entitlements().check(org_id, feature_key)
         if not result.allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=result.reason or "Feature unavailable")
         return True
     return _check
+

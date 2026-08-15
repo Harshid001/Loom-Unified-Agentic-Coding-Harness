@@ -73,6 +73,18 @@ def run_once() -> Path:
     return archive
 
 
+def _emit_alert(error_message: str) -> None:
+    """Emit an alert notification on backup failure."""
+    alert_payload = {
+        "alert": "LOOM_BACKUP_FAILURE",
+        "severity": "CRITICAL",
+        "timestamp": time.time(),
+        "error": error_message,
+        "environment": os.getenv("LOOM_ENV", "development"),
+    }
+    print(f"[ALERT] BACKUP FAILURE: {json.dumps(alert_payload)}", flush=True)
+
+
 def main() -> None:
     interval = _interval_seconds()
     while True:
@@ -80,7 +92,9 @@ def main() -> None:
             archive = run_once()
             print(f"[BACKUP] completed: {archive}", flush=True)
         except Exception as exc:
-            _write_status("failed", error=str(exc)[:1000])
+            err = str(exc)[:1000]
+            _write_status("failed", error=err)
+            _emit_alert(err)
             print(f"[BACKUP] failed: {exc}", flush=True)
             if os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}:
                 # Never busy-loop on a failing production backup job.
@@ -90,3 +104,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
