@@ -116,7 +116,7 @@ class RunRecordStore:
     """Persistent Run/AgentStep/Patch/VerificationResult store (SQLite or PostgreSQL)."""
 
     def __init__(self, db_path: Optional[str] = None):
-        database_url = os.getenv("DATABASE_URL")
+        database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
         self._pg_engine: Optional[Any] = None
         if database_url and (database_url.startswith("postgresql://") or database_url.startswith("postgres://")):
             self.is_postgres = True

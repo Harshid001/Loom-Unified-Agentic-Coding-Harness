@@ -18,7 +18,7 @@ class WebVerificationGate:
     async def verify_livebox_ui(self, screenshot_dir: str = "artifacts/screenshots") -> Dict[str, Any]:
         """Navigate to Next.js Web Dashboard, inspect LiveBox launcher button, and capture screenshot."""
         if not _HAS_PLAYWRIGHT:
-            return {"passed": False, "error": "Playwright not installed"}
+            return {"passed": False, "url": self.target_url, "error": "Playwright not installed"}
 
         runner = LoomBrowserRunner(headless=True)
         try:

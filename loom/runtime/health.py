@@ -24,6 +24,7 @@ def install_distributed_health(app: FastAPI, verify_auth: Any) -> None:
             return {"status": "unhealthy", "redis": "unreachable", "queue": "unavailable"}
 
         queue = JobQueue(coordinator)
+        await queue.ensure_group()
         pending_raw = cast(Any, await coordinator.client.xpending(queue.STREAM, queue.GROUP))
         queue_length = await coordinator.client.xlen(queue.STREAM)
         consumer_groups = cast(Any, await coordinator.client.xinfo_consumers(queue.STREAM, queue.GROUP))
