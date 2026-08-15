@@ -216,7 +216,9 @@ class RunRecordStore:
                             merge_decision TEXT,
                             cost_usd DOUBLE PRECISION,
                             started_at DOUBLE PRECISION,
-                            completed_at DOUBLE PRECISION
+                            completed_at DOUBLE PRECISION,
+                            started_at_tz TIMESTAMPTZ,
+                            completed_at_tz TIMESTAMPTZ
                         )
                     """)
                     )
@@ -224,7 +226,7 @@ class RunRecordStore:
                         text("""
                         CREATE TABLE IF NOT EXISTS agent_steps (
                             id VARCHAR PRIMARY KEY,
-                            run_id VARCHAR NOT NULL,
+                            run_id VARCHAR NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
                             agent_name VARCHAR,
                             input_context_ref VARCHAR,
                             output_ref TEXT,
@@ -235,7 +237,8 @@ class RunRecordStore:
                             retry_count INTEGER,
                             context_truncated BOOLEAN,
                             status VARCHAR,
-                            recorded_at DOUBLE PRECISION
+                            recorded_at DOUBLE PRECISION,
+                            recorded_at_tz TIMESTAMPTZ
                         )
                     """)
                     )
@@ -244,13 +247,14 @@ class RunRecordStore:
                         text("""
                         CREATE TABLE IF NOT EXISTS patches (
                             id VARCHAR PRIMARY KEY,
-                            run_id VARCHAR NOT NULL,
+                            run_id VARCHAR NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
                             diff_hash VARCHAR,
                             diff_ref TEXT,
                             files_touched INTEGER,
                             risk_flags TEXT,
                             apply_status VARCHAR,
-                            recorded_at DOUBLE PRECISION
+                            recorded_at DOUBLE PRECISION,
+                            recorded_at_tz TIMESTAMPTZ
                         )
                     """)
                     )
@@ -259,16 +263,24 @@ class RunRecordStore:
                         text("""
                         CREATE TABLE IF NOT EXISTS verification_results (
                             id VARCHAR PRIMARY KEY,
-                            run_id VARCHAR NOT NULL,
+                            run_id VARCHAR NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
                             stage VARCHAR,
                             status VARCHAR,
                             evidence_ref TEXT,
                             details TEXT,
-                            recorded_at DOUBLE PRECISION
+                            recorded_at DOUBLE PRECISION,
+                            recorded_at_tz TIMESTAMPTZ
                         )
                     """)
                     )
                     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_verify_run ON verification_results(run_id)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_runs_started_at_tz ON runs(started_at_tz)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_agent_steps_recorded_at_tz ON agent_steps(recorded_at_tz)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_patches_recorded_at_tz ON patches(recorded_at_tz)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_verification_recorded_at_tz ON verification_results(recorded_at_tz)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_runs_org_started ON runs(org_id, started_at)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_runs_org_started_tz ON runs(org_id, started_at_tz)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_agent_steps_run_recorded ON agent_steps(run_id, recorded_at)"))
                     conn.commit()
         except Exception as err:
             logger.error("Failed to initialize PostgreSQL records DB: %s", err)

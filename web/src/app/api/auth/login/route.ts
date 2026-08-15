@@ -13,9 +13,9 @@ const failures = new Map<string, number[]>();
 const WINDOW_MS = 60_000;
 const MAX_FAILURES = 10;
 
-function clientKey(req: NextRequest, token: string): string {
-  const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  return createHash('sha256').update(`${forwarded}:${token}`).digest('hex');
+function clientKey(req: NextRequest): string {
+  const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
+  return createHash('sha256').update(forwarded).digest('hex');
 }
 
 function rateLimited(key: string): boolean {
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ detail: 'Invalid dashboard credentials' }, { status: 401 });
   }
 
-  const key = clientKey(req, token);
+  const key = clientKey(req);
   if (rateLimited(key)) {
     return NextResponse.json({ detail: 'Too many failed login attempts' }, { status: 429 });
   }
