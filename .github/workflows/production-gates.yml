@@ -188,13 +188,12 @@ jobs:
         if: ${{ inputs.run_restore_drill }}
         env:
           LOOM_ENV: ${{ inputs.target_environment }}
-          DATABASE_URL: ${{ secrets.LOOM_DATABASE_URL }}
           LOOM_BACKUP_ENCRYPTION_KEY: ${{ secrets.LOOM_BACKUP_ENCRYPTION_KEY }}
         run: |
           python scripts/restore_drill.py \
             --backup-dir "$RUNNER_TEMP/loom-backups" \
             --restore-home "$RUNNER_TEMP/loom-restore" \
-            --report "$RUNNER_TEMP/restore-drill-report.json"
+            --report "restore-drill-report.json"
 
       - name: Upload release-gate evidence
         if: always()
@@ -207,5 +206,5 @@ jobs:
             redis-health-evidence.json
             release-health-evidence.json
             load-slo-evidence.json
-            ${{ runner.temp }}/restore-drill-report.json
+            restore-drill-report.json
           if-no-files-found: ignore

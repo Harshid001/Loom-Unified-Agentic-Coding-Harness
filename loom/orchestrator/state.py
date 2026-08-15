@@ -70,15 +70,33 @@ class OrchestratorState(BaseModel):
             self.shared_data[key] = data
 
     def save_checkpoint(self, checkpoint_dir: Optional[str] = None):
+        import os
+
         if not checkpoint_dir:
             checkpoint_dir = str(Path.home() / ".loom" / "checkpoints")
         path = Path(checkpoint_dir)
         path.mkdir(parents=True, exist_ok=True)
         file_path = path / f"checkpoint_{self.run_id}.json"
-        def _sanitize(obj):
+        sig_path = path / f"checkpoint_{self.run_id}.sig"
+
+        sensitive_keys = {
+            "_org",
+            "stripe_customer_id",
+            "stripe_subscription_id",
+            "stripe_account_id",
+            "secret",
+            "password",
+            "api_key",
+            "token",
+        }
+
+        def _sanitize(obj: Any) -> Any:
             if isinstance(obj, dict):
-                return {k: _sanitize(v) for k, v in obj.items()
-                        if not k.startswith("__")}
+                return {
+                    k: _sanitize(v)
+                    for k, v in obj.items()
+                    if not k.startswith("__") and k.lower() not in sensitive_keys
+                }
             if isinstance(obj, list):
                 return [_sanitize(v) for v in obj]
             try:
@@ -88,16 +106,63 @@ class OrchestratorState(BaseModel):
                 return str(obj)
 
         data = _sanitize(self.model_dump())
-        file_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        raw_text = json.dumps(data, indent=2, sort_keys=True)
+        raw_bytes = raw_text.encode("utf-8")
+
+        tmp_file = path / f"checkpoint_{self.run_id}.json.tmp"
+        tmp_file.write_bytes(raw_bytes)
+
+        key = (
+            os.getenv("LOOM_CHECKPOINT_HMAC_KEY")
+            or os.getenv("LOOM_EVIDENCE_HMAC_KEY")
+            or os.getenv("LOOM_API_KEY")
+        )
+        if key:
+            import hashlib
+            import hmac
+
+            sig = hmac.new(key.encode("utf-8"), raw_bytes, hashlib.sha256).hexdigest()
+            tmp_sig = path / f"checkpoint_{self.run_id}.sig.tmp"
+            tmp_sig.write_text(sig, encoding="utf-8")
+            tmp_sig.replace(sig_path)
+
+        tmp_file.replace(file_path)
 
     @classmethod
     def load_checkpoint(cls, run_id: str, checkpoint_dir: Optional[str] = None) -> Optional["OrchestratorState"]:
+        import os
+        import secrets
+
         if not checkpoint_dir:
             checkpoint_dir = str(Path.home() / ".loom" / "checkpoints")
-        file_path = Path(checkpoint_dir) / f"checkpoint_{run_id}.json"
+        path = Path(checkpoint_dir)
+        file_path = path / f"checkpoint_{run_id}.json"
+        sig_path = path / f"checkpoint_{run_id}.sig"
         if not file_path.exists():
             return None
-        data = json.loads(file_path.read_text(encoding="utf-8"))
+
+        raw_bytes = file_path.read_bytes()
+        key = (
+            os.getenv("LOOM_CHECKPOINT_HMAC_KEY")
+            or os.getenv("LOOM_EVIDENCE_HMAC_KEY")
+            or os.getenv("LOOM_API_KEY")
+        )
+        is_prod = os.getenv("LOOM_ENV", "").lower() in ("prod", "production")
+
+        if key:
+            if not sig_path.exists():
+                if is_prod:
+                    raise PermissionError(f"Unsigned checkpoint rejected in production posture for run {run_id}")
+            else:
+                import hashlib
+                import hmac
+
+                sig = sig_path.read_text(encoding="utf-8").strip()
+                expected = hmac.new(key.encode("utf-8"), raw_bytes, hashlib.sha256).hexdigest()
+                if not secrets.compare_digest(sig, expected):
+                    raise PermissionError(f"Checkpoint HMAC signature mismatch for run {run_id}")
+
+        data = json.loads(raw_bytes.decode("utf-8"))
         if in_request_auth_context():
             principal = get_effective_principal()
             state_org = data.get("shared_data", {}).get("org_id")

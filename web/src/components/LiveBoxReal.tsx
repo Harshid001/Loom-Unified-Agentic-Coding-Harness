@@ -52,7 +52,7 @@ export function LiveBoxReal({ isOpen, onClose, issue, model, repoPath, mockMode,
 
   const sendControl = useCallback(async (action: string) => {
     if (!runId) return;
-    const response = await fetch("/api/v1/run/control", {
+    const response = await fetch("/api/run/control", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ run_id: runId, action }),
@@ -62,7 +62,7 @@ export function LiveBoxReal({ isOpen, onClose, issue, model, repoPath, mockMode,
 
   const startStream = useCallback((id: string) => {
     eventSourceRef.current?.close();
-    const source = new EventSource(`/api/v1/stream/${encodeURIComponent(id)}`);
+    const source = new EventSource(`/api/stream/${encodeURIComponent(id)}`);
     eventSourceRef.current = source;
 
     source.onmessage = event => {
@@ -112,7 +112,7 @@ export function LiveBoxReal({ isOpen, onClose, issue, model, repoPath, mockMode,
     setIsRunning(true);
 
     try {
-      const response = await fetch("/api/v1/run", {
+      const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

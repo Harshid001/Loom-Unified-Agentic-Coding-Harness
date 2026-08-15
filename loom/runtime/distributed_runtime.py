@@ -198,10 +198,14 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
     setattr(task_graph_module.TaskGraph, "_execute_node_with_retry", budgeted_execute_node)
     setattr(task_graph_module.TaskGraph, "run", wrapped_run)
 
-    async def wrapped_stream(run_id: str):
+    async def wrapped_stream(run_id: str, principal: server_module.PrincipalDep):
         local_entry = server_module.ACTIVE_RUNS.get(run_id)
         if local_entry:
-            return await original_stream_run_events(run_id)
+            return await original_stream_run_events(run_id, principal)
+
+        run = await coordinator.get_run(run_id)
+        if not run or (isinstance(run, dict) and run.get("org_id") != principal.org_id):
+            return JSONResponse(status_code=404, content={"detail": f"Run {run_id} not found"})
 
         async def remote_generator():
             terminal_seen = False
@@ -238,16 +242,14 @@ async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
                 await pubsub.unsubscribe(channel)
                 await pubsub.aclose()
 
-        if not await coordinator.get_run(run_id):
-            return JSONResponse(status_code=404, content={"detail": f"Run {run_id} not found"})
         return StreamingResponse(remote_generator(), media_type="text/event-stream")
 
-    async def wrapped_control(req: Any):
+    async def wrapped_control(req: server_module.ControlRequest, principal: server_module.PrincipalDep):
         local_entry = server_module.ACTIVE_RUNS.get(req.run_id)
         if local_entry:
-            return await original_control_run(req)
+            return await original_control_run(req, principal)
         run = await coordinator.get_run(req.run_id)
-        if not run:
+        if not run or (isinstance(run, dict) and run.get("org_id") != principal.org_id):
             raise HTTPException(status_code=404, detail=f"Run {req.run_id} not found")
         await coordinator.publish_control(
             req.run_id,

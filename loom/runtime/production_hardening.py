@@ -20,7 +20,6 @@ def install() -> None:
     if _INSTALLED:
         return
     _install_records_store_guards()
-    _install_atomic_checkpoints()
     _INSTALLED = True
 
 

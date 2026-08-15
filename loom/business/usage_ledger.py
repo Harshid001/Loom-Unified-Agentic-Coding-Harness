@@ -51,6 +51,22 @@ class UsageLedger:
 
     def record(self, event: UsageEvent) -> Optional[UsageLedgerEntry]:
         dedup_key = event.dedup_key
+        ledger_file = self._ledger_file()
+
+        if ledger_file.exists():
+            try:
+                for line in ledger_file.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        try:
+                            d = json.loads(line)
+                            k = d.get("dedup_key")
+                            if k:
+                                self._written_keys.add(k)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
         if dedup_key in self._written_keys:
             logger.debug("Skipping duplicate ledger entry for dedup_key=%s", dedup_key)
             return None
@@ -69,7 +85,6 @@ class UsageLedger:
             cost_usd=event.cost_usd,
         )
 
-        ledger_file = self._ledger_file()
         try:
             with ledger_file.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(entry.model_dump(), default=str) + "\n")

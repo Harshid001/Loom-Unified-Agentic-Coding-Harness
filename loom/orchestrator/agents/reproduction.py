@@ -64,30 +64,48 @@ class ReproductionAgent(BaseAgent):
                         cmd = f"python -c {shlex.quote(repro_script)}"
                 else:
                     cmd = ""
+            elif repro_script.strip():
+                cmd = repro_script.strip()
             else:
                 cmd = "pytest"
 
             if cmd:
-                pre_cmds = [cmd]
+                from loom.sandbox.command_policy import (
+                    CommandPolicyError,
+                    validate_verification_commands,
+                )
+
                 try:
-                    sandbox = sandbox_for_state(state)
-                    run_res = await sandbox.arun_command(cmd)
-                    repro_output = run_res.stdout + "\n" + run_res.stderr
-                    # In verification-first: the bug must be demonstrated by test failing on base (non-zero exit)
-                    # Check that the failure was an actual test failure / assertion error, not a broken command / syntax error
-                    if run_res.exit_code != 0 and "SyntaxError" not in repro_output and run_res.exit_code != 127:
-                        status = "reproduced"
-                    else:
-                        status = "reproduction_failed"
-                except Exception as exc:
-                    repro_output = str(exc)
+                    validate_verification_commands([cmd])
+                    policy_allowed = True
+                except CommandPolicyError as cpe:
+                    policy_allowed = False
+                    repro_output = f"Reproduction command blocked by sandbox policy: {cpe}"
                     status = "reproduction_failed"
-                finally:
-                    if repro_file_created and repro_file_path and repro_file_path.exists():
-                        try:
-                            repro_file_path.unlink()
-                        except OSError:
-                            pass
+
+                if policy_allowed:
+                    pre_cmds = [cmd]
+                    try:
+                        sandbox = sandbox_for_state(state)
+                        run_res = await sandbox.arun_command(cmd)
+                        repro_output = run_res.stdout + "\n" + run_res.stderr
+                        # In verification-first: the bug must be demonstrated by test failing on base (non-zero exit)
+                        # Check that the failure was an actual test failure / assertion error, not a broken command / syntax error
+                        if run_res.exit_code != 0 and "SyntaxError" not in repro_output and run_res.exit_code != 127:
+                            status = "reproduced"
+                        else:
+                            status = "reproduction_failed"
+                    except Exception as exc:
+                        repro_output = str(exc)
+                        status = "reproduction_failed"
+                    finally:
+                        if repro_file_created and repro_file_path and repro_file_path.exists():
+                            try:
+                                repro_file_path.unlink()
+                            except OSError:
+                                pass
+                else:
+                    pre_cmds = []
             else:
                 pre_cmds = []
 

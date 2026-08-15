@@ -89,7 +89,7 @@ from loom.api.security import (
     require_token_admin,
 )
 from loom.api.webhooks import WebhookEventType, get_webhook_engine
-from loom.auth.api_tokens import get_api_token_store
+from loom.auth.api_tokens import TokenAdministrationDisabled, get_api_token_store
 from loom.auth.context import get_effective_principal
 from loom.business.models import FeatureKey, RunRecord
 from loom.business.rbac import Action, RBACEnforcer
@@ -346,11 +346,14 @@ def issue_api_token(
     if requested_org != principal.org_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot issue a token for another organization")
 
-    record, raw_token = token_store.issue(
-        user_id=requested_user,
-        org_id=principal.org_id,
-        label=req.label or "cli",
-    )
+    try:
+        record, raw_token = token_store.issue(
+            user_id=requested_user,
+            org_id=principal.org_id,
+            label=req.label or "cli",
+        )
+    except TokenAdministrationDisabled as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     return {
         "token": raw_token,
         "token_id": record.id,
@@ -370,21 +373,24 @@ def list_api_tokens(
 ) -> list:
     token_store = get_api_token_store()
     principal = get_effective_principal()
-    return [
-        {
-            "id": r.id,
-            "user_id": r.user_id,
-            "org_id": r.org_id,
-            "label": r.label,
-            "prefix": r.prefix,
-            "active": r.active,
-            "created_at": r.created_at,
-        }
-        for r in token_store._records.values()
-        if r.active
-        and r.org_id == principal.org_id
-        and (user_id is None or r.user_id == user_id)
-    ]
+    try:
+        return [
+            {
+                "id": r.id,
+                "user_id": r.user_id,
+                "org_id": r.org_id,
+                "label": r.label,
+                "prefix": r.prefix,
+                "active": r.active,
+                "created_at": r.created_at,
+            }
+            for r in token_store._records.values()
+            if r.active
+            and r.org_id == principal.org_id
+            and (user_id is None or r.user_id == user_id)
+        ]
+    except TokenAdministrationDisabled as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
 @router_auth.delete("/api/v1/auth/tokens/{token_id}")
@@ -398,7 +404,10 @@ def revoke_api_token(
     record = token_store._records.get(token_id)
     if record is None or record.org_id != principal.org_id:
         raise HTTPException(status_code=404, detail="Token not found")
-    success = token_store.revoke(token_id)
+    try:
+        success = token_store.revoke(token_id)
+    except TokenAdministrationDisabled as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if not success:
         raise HTTPException(status_code=404, detail="Token not found or already revoked")
     return {"revoked": True, "token_id": token_id}
@@ -510,15 +519,14 @@ async def create_run(
     prune_active_runs()
 
     repo_path = str(raw_path)
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
+    run_id = f"run_{uuid.uuid4().hex}"
 
     if idempotency_key and coordinator.enabled:
         await coordinator.reserve_idempotency_key(org_id, idempotency_key, run_id)
 
-
     state = OrchestratorState(run_id=run_id, repo_path=repo_path, issue_description=req.issue)
     state.shared_data["org_id"] = org_id
-    state.shared_data["_org"] = org
+    state.shared_data["org_tier"] = org.tier.value if hasattr(org, "tier") and hasattr(org.tier, "value") else str(getattr(org, "tier", "solo"))
     state.shared_data["sandbox_tier"] = sandbox_tier
     state.shared_data["auto_merge_threshold"] = org.auto_merge_threshold
 
@@ -1025,10 +1033,31 @@ async def handle_gitlab_webhook(
 @router_integrations.post("/api/v1/integrations/slack/notify")
 @router_integrations.post("/api/integrations/slack/notify")
 async def notify_slack(req: SlackNotifyRequest, _auth: AuthDep = None) -> dict:
-    from loom.integrations.slack import SlackWebhookClient
+    from loom.integrations.slack import (
+        SlackNotification,
+        SlackNotificationLevel,
+        SlackNotificationTemplate,
+        SlackNotifier,
+    )
 
-    client = SlackWebhookClient(req.webhook_url)
-    return client.send_notification(req.title, req.body, req.level, req.template, req.run_id)
+    notifier = SlackNotifier(req.webhook_url)
+    try:
+        notification = SlackNotification(
+            title=req.title,
+            body=req.body,
+            level=SlackNotificationLevel(req.level)
+            if req.level in [e.value for e in SlackNotificationLevel]
+            else SlackNotificationLevel.INFO,
+            template=SlackNotificationTemplate(req.template)
+            if req.template in [e.value for e in SlackNotificationTemplate]
+            else SlackNotificationTemplate.CUSTOM,
+            run_id=req.run_id or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid notification parameter: {exc}") from exc
+
+    delivered = await notifier.send(notification)
+    return {"success": delivered, "run_id": req.run_id or "", "title": req.title}
 
 
 @router_integrations.post("/api/v1/integrations/github/prepare-pr")
@@ -1069,16 +1098,29 @@ router_admin = APIRouter(tags=["admin"])
 def entitlement_check(
     org_id: str,
     req: EntitlementCheckRequest,
-    _rbac: RBACEnforcer = Depends(require_entitlement),
+    principal: PrincipalDep,
 ) -> dict:
+    if org_id != principal.org_id:
+        raise HTTPException(status_code=404, detail="Resource not found")
     entitlements = get_entitlements()
-    feature = FeatureKey(req.feature_key)
+    try:
+        feature = FeatureKey(req.feature_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unknown feature key") from exc
     result = entitlements.check(org_id, feature)
     if not result.allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=result.reason or "Feature not available on current tier"
         )
-    return {"allowed": True}
+    org = entitlements.get_org(org_id)
+    org_tier = org.tier.value if (org and hasattr(org.tier, "value")) else (str(org.tier) if org else "solo")
+    return {
+        "org_id": org_id,
+        "feature_key": req.feature_key,
+        "allowed": result.allowed,
+        "reason": result.reason,
+        "tier": org_tier,
+    }
 
 
 @router_admin.get("/api/v1/orgs/{org_id}/usage")

@@ -6,12 +6,7 @@ interface AblationsTabProps {
 }
 
 export const AblationsTab: React.FC<AblationsTabProps> = ({ displayData }) => {
-  const ablations = displayData?.ablations || [
-    { name: 'Baseline (Naive Harness)', memory: false, context: false, multiAgent: false, passRate: '34.2%', cost: '$0.0041' },
-    { name: 'Loom - No Memory', memory: false, context: true, multiAgent: true, passRate: '71.5%', cost: '$0.0035' },
-    { name: 'Loom - No Context Ranking', memory: true, context: false, multiAgent: true, passRate: '68.0%', cost: '$0.0038' },
-    { name: 'Loom Full Harness (Model-Agnostic)', memory: true, context: true, multiAgent: true, passRate: '94.8%', cost: '$0.0032' }
-  ];
+  const ablations = displayData?.ablations || [];
 
   return (
     <div className="flex-1 bg-[#111827] border border-gray-800 rounded-xl p-6 flex flex-col gap-6" id="tabpanel-ablations" role="tabpanel" aria-labelledby="tab-ablations">
@@ -20,36 +15,46 @@ export const AblationsTab: React.FC<AblationsTabProps> = ({ displayData }) => {
         <p className="text-xs text-gray-400">Comparing pass rates and token costs across modular harness tier configurations</p>
       </div>
 
-      <div className="overflow-x-auto border border-gray-800 rounded-xl">
-        <table className="w-full text-left border-collapse text-xs">
-          <caption className="sr-only">Ablation benchmark metrics across harness features</caption>
-          <thead>
-            <tr className="bg-gray-900 border-b border-gray-800 text-gray-400 font-semibold uppercase tracking-wider">
-              <th scope="col" className="p-3.5">Harness Configuration</th>
-              <th scope="col" className="p-3.5 text-center">Tiered Memory</th>
-              <th scope="col" className="p-3.5 text-center">Repo Context Ranking</th>
-              <th scope="col" className="p-3.5 text-center">Multi-Agent DAG</th>
-              <th scope="col" className="p-3.5 text-right">Pass Rate</th>
-              <th scope="col" className="p-3.5 text-right">Avg Cost / Run</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800/60 text-gray-300">
-            {ablations.map((ab: any, i: number) => (
-              <tr key={i} className={ab.name.includes('Full Harness') ? 'bg-indigo-950/20 font-medium' : 'hover:bg-gray-900/40'}>
-                <td className="p-3.5 flex items-center gap-2">
-                  <Layers className={`h-4 w-4 ${ab.name.includes('Full Harness') ? 'text-indigo-400' : 'text-gray-500'}`} aria-hidden="true" />
-                  <span>{ab.name}</span>
-                </td>
-                <td className="p-3.5 text-center">{ab.memory ? '✅' : '❌'}</td>
-                <td className="p-3.5 text-center">{ab.context ? '✅' : '❌'}</td>
-                <td className="p-3.5 text-center">{ab.multiAgent ? '✅' : '❌'}</td>
-                <td className="p-3.5 text-right font-mono font-semibold text-emerald-400">{ab.passRate}</td>
-                <td className="p-3.5 text-right font-mono text-gray-400">{ab.cost}</td>
+      {ablations.length === 0 ? (
+        <div className="flex flex-col items-center justify-center p-12 border border-dashed border-gray-800 rounded-xl text-center">
+          <Layers className="h-8 w-8 text-gray-600 mb-3" aria-hidden="true" />
+          <p className="text-sm font-medium text-gray-300">No Ablation Data Available</p>
+          <p className="text-xs text-gray-500 mt-1 max-w-sm">
+            Execute benchmark ablations using the telemetry harness to collect verified empirical performance metrics.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto border border-gray-800 rounded-xl">
+          <table className="w-full text-left border-collapse text-xs">
+            <caption className="sr-only">Ablation benchmark metrics across harness features</caption>
+            <thead>
+              <tr className="bg-gray-900 border-b border-gray-800 text-gray-400 font-semibold uppercase tracking-wider">
+                <th scope="col" className="p-3.5">Harness Configuration</th>
+                <th scope="col" className="p-3.5 text-center">Tiered Memory</th>
+                <th scope="col" className="p-3.5 text-center">Repo Context Ranking</th>
+                <th scope="col" className="p-3.5 text-center">Multi-Agent DAG</th>
+                <th scope="col" className="p-3.5 text-right">Pass Rate</th>
+                <th scope="col" className="p-3.5 text-right">Avg Cost / Run</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-gray-800/60 text-gray-300">
+              {ablations.map((ab: any, i: number) => (
+                <tr key={i} className={ab.name?.includes('Full Harness') ? 'bg-indigo-950/20 font-medium' : 'hover:bg-gray-900/40'}>
+                  <td className="p-3.5 flex items-center gap-2">
+                    <Layers className={`h-4 w-4 ${ab.name?.includes('Full Harness') ? 'text-indigo-400' : 'text-gray-500'}`} aria-hidden="true" />
+                    <span>{ab.name}</span>
+                  </td>
+                  <td className="p-3.5 text-center">{ab.memory ? '✅' : '❌'}</td>
+                  <td className="p-3.5 text-center">{ab.context ? '✅' : '❌'}</td>
+                  <td className="p-3.5 text-center">{ab.multiAgent ? '✅' : '❌'}</td>
+                  <td className="p-3.5 text-right font-mono font-semibold text-emerald-400">{ab.passRate}</td>
+                  <td className="p-3.5 text-right font-mono text-gray-400">{ab.cost}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

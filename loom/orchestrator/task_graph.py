@@ -157,6 +157,7 @@ class TaskGraph:
         webhook_engine: Optional[WebhookEngine] = None,
         evidence_bundler: Optional[EvidenceBundler] = None,
         records_store: Optional[RunRecordStore] = None,
+        budget: Optional[Any] = None,
     ):
         self.state = state
         self.router = router
@@ -169,6 +170,15 @@ class TaskGraph:
         self.on_step_log_cb = on_step_log
         self.on_step_complete_cb = on_step_complete
         self.on_step_fail_cb = on_step_fail
+
+        if budget is not None:
+            self.budget = budget
+        else:
+            try:
+                from loom.runtime.budget import RunBudget
+                self.budget = RunBudget.from_env()
+            except Exception:
+                self.budget = None
 
         self.webhook_engine = webhook_engine
         self.evidence_bundler = evidence_bundler
@@ -443,8 +453,31 @@ class TaskGraph:
 
         self.run_status = RunStatus.QUEUED
         self._fire_webhook(WebhookEventType.RUN_QUEUED, {"status": RunStatus.QUEUED.value})
+        start_time = time.time()
 
         for node_name, agent_cls in node_sequence:
+            if self.budget:
+                from loom.runtime.budget import BudgetExceeded
+
+                cost_usd = float(
+                    self.cost_tracker.get_total_cost()
+                    if hasattr(self.cost_tracker, "get_total_cost")
+                    else self.state.shared_data.get("total_cost_usd", 0.0) or 0.0
+                )
+                elapsed = time.time() - start_time
+                tokens = int(
+                    getattr(self.cost_tracker, "total_tokens", 0)
+                    or self.state.shared_data.get("total_tokens", 0)
+                    or 0
+                )
+                try:
+                    self.budget.check_limits(cost_usd=cost_usd, elapsed_seconds=elapsed, tokens_used=tokens)
+                except BudgetExceeded as budget_err:
+                    logger.warning("Run %s budget exceeded: %s", self.state.run_id, budget_err)
+                    self.run_status = RunStatus.FAILED
+                    self.state.shared_data["budget_exceeded"] = str(budget_err)
+                    break
+
             if self.is_cancelled:
                 logger.info(f"Pipeline cancelled before executing {node_name}")
                 break
@@ -613,7 +646,10 @@ class TaskGraph:
         self.state.save_checkpoint()
 
         if self._webhook_tasks:
-            await asyncio.gather(*self._webhook_tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(asyncio.gather(*self._webhook_tasks, return_exceptions=True), timeout=2.0)
+            except (asyncio.TimeoutError, Exception) as wh_err:
+                logger.debug("Background webhooks still delivering: %s", wh_err)
         return self.state
 
     def _fire_webhook(self, event_type: WebhookEventType, data: Dict[str, Any]) -> None:

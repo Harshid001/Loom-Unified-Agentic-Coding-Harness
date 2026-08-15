@@ -73,12 +73,10 @@ describe('DagTab component', () => {
 });
 
 describe('AblationsTab component', () => {
-  it('renders ablation benchmark matrix table', () => {
+  it('renders authentic empty state when no ablation data is provided', () => {
     render(<AblationsTab displayData={null} />);
     expect(screen.getByText(/Ablation Experiment Benchmark Matrix/i)).toBeInTheDocument();
-    expect(screen.getByText(/Baseline \(Naive Harness\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Loom Full Harness \(Model-Agnostic\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/94.8%/i)).toBeInTheDocument();
+    expect(screen.getByText(/No Ablation Data Available/i)).toBeInTheDocument();
   });
 
   it('renders custom ablation data if supplied', () => {

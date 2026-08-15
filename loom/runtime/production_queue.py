@@ -5,9 +5,9 @@ from __future__ import annotations
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.routing import APIRoute
 
 from loom.api import server as server_module
@@ -19,8 +19,10 @@ from loom.runtime.job_queue import JobQueue, RunJob
 
 async def _production_create_run(
     req: server_module.RunRequest,
-    _rbac: server_module.RBACEnforcer,
-    org_id: str,
+    _rbac: server_module.RBACEnforcer = Depends(server_module.require_run_permission),
+    org_id: str = Depends(server_module.resolve_org_id),
+    idempotency_key_header: Optional[str] = Header(None, alias="Idempotency-Key"),
+    x_idempotency_key_header: Optional[str] = Header(None, alias="X-Idempotency-Key"),
 ) -> dict[str, Any]:
     """Validate the production request and enqueue it without executing in API memory."""
     org = server_module._entitlements.get_org(org_id) or server_module._default_org
@@ -56,9 +58,9 @@ async def _production_create_run(
     if not any(root == raw_path or root in raw_path.parents for root in roots):
         raise HTTPException(status_code=403, detail="repo_path is not within allowed repository roots")
 
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
+    run_id = f"run_{uuid.uuid4().hex}"
     job = RunJob(
-        job_id=f"job_{uuid.uuid4().hex[:12]}",
+        job_id=f"job_{uuid.uuid4().hex}",
         run_id=run_id,
         org_id=org_id,
         repo_path=str(raw_path),

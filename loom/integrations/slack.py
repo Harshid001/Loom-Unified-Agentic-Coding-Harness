@@ -156,6 +156,14 @@ class SlackNotifier:
 
     def send_sync(self, notification: SlackNotification) -> bool:
         import asyncio
+        import concurrent.futures
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(lambda: asyncio.run(self.send(notification))).result()
         return asyncio.run(self.send(notification))
 
     def build_run_completed_notification(

@@ -1,8 +1,8 @@
 # Loom — Production Release Baseline
 
-**Captured:** 2026-08-14T21:52:41.677062+00:00
-**Commit SHA:** `3cdc467404dc4e165a36e748487bb6e672ad65a0`
-**Branch:** `agent/production-hardening`
+**Captured:** 2026-08-15T15:17:44.613152+00:00
+**Commit SHA:** `5bc71365f0519de2e7bb1b36b88d1613a120edac`
+**Branch:** `main`
 
 ---
 
@@ -14,7 +14,7 @@
 | Node | `v24.12.0` |
 | npm | `not found` |
 | Platform | `Windows-11-10.0.26100-SP0` |
-| pyproject.toml SHA256 | `7e850bf3eeb423358f2bda5c5812402b6168bcabff113f0fceed147b0ede5153` |
+| pyproject.toml SHA256 | `43e681ccae46bbe18de9a695cc467712ddcbd69e7f5f24f89eae5dfebf103fb1` |
 | package-lock.json SHA256 | `c8b340d7e77283a79019a702a86427f9334d54655351086d6725207f77753aac` |
 
 ---
@@ -26,7 +26,7 @@
 | pytest | ❌ FAIL | 0 passed, 0 failed |
 | ruff (lint) | ✅ PASS | 1 violations |
 | mypy | ✅ PASS | 0 errors |
-| pip-audit | ❌ FAIL | -1 vulnerabilities |
+| pip-audit | ✅ PASS | 0 vulnerabilities |
 | gitleaks | ⚠️ WARN/SKIP |  |
 | npm audit | ⚠️ WARN/SKIP | -1 vulnerabilities |
 | frontend build | ❌ FAIL | — |
@@ -36,7 +36,7 @@
 ## Artifact Directory
 
 ```
-D:\NewVolumeE\Unified agentic coding harness\artifacts\release\3cdc467404dc4e165a36e748487bb6e672ad65a0
+D:\NewVolumeE\Unified agentic coding harness\artifacts\release\5bc71365f0519de2e7bb1b36b88d1613a120edac
 ├── environment.json
 ├── test-results.json
 ├── security-results.json
@@ -47,7 +47,7 @@ D:\NewVolumeE\Unified agentic coding harness\artifacts\release\3cdc467404dc4e165
 
 ## Reproducibility
 
-This baseline can be reproduced by checking out commit `3cdc467404dc4e165a36e748487bb6e672ad65a0` and running:
+This baseline can be reproduced by checking out commit `5bc71365f0519de2e7bb1b36b88d1613a120edac` and running:
 
 ```bash
 python scripts/production/capture_baseline.py

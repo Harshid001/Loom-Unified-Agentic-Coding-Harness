@@ -68,11 +68,13 @@ class EvidenceBundler:
                 "verification_success": bundle.verification_success,
                 "test_summary": bundle.test_summary,
                 "cost_report": bundle.cost_report,
+                "trace_events": bundle.trace_events,
                 "rollback_snapshot_id": bundle.rollback_snapshot_id,
                 "merge_decision": bundle.merge_decision,
             },
             sort_keys=True,
             ensure_ascii=False,
+            default=str,
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -103,10 +105,12 @@ class EvidenceBundler:
     def _save_chain(self, entries: List[ChainedBundleEntry]):
         path = self._chain_file_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
+        tmp_path = path.with_suffix(".tmp")
+        tmp_path.write_text(
             json.dumps([e.model_dump() for e in entries], indent=2),
             encoding="utf-8",
         )
+        tmp_path.replace(path)
 
     def create_bundle(
         self,
@@ -179,7 +183,9 @@ class EvidenceBundler:
             **bundle.model_dump(),
             "chain_entry": entry.model_dump(),
         }
-        bundle_path.write_text(json.dumps(bundle_payload, indent=2), encoding="utf-8")
+        tmp_bundle_path = bundle_path.with_suffix(".tmp")
+        tmp_bundle_path.write_text(json.dumps(bundle_payload, indent=2), encoding="utf-8")
+        tmp_bundle_path.replace(bundle_path)
 
         return entry
 
@@ -188,6 +194,8 @@ class EvidenceBundler:
         self,
         hmac_key: Optional[str] = None,
     ) -> Tuple[bool, Optional[str], List[int]]:
+        import secrets
+
         chain = self._load_chain()
         if not chain:
             return True, None, []
@@ -210,11 +218,13 @@ class EvidenceBundler:
                 tampered_indices.append(i)
                 continue
 
-            if effective_key and entry.signature:
-                expected_sig = self._sign_entry(entry, effective_key)
-                if entry.signature != expected_sig:
+            if effective_key:
+                if not entry.signature:
                     tampered_indices.append(i)
-
+                    continue
+                expected_sig = self._sign_entry(entry, effective_key)
+                if not secrets.compare_digest(entry.signature, expected_sig):
+                    tampered_indices.append(i)
 
         if tampered_indices:
             return False, f"Chain integrity violated at indices: {tampered_indices}", tampered_indices

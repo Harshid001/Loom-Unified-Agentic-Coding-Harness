@@ -119,6 +119,8 @@ services:
       NODE_ENV: production
       PORT: 3000
       DASHBOARD_AUTH_TOKEN: ${DASHBOARD_AUTH_TOKEN:?DASHBOARD_AUTH_TOKEN is required}
+      API_KEY: ${API_KEY:?API_KEY is required}
+      LOOM_API_KEY: ${LOOM_API_KEY:-${API_KEY}}
     ports:
       - "3000:3000"
     depends_on:

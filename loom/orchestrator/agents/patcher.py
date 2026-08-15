@@ -45,22 +45,40 @@ class PatcherAgent(BaseAgent):
             lines = raw_content.splitlines()
             diff_lines: List[str] = []
             in_diff = False
+            repo_root = Path(state.repo_path).resolve()
+            unsafe_detected = False
             for line in lines:
                 if line.startswith("--- "):
                     in_diff = True
                 if in_diff:
                     if line.startswith("```") and len(diff_lines) > 1:
                         break
-                    if (
-                        (".." in line and ("--- " in line or "+++ " in line))
-                        or line.startswith("--- /")
-                        or line.startswith("+++ /")
-                    ):
-                        logger.warning("Unsafe path traversal detected in patch line: %s", line)
-                        patch_diff = ""
-                        break
+                    if line.startswith("--- ") or line.startswith("+++ "):
+                        raw_target = line[4:].split("\t")[0].strip()
+                        if raw_target.startswith("a/") or raw_target.startswith("b/"):
+                            rel_target = raw_target[2:]
+                        else:
+                            rel_target = raw_target
+                        if rel_target != "/dev/null":
+                            try:
+                                target_path = (repo_root / rel_target).resolve()
+                                if (
+                                    ".." in line
+                                    or line.startswith("--- /")
+                                    or line.startswith("+++ /")
+                                    or (repo_root not in target_path.parents and target_path != repo_root)
+                                    or target_path.is_symlink()
+                                ):
+                                    logger.warning("Unsafe or symlinked path detected in patch line: %s", line)
+                                    patch_diff = ""
+                                    unsafe_detected = True
+                                    break
+                            except Exception:
+                                patch_diff = ""
+                                unsafe_detected = True
+                                break
                     diff_lines.append(line)
-            if diff_lines:
+            if diff_lines and not unsafe_detected:
                 patch_diff = "\n".join(diff_lines)
         else:
             logger.info("Model output did not contain valid patch diff format")
@@ -185,22 +203,23 @@ class PatcherAgent(BaseAgent):
             patch_file = Path(state.repo_path) / ".loom_patch.diff"
             try:
                 patch_file.write_text(patch_diff, encoding="utf-8")
-                apply_res = await sandbox.arun_command(f"git apply {shlex.quote(str(patch_file))}")
-                if apply_res.exit_code == 0:
-                    apply_status = "applied"
-                else:
-                    fallback_res = await sandbox.arun_command(f"patch -p1 -i {shlex.quote(str(patch_file))}")
-                    if fallback_res.exit_code == 0:
-                        apply_status = "applied_via_fallback"
+                check_res = await sandbox.arun_command(f"git apply --check {shlex.quote(str(patch_file))}")
+                if check_res.exit_code == 0:
+                    apply_res = await sandbox.arun_command(f"git apply {shlex.quote(str(patch_file))}")
+                    if apply_res.exit_code == 0:
+                        apply_status = "applied"
                     else:
                         apply_status = "conflict"
                         conflict_detected = True
-                        logger.warning(
-                            "Patch conflict for run %s: git apply (exit %s) and patch fallback (exit %s) both failed",
-                            state.run_id,
-                            apply_res.exit_code,
-                            fallback_res.exit_code,
-                        )
+                else:
+                    apply_status = "conflict"
+                    conflict_detected = True
+                    logger.warning(
+                        "Patch conflict for run %s: git apply --check exit %s (%s)",
+                        state.run_id,
+                        check_res.exit_code,
+                        check_res.stderr.strip() or check_res.stdout.strip(),
+                    )
             except (subprocess.CalledProcessError, OSError, IOError) as err:
                 logger.warning("Error applying patch file %s: %s", patch_file, err)
                 apply_status = "error"

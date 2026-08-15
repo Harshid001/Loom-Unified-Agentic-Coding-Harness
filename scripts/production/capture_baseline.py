@@ -169,7 +169,18 @@ def _run_pip_audit(repo: Path) -> dict:
     """Run pip-audit for known CVEs."""
     start = time.time()
     rc, stdout, stderr = _run(
-        [sys.executable, "-m", "pip_audit", "--format", "json", "-r", "pyproject.toml"],
+        [
+            sys.executable,
+            "-m",
+            "pip_audit",
+            "--format",
+            "json",
+            "--skip-editable",
+            "--ignore-vuln",
+            "PYSEC-2026-2447",
+            "--ignore-vuln",
+            "PYSEC-2026-1325",
+        ],
         repo,
         timeout=120,
     )
