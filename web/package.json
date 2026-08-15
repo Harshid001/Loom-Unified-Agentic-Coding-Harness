@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "next": "^15.1.8",
+    "next": "^16.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "lucide-react": "^1.31.0",
