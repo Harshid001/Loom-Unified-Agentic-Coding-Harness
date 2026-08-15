@@ -66,7 +66,7 @@ jobs:
           fi
 
       - name: Checkout exact release under test
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_ref }}
           fetch-depth: 0
