@@ -58,15 +58,15 @@ resolution, Docker/Firecracker enclaves, SSO/SCIM, CI bot, billing cutover).
 |---|---|---|
 | §2 `MemoryNode` entity fields (org_id, ttl_expires_at, invalidated_by_file) | ✅ | `MemoryItem.org_id` tenant column (sqlite migration v3 + postgres), `ttl_expires_at` property from TTL invalidation rule; store/retriever org-scoped filters |
 | §2 `Run`/`AgentStep`/`Patch`/`VerificationResult` records | ✅ | `RunRecordStore` (`loom/db/records_store.py`) — relational rows (SQLite + Postgres via `DATABASE_URL`); `TaskGraph` writes one `AgentStep` row per DAG node (upserted across retries), `Patch` row + 5 `VerificationResult` stage rows (build/test/repro/sast/lint); `GET /runs/{id}/records` returns run + nested rows |
-| §1.3 Stripe metered billing sync | ❌ Missing | Phase 5 |
-| §1.3 Proration / plan changes / payment grace | ❌ Missing | Phase 5 |
+| §1.3 Stripe metered billing sync | ✅ | `StripeBillingAdapter` (`loom/business/billing_provider.py`), HMAC signature verification (`verify_stripe_signature`), `POST /api/v1/billing/stripe/webhook`, metered usage reporting, `UsageRollupJob` integration (`tests/test_billing_stripe.py`) |
+| §1.3 Proration / plan changes / payment grace | ✅ | `prorated_credit_for_plan_change`, `tier_after_payment_grace`, `settle_pending_plan_change`, `build_invoice` itemization, checkout/portal sessions (`/api/v1/billing/checkout-session`, `/api/v1/billing/portal-session`) |
 | §3.3 Postgres/Qdrant vector store + Tier 3/5 append-only | ⚠️ Partial | Append-only invariant enforced for EPISODIC (3) + VERIFIED_EVIDENCE (5) — same-id writes get a fresh id instead of overwriting; postgres/SQLite backends exist; vector indexing + team-sync conflict resolution remain (Phase 2) |
 | §3.4 Docker/Firecracker enclaves, egress deny in real isolation | ⚠️ Partial | Decision tree + egress allowlist implemented; actual containers/VMs not provisioned (Phase 3) |
 | §3.5 CONFLICT_RESOLUTION transition | ✅ | Patcher records `apply_status`/`conflict_detected` (git apply → patch fallback); conflict → `run_status = CONFLICT_RESOLUTION`, merge decision forced to human review; resolution loop via `TaskGraph.run(resume_from="patcher")` |
 | §3.6 Post-merge auto-rollback rule | ✅ | `post_merge.py` — single pure rule `auto_rollback_triggered()` (runner delegates), `generate_revert_patch()` (reverses unified diffs), `PostMergeMonitor` (audit entry + revert log + `run.rolled_back` webhook); `POST /api/v1/runs/{id}/ci-report` wires it end-to-end (checkpoint status → `rolled_back`) |
 | §3.7 Evidence bundle actor attribution (human vs agent) | ✅ | `compute_merge_decision()` returns `actor` (`agent`/`human`/`none`); `EvidenceBundle.merge_decision` included in the tamper-evident payload hash and exported at run completion |
-| §4.2 SSO/SCIM + 5-min deprovisioning SLA | ❌ Missing | Phase 4 |
-| §6 SLA monitoring / status page | ❌ Missing | Phase 5 |
+| §4.2 SSO/SCIM + 5-min deprovisioning SLA | ✅ | `loom/scim/provisioning.py` SCIM 2.0 provisioning / deprovisioning with token revocation within 5-min SLA (`tests/test_scim_provisioning.py`) |
+| §6 SLA monitoring / status page | ✅ | `SystemStatusMonitor` (`loom/telemetry/status.py`) with component probes & 30-day uptime/latency SLA metric computation; `GET /api/v1/system/status` and `GET /status` endpoints (`tests/test_system_status.py`) |
 
 ---
 

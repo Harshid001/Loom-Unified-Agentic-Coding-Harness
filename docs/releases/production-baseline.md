@@ -1,7 +1,7 @@
 # Loom — Production Release Baseline
 
-**Captured:** 2026-08-15T15:17:44.613152+00:00
-**Commit SHA:** `5bc71365f0519de2e7bb1b36b88d1613a120edac`
+**Captured:** 2026-08-15T17:18:00.536459+00:00
+**Commit SHA:** `a685c6184c9054cc2973279e80d2d29010a016eb`
 **Branch:** `main`
 
 ---
@@ -26,7 +26,7 @@
 | pytest | ❌ FAIL | 0 passed, 0 failed |
 | ruff (lint) | ✅ PASS | 1 violations |
 | mypy | ✅ PASS | 0 errors |
-| pip-audit | ✅ PASS | 0 vulnerabilities |
+| pip-audit | ❌ FAIL | -1 vulnerabilities |
 | gitleaks | ⚠️ WARN/SKIP |  |
 | npm audit | ⚠️ WARN/SKIP | -1 vulnerabilities |
 | frontend build | ❌ FAIL | — |
@@ -36,7 +36,7 @@
 ## Artifact Directory
 
 ```
-D:\NewVolumeE\Unified agentic coding harness\artifacts\release\5bc71365f0519de2e7bb1b36b88d1613a120edac
+D:\NewVolumeE\Unified agentic coding harness\artifacts\release\a685c6184c9054cc2973279e80d2d29010a016eb
 ├── environment.json
 ├── test-results.json
 ├── security-results.json
@@ -47,7 +47,7 @@ D:\NewVolumeE\Unified agentic coding harness\artifacts\release\5bc71365f0519de2e
 
 ## Reproducibility
 
-This baseline can be reproduced by checking out commit `5bc71365f0519de2e7bb1b36b88d1613a120edac` and running:
+This baseline can be reproduced by checking out commit `a685c6184c9054cc2973279e80d2d29010a016eb` and running:
 
 ```bash
 python scripts/production/capture_baseline.py

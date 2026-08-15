@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from loom.api.webhooks import WebhookEngine, WebhookEventType
 from loom.business.audit_log import AuditLogger
+from loom.business.billing_provider import StripeBillingAdapter, get_stripe_adapter
 from loom.business.entitlements import EntitlementService
 from loom.business.models import AuditAction, OrgUsageSnapshot
 from loom.business.usage_ledger import UsageLedger
@@ -42,12 +43,14 @@ class UsageRollupJob:
         ledger: UsageLedger,
         webhooks: Optional[WebhookEngine] = None,
         audit_logger: Optional[AuditLogger] = None,
+        stripe_adapter: Optional[StripeBillingAdapter] = None,
         storage_dir: Optional[str] = None,
     ):
         self._entitlements = entitlements
         self._ledger = ledger
         self._webhooks = webhooks
         self._audit = audit_logger or AuditLogger()
+        self._stripe = stripe_adapter or get_stripe_adapter()
         if storage_dir is None:
             storage_dir = str(Path.home() / ".loom" / "rollup")
         self._dir = Path(storage_dir)

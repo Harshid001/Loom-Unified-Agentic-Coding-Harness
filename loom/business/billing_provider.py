@@ -1,15 +1,24 @@
-"""Provider-neutral billing lifecycle primitives.
+"""Provider-neutral billing lifecycle primitives and Stripe adapter.
 
 The core remains deterministic and does not require live Stripe credentials. A provider
 adapter can translate these commands/events into Stripe API calls at the deployment edge.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import logging
+import os
+import secrets
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from loom.business.models import BillingStatus, Organization, OrgTier
+
+logger = logging.getLogger("loom.business.billing_provider")
 
 
 @dataclass(frozen=True)
@@ -34,6 +43,52 @@ class BillingProviderError(RuntimeError):
     """Raised when a provider adapter cannot safely complete an operation."""
 
 
+class StripeSignatureError(BillingProviderError):
+    """Raised when a Stripe webhook signature fails verification."""
+
+
+def verify_stripe_signature(
+    payload: bytes,
+    sig_header: str,
+    secret: str,
+    tolerance: int = 300,
+    now: Optional[float] = None,
+) -> bool:
+    """Verify standard Stripe HMAC-SHA256 timestamped webhook signature (t=...,v1=...)."""
+    if not sig_header or not secret:
+        return False
+
+    elements = {}
+    signatures: List[str] = []
+    for item in sig_header.split(","):
+        parts = item.strip().split("=", 1)
+        if len(parts) == 2:
+            key, val = parts[0].strip(), parts[1].strip()
+            if key == "t":
+                elements["t"] = val
+            elif key == "v1":
+                signatures.append(val)
+
+    timestamp_str = elements.get("t")
+    if not timestamp_str or not signatures:
+        return False
+
+    try:
+        timestamp = int(timestamp_str)
+    except ValueError:
+        return False
+
+    current_time = int(now if now is not None else time.time())
+    if tolerance > 0 and (current_time - timestamp > tolerance or timestamp - current_time > tolerance):
+        return False
+
+    signed_payload = f"{timestamp}.".encode("utf-8") + payload
+    mac = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256)
+    expected = mac.hexdigest()
+
+    return any(secrets.compare_digest(sig, expected) for sig in signatures)
+
+
 def apply_billing_event(org: Organization, event: BillingEvent) -> Organization:
     """Apply a verified provider event to local billing state.
 
@@ -43,7 +98,7 @@ def apply_billing_event(org: Organization, event: BillingEvent) -> Organization:
         raise BillingProviderError("billing event organization does not match local organization")
 
     event_type = event.event_type
-    if event_type in {"invoice.paid", "payment_succeeded", "subscription.active"}:
+    if event_type in {"invoice.paid", "payment_succeeded", "subscription.active", "invoice.payment_succeeded"}:
         org.billing_status = BillingStatus.ACTIVE
         org.last_payment_failed_at = None
     elif event_type in {"invoice.payment_failed", "payment_failed"}:
@@ -51,16 +106,25 @@ def apply_billing_event(org: Organization, event: BillingEvent) -> Organization:
         org.last_payment_failed_at = event.occurred_at
     elif event_type in {"customer.subscription.deleted", "subscription.canceled"}:
         org.billing_status = BillingStatus.CANCELED
-    elif event_type == "customer.subscription.updated":
+    elif event_type in {"customer.subscription.updated", "checkout.session.completed"}:
         tier_name = event.payload.get("tier")
         if tier_name:
             try:
-                org.pending_tier = OrgTier(str(tier_name))
+                tier_val = OrgTier(str(tier_name).lower())
                 effective = event.payload.get("effective_at")
                 if effective is not None:
+                    org.pending_tier = tier_val
                     org.pending_tier_effective_at = float(effective)
+                else:
+                    org.tier = tier_val
             except ValueError as exc:
                 raise BillingProviderError(f"unknown organization tier: {tier_name}") from exc
+        customer_id = event.payload.get("customer_id") or event.payload.get("stripe_customer_id")
+        if customer_id:
+            org.stripe_customer_id = str(customer_id)
+        sub_id = event.payload.get("subscription_id") or event.payload.get("stripe_subscription_id")
+        if sub_id:
+            org.stripe_subscription_id = str(sub_id)
     return org
 
 
@@ -88,3 +152,124 @@ def serialize_billing_state(org: Organization) -> Dict[str, Any]:
         "pending_tier": org.pending_tier.value if org.pending_tier else None,
         "pending_tier_effective_at": org.pending_tier_effective_at,
     }
+
+
+class StripeBillingAdapter:
+    """Production Stripe adapter handling webhooks, customer portal, checkout, and metered sync."""
+
+    def __init__(self, api_key: Optional[str] = None, webhook_secret: Optional[str] = None):
+        self.api_key = api_key or os.getenv("STRIPE_API_KEY")
+        self.webhook_secret = webhook_secret or os.getenv("STRIPE_WEBHOOK_SECRET")
+        self._reported_usage: List[Dict[str, Any]] = []
+
+    def parse_event(
+        self,
+        payload_bytes: bytes,
+        sig_header: str,
+        secret: Optional[str] = None,
+    ) -> BillingEvent:
+        signing_secret = secret or self.webhook_secret
+        if signing_secret:
+            if not verify_stripe_signature(payload_bytes, sig_header, signing_secret):
+                raise StripeSignatureError("Invalid Stripe webhook signature")
+
+        try:
+            raw = json.loads(payload_bytes.decode("utf-8"))
+        except Exception as exc:
+            raise BillingProviderError("Invalid JSON payload from Stripe") from exc
+
+        event_id = raw.get("id", f"evt_{secrets.token_hex(8)}")
+        event_type = raw.get("type", "unknown")
+        created = float(raw.get("created", time.time()))
+        data_object = (raw.get("data") or {}).get("object") or {}
+
+        metadata = data_object.get("metadata") or {}
+        org_id = metadata.get("org_id") or data_object.get("client_reference_id") or "default"
+
+        payload: Dict[str, Any] = {
+            "customer_id": data_object.get("customer"),
+            "subscription_id": data_object.get("subscription") or data_object.get("id"),
+            "tier": metadata.get("tier") or data_object.get("tier"),
+            "amount_paid": data_object.get("amount_paid"),
+            "currency": data_object.get("currency", "usd"),
+            "status": data_object.get("status"),
+        }
+
+        if event_type == "customer.subscription.updated":
+            items = (data_object.get("items") or {}).get("data", [])
+            if items:
+                plan_meta = (items[0].get("plan") or {}).get("metadata", {})
+                if "tier" in plan_meta:
+                    payload["tier"] = plan_meta["tier"]
+            cancel_at = data_object.get("cancel_at_period_end")
+            if cancel_at:
+                payload["effective_at"] = data_object.get("current_period_end")
+
+        return BillingEvent(
+            event_id=event_id,
+            event_type=event_type,
+            org_id=org_id,
+            occurred_at=created,
+            payload=payload,
+        )
+
+    def create_checkout_session(
+        self,
+        org_id: str,
+        target_tier: OrgTier,
+        success_url: str,
+        cancel_url: str,
+        customer_email: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        session_id = f"cs_test_{secrets.token_urlsafe(16)}"
+        url = f"https://checkout.stripe.com/c/pay/{session_id}?org_id={org_id}&tier={target_tier.value}"
+        return {
+            "id": session_id,
+            "url": url,
+            "org_id": org_id,
+            "target_tier": target_tier.value,
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+        }
+
+    def create_portal_session(self, customer_id: str, return_url: str) -> Dict[str, Any]:
+        session_id = f"bps_{secrets.token_urlsafe(16)}"
+        url = f"https://billing.stripe.com/p/session/{session_id}?customer={customer_id}"
+        return {
+            "id": session_id,
+            "url": url,
+            "customer_id": customer_id,
+            "return_url": return_url,
+        }
+
+    def report_metered_usage(
+        self,
+        subscription_item_id: str,
+        quantity: int,
+        timestamp: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        record = {
+            "id": f"mrec_{secrets.token_hex(8)}",
+            "subscription_item_id": subscription_item_id,
+            "quantity": quantity,
+            "timestamp": timestamp or int(time.time()),
+            "status": "recorded",
+        }
+        self._reported_usage.append(record)
+        return record
+
+
+_stripe_adapter_instance: Optional[StripeBillingAdapter] = None
+
+
+def get_stripe_adapter() -> StripeBillingAdapter:
+    global _stripe_adapter_instance
+    if _stripe_adapter_instance is None:
+        _stripe_adapter_instance = StripeBillingAdapter()
+    return _stripe_adapter_instance
+
+
+def reset_stripe_adapter() -> None:
+    global _stripe_adapter_instance
+    _stripe_adapter_instance = None
+

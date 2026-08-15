@@ -1147,6 +1147,128 @@ def get_org_usage(
 
 
 # ---------------------------------------------------------------------------
+# router_billing — Stripe webhooks, checkout, portal, and invoice inspection
+# ---------------------------------------------------------------------------
+
+router_billing = APIRouter(tags=["billing"])
+
+
+class CheckoutSessionRequest(BaseModel):
+    target_tier: str
+    success_url: str
+    cancel_url: str
+
+
+class PortalSessionRequest(BaseModel):
+    return_url: str
+
+
+@router_billing.post("/api/v1/billing/stripe/webhook")
+@router_billing.post("/api/billing/stripe/webhook")
+async def stripe_webhook(request: Request) -> dict:
+    from loom.business.billing_provider import (
+        StripeSignatureError,
+        apply_billing_event,
+        get_stripe_adapter,
+    )
+
+    body = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    adapter = get_stripe_adapter()
+
+    try:
+        event = adapter.parse_event(body, sig_header)
+    except StripeSignatureError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Webhook parsing error: {exc}") from exc
+
+    entitlements = get_entitlements()
+    org = entitlements.get_org(event.org_id)
+    if org is not None:
+        apply_billing_event(org, event)
+
+    return {"received": True, "event_id": event.event_id, "event_type": event.event_type}
+
+
+@router_billing.post("/api/v1/billing/checkout-session")
+def create_checkout_session(
+    req: CheckoutSessionRequest,
+    principal: PrincipalDep,
+) -> dict:
+    from loom.business.billing_provider import get_stripe_adapter
+    from loom.business.models import OrgTier
+
+    try:
+        tier = OrgTier(req.target_tier.lower())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid target tier: {req.target_tier}") from exc
+
+    adapter = get_stripe_adapter()
+    return adapter.create_checkout_session(
+        org_id=principal.org_id,
+        target_tier=tier,
+        success_url=req.success_url,
+        cancel_url=req.cancel_url,
+    )
+
+
+@router_billing.post("/api/v1/billing/portal-session")
+def create_portal_session(
+    req: PortalSessionRequest,
+    principal: PrincipalDep,
+) -> dict:
+    from loom.business.billing_provider import get_stripe_adapter
+
+    entitlements = get_entitlements()
+    org = entitlements.get_org(principal.org_id)
+    customer_id = getattr(org, "stripe_customer_id", None) or f"cus_{principal.org_id}"
+
+    adapter = get_stripe_adapter()
+    return adapter.create_portal_session(
+        customer_id=customer_id,
+        return_url=req.return_url,
+    )
+
+
+@router_billing.get("/api/v1/billing/invoices/{org_id}")
+def get_org_invoice(
+    org_id: str,
+    principal: PrincipalDep,
+) -> dict:
+    if org_id != principal.org_id:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    entitlements = get_entitlements()
+    org = entitlements.get_org(org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
+
+    from loom.business.billing import build_invoice
+    from loom.business.usage_ledger import get_usage_ledger
+
+    ledger = get_usage_ledger()
+    snapshot = ledger.build_snapshot(org_id, org.tier)
+    ledger_entries = [e for e in ledger._entries if e.org_id == org_id]
+    return build_invoice(org, snapshot, ledger_entries)
+
+
+# ---------------------------------------------------------------------------
+# router_system — SLA and System Health Status (spec §6)
+# ---------------------------------------------------------------------------
+
+router_system = APIRouter(tags=["system"])
+
+
+@router_system.get("/api/v1/system/status")
+@router_system.get("/status")
+def system_status() -> dict:
+    from loom.telemetry.status import get_system_status
+
+    snapshot = get_system_status()
+    return snapshot.to_dict()
+
+
+# ---------------------------------------------------------------------------
 # Backward-compat: module-level `app` for uvicorn entry-points
 # ---------------------------------------------------------------------------
 
