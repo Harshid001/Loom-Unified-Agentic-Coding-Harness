@@ -36,7 +36,7 @@ def issue(principal: TokenPrincipal, user_id: Optional[str] = None, label: str =
 def revoke(principal: TokenPrincipal, token_id: str) -> None:
     _check_admin(principal)
     store = get_api_token_store()
-    record = store._records.get(token_id)
+    record = store.get(token_id)
     if record is None or record.org_id != principal.org_id:
         raise LookupError("token not found")
     store.revoke(token_id)

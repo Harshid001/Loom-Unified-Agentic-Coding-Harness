@@ -1,0 +1,12 @@
+{
+  "name": "loom-harness-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "cd web && npm install --legacy-peer-deps && npm run build",
+    "dev": "cd web && npm run dev",
+    "start": "cd web && npm start",
+    "lint": "cd web && npm run lint",
+    "test": "cd web && npm run test"
+  }
+}

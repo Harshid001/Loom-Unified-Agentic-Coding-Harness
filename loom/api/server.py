@@ -384,10 +384,7 @@ def list_api_tokens(
                 "active": r.active,
                 "created_at": r.created_at,
             }
-            for r in token_store._records.values()
-            if r.active
-            and r.org_id == principal.org_id
-            and (user_id is None or r.user_id == user_id)
+            for r in token_store.list_active(org_id=principal.org_id, user_id=user_id)
         ]
     except TokenAdministrationDisabled as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -401,7 +398,7 @@ def revoke_api_token(
 ) -> dict:
     principal = get_effective_principal()
     token_store = get_api_token_store()
-    record = token_store._records.get(token_id)
+    record = token_store.get(token_id)
     if record is None or record.org_id != principal.org_id:
         raise HTTPException(status_code=404, detail="Token not found")
     try:

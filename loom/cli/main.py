@@ -887,7 +887,7 @@ def list_tokens(
     from loom.auth.api_tokens import get_api_token_store
 
     store = get_api_token_store()
-    records = [r for r in store._records.values() if r.active and (user_id is None or r.user_id == user_id)]
+    records = store.list_active(user_id=user_id)
 
     if not records:
         console.print("[yellow]No active API keys found.[/yellow]")

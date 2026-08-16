@@ -323,6 +323,69 @@ class ApiTokenStore:
 
         return [r for r in dict.values(self._records) if r.user_id == user_id and r.active and not r.is_expired()]
 
+    def get(self, token_id: str) -> Optional[ApiTokenRecord]:
+        if self.is_postgres and self._pg_engine:
+            from sqlalchemy import text
+
+            with self._pg_engine.connect() as conn:
+                row = conn.execute(
+                    text("""
+                    SELECT id, user_id, org_id, label, token_hash, prefix, active, revoked_at, created_at, expires_at
+                    FROM api_tokens
+                    WHERE id = :id
+                """),
+                    {"id": token_id},
+                ).mappings().first()
+                return ApiTokenRecord(**dict(row)) if row else None
+
+        return self._records.get(token_id)
+
+    def list_active(
+        self,
+        org_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> List[ApiTokenRecord]:
+        _require_admin_enabled("listing")
+        now = time.time()
+        if self.is_postgres and self._pg_engine:
+            from sqlalchemy import text
+
+            conditions = ["active = true"]
+            params: dict[str, Any] = {}
+            if org_id is not None:
+                conditions.append("org_id = :org_id")
+                params["org_id"] = org_id
+            if user_id is not None:
+                conditions.append("user_id = :user_id")
+                params["user_id"] = user_id
+            with self._pg_engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT id, user_id, org_id, label, token_hash, prefix, active, revoked_at, created_at, expires_at
+                        FROM api_tokens
+                        WHERE %s
+                    """
+                        % " AND ".join(conditions)
+                    ),
+                    params,
+                ).mappings().all()
+                records = []
+                for row in rows:
+                    record = ApiTokenRecord(**dict(row))
+                    if not record.is_expired(now):
+                        records.append(record)
+                return records
+
+        return [
+            r
+            for r in dict.values(self._records)
+            if r.active
+            and not r.is_expired(now)
+            and (org_id is None or r.org_id == org_id)
+            and (user_id is None or r.user_id == user_id)
+        ]
+
     def count(self) -> int:
         now = time.time()
         if self.is_postgres and self._pg_engine:
