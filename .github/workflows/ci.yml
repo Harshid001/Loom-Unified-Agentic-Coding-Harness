@@ -112,9 +112,10 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: package-lock.json
           package-manager-cache: false
       - name: Install Dependencies
+        working-directory: ${{ github.workspace }}
         run: npm ci --legacy-peer-deps
       - name: Dependency Vulnerability Audit
         run: npm audit --audit-level=high
