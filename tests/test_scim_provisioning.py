@@ -13,6 +13,12 @@ from loom.scim.provisioning import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_token_store_mode(monkeypatch):
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+
 @pytest.fixture
 def provisioner(tmp_path, monkeypatch):
     monkeypatch.setenv("SCIM_TOKEN", "test-scim-token")

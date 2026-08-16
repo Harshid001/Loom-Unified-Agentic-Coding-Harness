@@ -2,12 +2,33 @@ import os
 import tempfile
 import time
 
+import pytest
+
 from loom.auth.api_tokens import (
     ApiTokenStore,
     get_api_token_store,
     hash_token,
     reset_api_token_store,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_jsonl_mode(monkeypatch):
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+
+@pytest.mark.skipif(not os.getenv("POSTGRES_URL"), reason="Requires live PostgreSQL instance via POSTGRES_URL")
+def test_api_token_store_postgres_lifecycle():
+    store = ApiTokenStore(database_url=os.environ["POSTGRES_URL"])
+    assert store.is_postgres is True
+    user_id = "pg_mode_user"
+    record, token = store.issue(user_id=user_id, org_id="org_pg", label="PG Token")
+    assert record.active is True
+    assert record.token_hash == hash_token(token)
+    assert store.verify(token).id == record.id
+    assert store.revoke_all_for_user(user_id) == 1
+    assert store.verify(token) is None
 
 
 def test_api_token_store_jsonl_lifecycle():

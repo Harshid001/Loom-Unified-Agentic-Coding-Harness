@@ -70,6 +70,8 @@ def test_cli_token_commands(tmp_path, monkeypatch):
 
     reset_api_token_store()
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
     # 1. Create token
     create_res = runner.invoke(app, ["token-create", "--label", "test_cli_key", "--user-id", "cli_user"])

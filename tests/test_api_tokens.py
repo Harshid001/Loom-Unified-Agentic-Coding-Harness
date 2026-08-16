@@ -5,6 +5,12 @@ import pytest
 from loom.auth.api_tokens import ApiTokenStore, TokenAdministrationDisabled
 
 
+@pytest.fixture(autouse=True)
+def _isolate_jsonl_mode(monkeypatch):
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+
 def _store(tmp_path) -> ApiTokenStore:
     return ApiTokenStore(storage_dir=str(tmp_path / "tokens"))
 
