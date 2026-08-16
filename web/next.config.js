@@ -1,8 +1,10 @@
 /** @type {import('next').NextConfig} */
 const backendUrl = process.env.LOOM_API_URL || 'http://localhost:8000';
 
+const isVercel = Boolean(process.env.VERCEL);
+
 const nextConfig = {
-  output: 'standalone',
+  ...(isVercel ? {} : { output: 'standalone' }),
   reactStrictMode: true,
   async rewrites() {
     return [
