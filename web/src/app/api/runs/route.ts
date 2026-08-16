@@ -16,11 +16,19 @@ export async function GET(req: NextRequest) {
     }
     const res = await fetch(`${backendUrl}/api/v1/runs`, { headers, cache: 'no-store' });
     if (!res.ok) {
-      return NextResponse.json({ detail: `Backend returned ${res.status}` }, { status: res.status });
+      const errBody = await res.json().catch(() => ({}));
+      const reason = errBody.detail || `Backend returned HTTP ${res.status}`;
+      return NextResponse.json({ detail: reason }, { status: res.status });
     }
     const data = await res.json();
     return NextResponse.json(data);
   } catch (err: any) {
-    return NextResponse.json({ detail: err.message || 'Failed to connect to Loom backend' }, { status: 500 });
+    const errorMsg = err instanceof Error ? err.message : 'Unknown network failure';
+    return NextResponse.json(
+      {
+        detail: `Failed to connect to Loom backend at ${backendUrl}: ${errorMsg}. Check LOOM_API_URL and ensure the backend is running.`,
+      },
+      { status: 502 },
+    );
   }
 }
