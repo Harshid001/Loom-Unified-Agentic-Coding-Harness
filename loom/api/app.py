@@ -99,8 +99,16 @@ def create_app(
 
     default_limit = "60" if is_production() else "1000"
     _rate_limit_requests = rate_limit_per_minute or int(os.getenv("RATE_LIMIT_PER_MINUTE", default_limit))
-    _rate_limit_window = 60
+    _rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
     _rate_store: dict[str, list[float]] = {}
+
+    from loom.infra.distributed import RedisCoordinator, RedisRateLimiter
+    _redis_coordinator = RedisCoordinator()
+    _redis_limiter = RedisRateLimiter(
+        coordinator=_redis_coordinator,
+        limit=_rate_limit_requests,
+        window_seconds=_rate_limit_window,
+    )
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next: Any) -> Any:
@@ -112,17 +120,36 @@ def create_app(
             else:
                 client_ip = extract_client_ip(request)
                 client_key = "ip:" + client_ip
-            now = time.time()
-            timestamps = [ts for ts in _rate_store.get(client_key, []) if now - ts < _rate_limit_window]
-            if len(timestamps) >= _rate_limit_requests:
-                return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Too many requests."})
-            timestamps.append(now)
-            _rate_store[client_key] = timestamps
+
+            if _redis_coordinator.enabled:
+                try:
+                    allowed = await _redis_limiter.allow(client_key)
+                    if not allowed:
+                        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Too many requests."})
+                except Exception as exc:
+                    logger.warning("Redis rate limiter error, falling back to local: %s", exc)
+                    # fallback to in-memory
+                    now = time.time()
+                    timestamps = [ts for ts in _rate_store.get(client_key, []) if now - ts < _rate_limit_window]
+                    if len(timestamps) >= _rate_limit_requests:
+                        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Too many requests."})
+                    timestamps.append(now)
+                    _rate_store[client_key] = timestamps
+            else:
+                now = time.time()
+                timestamps = [ts for ts in _rate_store.get(client_key, []) if now - ts < _rate_limit_window]
+                if len(timestamps) >= _rate_limit_requests:
+                    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Too many requests."})
+                timestamps.append(now)
+                _rate_store[client_key] = timestamps
+
             if len(_rate_store) > 5000:
+                now = time.time()
                 stale = [key for key, tss in _rate_store.items() if not tss or now - tss[-1] > _rate_limit_window]
                 for key in stale:
                     _rate_store.pop(key, None)
         return await call_next(request)
+
 
     install_terminal_webhook_normalizer()
     install_webhook_secret_encryption()
