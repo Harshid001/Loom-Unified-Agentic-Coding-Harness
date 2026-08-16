@@ -2,11 +2,28 @@
   "name": "loom-harness-monorepo",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
-    "build": "cd web && npm install --legacy-peer-deps && npm run build",
-    "dev": "cd web && npm run dev",
-    "start": "cd web && npm start",
-    "lint": "cd web && npm run lint",
-    "test": "cd web && npm run test"
+    "build": "npm --prefix web run build",
+    "dev": "npm --prefix web run dev",
+    "start": "npm --prefix web start",
+    "lint": "npm --prefix web run lint",
+    "test": "npm --prefix web run test"
+  },
+  "dependencies": {
+    "next": "^16.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "clsx": "^2.1.0",
+    "lucide-react": "^1.31.0",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.3"
   }
 }
