@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -64,7 +64,7 @@ class SetModelResponse(BaseModel):
 @router_settings.get("/api/v1/settings/model", response_model=ModelConfigResponse)
 @router_settings.get("/api/settings/model", response_model=ModelConfigResponse)
 async def get_model_config(
-    _auth: DashboardAuth = None,
+    _auth: DashboardAuth = cast(DashboardAuth, None),
 ) -> ModelConfigResponse:
     session_keys = get_session_keys()
     detected_models = get_detected_models()
@@ -103,7 +103,7 @@ async def get_model_config(
 @router_settings.put("/api/settings/model", response_model=SetModelResponse)
 async def set_active_model_endpoint(
     req: SetModelRequest,
-    _auth: DashboardAuth = None,
+    _auth: DashboardAuth = cast(DashboardAuth, None),
 ) -> SetModelResponse:
     model_name = req.model.strip()
     if not model_name:
