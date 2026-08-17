@@ -1,6 +1,6 @@
 # Production Hardening Roadmap
 
-This document tracks production controls implemented on `prod-hardening-90plus` without changing the existing `main` branch.
+This document tracks production controls implemented on the canonical `main` branch.
 
 ## Implemented in this hardening branch
 
