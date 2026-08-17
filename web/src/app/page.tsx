@@ -33,7 +33,7 @@ function LoomDashboard() {
     return AVAILABLE_MODELS[0];
   });
   const [newIssue, setNewIssue] = useState('');
-  const [repoPath] = useState('.');
+  const [repoPath, setRepoPath] = useState('.');
   const [mockMode, setMockMode] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
@@ -159,9 +159,26 @@ function LoomDashboard() {
       {errorBanner && <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2.5 text-xs text-amber-400 font-mono" role="alert">{errorBanner}</div>}
 
       {!displayData && !isLoadingRuns && runHistory.length === 0 && (
-        <div className="bg-[#0d1321] border-b border-gray-800 px-6 py-3 flex items-center gap-4 flex-wrap">
-          <div className="flex-1 min-w-[300px]">
-            <input type="text" value={newIssue} onChange={e => setNewIssue(e.target.value)} placeholder="Enter issue description..." className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" onKeyDown={e => { if (e.key === 'Enter' && newIssue.trim()) handleOpenLiveBox(); }} />
+        <div className="bg-[#0d1321] border-b border-gray-800 px-6 py-3 flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-[280px]">
+            <input
+              type="text"
+              value={newIssue}
+              onChange={e => setNewIssue(e.target.value)}
+              placeholder="Enter issue description..."
+              className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              onKeyDown={e => { if (e.key === 'Enter' && newIssue.trim()) handleOpenLiveBox(); }}
+            />
+          </div>
+          <div className="w-64 min-w-[180px]">
+            <input
+              type="text"
+              value={repoPath}
+              onChange={e => setRepoPath(e.target.value)}
+              placeholder="Target repo (. or GitHub URL)"
+              className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-indigo-300 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              title="Target Repository: Local directory or GitHub repository URL"
+            />
           </div>
           <select value={selectedModel} onChange={e => handleModelChange(e.target.value)} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
             {availableModels.map(m => <option key={m} value={m}>{m}</option>)}

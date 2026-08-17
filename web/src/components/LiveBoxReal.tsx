@@ -165,13 +165,23 @@ export function LiveBoxReal({ isOpen, onClose, issue, model, repoPath, mockMode,
 
         <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 p-5 lg:grid-cols-3">
           <section className="min-h-0 rounded-xl border border-slate-800 bg-slate-950/40 p-4 lg:col-span-1">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between">
               <span className="text-xs font-medium text-slate-300">Run</span>
-              <span className="text-xs text-slate-500">{runId || "not started"}</span>
+              <span className="text-xs font-mono text-indigo-400">{runId || "not started"}</span>
             </div>
-            <div className="mb-4 rounded-lg border border-slate-800 p-3 text-xs text-slate-300">{issue || "No issue provided"}</div>
-            <div className="mb-4 h-2 overflow-hidden rounded bg-slate-800"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${progress}%` }} /></div>
-            <div className="mb-4 text-xs text-slate-400">Status: <span className="text-slate-200">{status}</span></div>
+            <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span>Repository:</span>
+                <span className="font-mono text-indigo-300 truncate max-w-[170px]" title={repoPath || '.'}>{repoPath || '.'}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span>Model:</span>
+                <span className="font-mono text-emerald-400">{model}</span>
+              </div>
+            </div>
+            <div className="mb-3 rounded-lg border border-slate-800 p-3 text-xs text-slate-200 font-mono leading-relaxed">{issue || "No issue provided"}</div>
+            <div className="mb-3 h-2 overflow-hidden rounded bg-slate-800"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${progress}%` }} /></div>
+            <div className="mb-3 text-xs text-slate-400">Status: <span className={`font-semibold uppercase text-xs ${status === 'completed' ? 'text-emerald-400' : status === 'running' ? 'text-amber-400' : status === 'failed' ? 'text-red-400' : 'text-slate-300'}`}>{status}</span></div>
             <div className="space-y-2">
               {steps.map(step => (
                 <div key={step.name} className="flex items-center justify-between rounded-lg border border-slate-800 px-3 py-2 text-xs">
