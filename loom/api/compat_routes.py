@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from loom.api.dependencies import get_entitlements
 from loom.api.security import PrincipalDep, require_run_access
-from loom.api.server import ACTIVE_RUNS, CiReportRequest, ControlRequest
 from loom.auth.context import AuthenticatedPrincipal
 from loom.business.audit_log import get_audit_logger
 from loom.business.models import AuditAction
@@ -24,6 +24,17 @@ from loom.orchestrator.state import OrchestratorState
 from loom.sandbox.local_process import LocalProcessSandbox
 
 compat_router = APIRouter(tags=["compat"])
+
+
+class CiReportRequest(BaseModel):
+    merge_time: float
+    ci_failure_detected: bool
+    monitor_timeout_seconds: float = 3600.0
+
+
+class ControlRequest(BaseModel):
+    run_id: str
+    action: str
 
 
 def _load_json_object(path: Path, error_detail: str) -> dict[str, Any]:
@@ -139,6 +150,8 @@ def rollback_run(run_id: str, principal: PrincipalDep) -> dict[str, Any]:
 @compat_router.post("/api/run/control")
 def compat_control_run(req: ControlRequest, principal: PrincipalDep) -> dict[str, Any]:
     require_run_access(req.run_id, Action.VIEW_RUN, principal=principal)
+    from loom.api.server import ACTIVE_RUNS
+
     entry = ACTIVE_RUNS.get(req.run_id)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"Active run {req.run_id} not found")

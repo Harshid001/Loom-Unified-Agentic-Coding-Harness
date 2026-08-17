@@ -29,10 +29,22 @@ client = TestClient(app)
 def setup_api_env(monkeypatch, tmp_path):
     monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
     monkeypatch.setenv("API_KEY", "test-api-key")
+    monkeypatch.setenv("API_KEY_ORG_ID", "default")
+    monkeypatch.setenv("API_KEY_USER_ID", "dev_user")
+    monkeypatch.setenv("LOOM_ENV", "development")
+    monkeypatch.setenv("DEV_MODE", "true")
+    monkeypatch.setenv("ALLOWED_REPO_ROOTS", f"{tmp_path},{Path('.').resolve()}")
     monkeypatch.setenv("LOOM_EVIDENCE_DIR", str(tmp_path / "evidence"))
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("LOOM_CHECKPOINT_DIR", str(tmp_path / "checkpoints"))
+    monkeypatch.setenv("LOOM_RECORDS_DB", str(tmp_path / "records.db"))
+    from loom.api.dependencies import get_entitlements, reset_entitlements
     from loom.api.server import _rate_limit_memory_store
+    from loom.auth.context import clear_principal
+
+    clear_principal()
     _rate_limit_memory_store.clear()
+    reset_entitlements()
+    get_entitlements()
     reset_usage_ledger()
     get_usage_ledger(str(tmp_path / "ledger"))
     reset_webhook_engine()
@@ -54,28 +66,29 @@ def setup_api_env(monkeypatch, tmp_path):
     snap_own = sandbox.create_snapshot("snap_own")
     snap_foreign = sandbox.create_snapshot("snap_foreign")
 
-    checkpoint_dir = tmp_path / ".loom" / "checkpoints"
+    checkpoint_dir = tmp_path / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("LOOM_CHECKPOINT_DIR", str(checkpoint_dir))
 
-    checkpoint_own = {
-        "run_id": "run_own_123",
-        "repo_path": str(repo_dir),
-        "issue_description": "own run state",
-        "snapshot_id": snap_own,
-        "shared_data": {"org_id": _default_org.id},
-        "patch_diff": "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n",
-    }
-    (checkpoint_dir / "checkpoint_run_own_123.json").write_text(json.dumps(checkpoint_own), encoding="utf-8")
+    state_own = OrchestratorState(
+        run_id="run_own_123",
+        repo_path=str(repo_dir),
+        issue_description="own run state",
+    )
+    state_own.snapshot_id = snap_own
+    state_own.shared_data["org_id"] = _default_org.id
+    state_own.patch_diff = "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n"
+    state_own.save_checkpoint(checkpoint_dir=str(checkpoint_dir))
 
-    checkpoint_foreign = {
-        "run_id": "run_foreign_456",
-        "repo_path": str(repo_dir),
-        "issue_description": "foreign run state",
-        "snapshot_id": snap_foreign,
-        "shared_data": {"org_id": "org_foreign_b"},
-        "patch_diff": "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n",
-    }
-    (checkpoint_dir / "checkpoint_run_foreign_456.json").write_text(json.dumps(checkpoint_foreign), encoding="utf-8")
+    state_foreign = OrchestratorState(
+        run_id="run_foreign_456",
+        repo_path=str(repo_dir),
+        issue_description="foreign run state",
+    )
+    state_foreign.snapshot_id = snap_foreign
+    state_foreign.shared_data["org_id"] = "org_foreign_b"
+    state_foreign.patch_diff = "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n"
+    state_foreign.save_checkpoint(checkpoint_dir=str(checkpoint_dir))
 
     evidence_dir = tmp_path / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -93,6 +106,8 @@ def setup_api_env(monkeypatch, tmp_path):
         "queues": [],
         "state": active_state,
     }
+    yield
+    clear_principal()
 
 
 def test_deterministic_route_action_mapping():

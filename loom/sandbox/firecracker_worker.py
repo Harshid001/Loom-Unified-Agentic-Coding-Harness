@@ -38,8 +38,6 @@ APPROVED_HASH_FILE = Path(os.getenv(
     str(Path(__file__).resolve().parents[2] / "infra/firecracker/SHA256SUM"),
 )).resolve()
 
-if not WORKER_TOKEN:
-    raise RuntimeError("LOOM_FIRECRACKER_WORKER_TOKEN must be configured")
 
 def _safe_metric(metric_cls: Any, name: str, documentation: str, *args: Any, **kwargs: Any) -> Any:
     try:
@@ -89,7 +87,13 @@ class RestoreRequest(BaseModel):
 
 
 def authenticate(authorization: Optional[str] = Header(None)) -> None:
-    expected = f"Bearer {WORKER_TOKEN}"
+    token = WORKER_TOKEN or os.getenv("LOOM_FIRECRACKER_WORKER_TOKEN") or os.getenv("SANDBOX_WORKER_TOKEN")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LOOM_FIRECRACKER_WORKER_TOKEN is not configured",
+        )
+    expected = f"Bearer {token}"
     if not authorization or len(authorization) != len(expected) or not secrets.compare_digest(authorization, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Firecracker worker credential")
 

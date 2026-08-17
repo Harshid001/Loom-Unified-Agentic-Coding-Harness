@@ -144,6 +144,8 @@ class RunRecordStore:
             db_dir = Path.home() / ".loom"
             db_dir.mkdir(parents=True, exist_ok=True)
             db_path = str(db_dir / "records.db")
+        else:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
         self._init_db()
 
@@ -156,6 +158,7 @@ class RunRecordStore:
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         try:
             conn.execute("PRAGMA journal_mode=WAL;")
@@ -684,7 +687,7 @@ def verification_stage_records(run_id: str, verification_output: Optional[dict])
 
 def get_run_record_store(db_path: Optional[str] = None) -> RunRecordStore:
     global _record_store_instance
-    if _record_store_instance is None:
+    if _record_store_instance is None or (db_path is not None and getattr(_record_store_instance, "db_path", None) != db_path):
         _record_store_instance = RunRecordStore(db_path=db_path)
     return _record_store_instance
 

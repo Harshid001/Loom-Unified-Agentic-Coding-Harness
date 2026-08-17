@@ -23,6 +23,13 @@ class FakeAsyncClient:
         pass
 
 
+@pytest.fixture(autouse=True)
+def setup_test_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("ALLOWED_REPO_ROOTS", str(tmp_path))
+    monkeypatch.setenv("LOOM_ENV", "development")
+    monkeypatch.setenv("DEV_MODE", "true")
+
+
 class TestComputeMergeDecision:
     def test_auto_merge_above_threshold(self):
         decision = compute_merge_decision(

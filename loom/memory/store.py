@@ -38,6 +38,8 @@ class TieredMemoryStore:
             db_dir = Path.home() / ".loom"
             db_dir.mkdir(parents=True, exist_ok=True)
             db_path = str(db_dir / "memory.db")
+        else:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
 
         self._init_db()
@@ -52,6 +54,8 @@ class TieredMemoryStore:
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
         """Context manager that ensures SQLite connections are properly closed on exit."""
+        if not self.is_postgres:
+            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         try:
             conn.execute("PRAGMA journal_mode=WAL;")

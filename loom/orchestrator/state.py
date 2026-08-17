@@ -73,7 +73,7 @@ class OrchestratorState(BaseModel):
         import os
 
         if not checkpoint_dir:
-            checkpoint_dir = str(Path.home() / ".loom" / "checkpoints")
+            checkpoint_dir = os.getenv("LOOM_CHECKPOINT_DIR") or str(Path.home() / ".loom" / "checkpoints")
         path = Path(checkpoint_dir)
         path.mkdir(parents=True, exist_ok=True)
         file_path = path / f"checkpoint_{self.run_id}.json"
@@ -134,7 +134,7 @@ class OrchestratorState(BaseModel):
         import secrets
 
         if not checkpoint_dir:
-            checkpoint_dir = str(Path.home() / ".loom" / "checkpoints")
+            checkpoint_dir = os.getenv("LOOM_CHECKPOINT_DIR") or str(Path.home() / ".loom" / "checkpoints")
         path = Path(checkpoint_dir)
         file_path = path / f"checkpoint_{run_id}.json"
         sig_path = path / f"checkpoint_{run_id}.sig"

@@ -108,7 +108,11 @@ def test_verification_stage_records_mapping():
 
 
 @pytest.mark.asyncio
-async def test_task_graph_writes_records(tmp_path):
+async def test_task_graph_writes_records(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALLOWED_REPO_ROOTS", str(tmp_path))
+    monkeypatch.setenv("LOOM_ENV", "development")
+    monkeypatch.setenv("DEV_MODE", "true")
+
     from loom.adapters.router import ModelRouter
     from loom.orchestrator.state import OrchestratorState
     from loom.orchestrator.task_graph import TaskGraph

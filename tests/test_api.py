@@ -18,14 +18,22 @@ from loom.api.dependencies import reset_entitlements
 @pytest.fixture(autouse=True)
 def setup_api_key_env(monkeypatch, tmp_path):
     monkeypatch.setenv("API_KEY", "test-api-key")
+    monkeypatch.setenv("API_KEY_ORG_ID", "default")
+    monkeypatch.setenv("API_KEY_USER_ID", "dev_user")
     monkeypatch.setenv("LOOM_EVIDENCE_DIR", str(tmp_path / "evidence"))
+    monkeypatch.setenv("LOOM_CHECKPOINT_DIR", str(tmp_path / "checkpoints"))
     monkeypatch.setenv("DEV_MODE", "true")
     monkeypatch.setenv("LOOM_ENV", "development")
     monkeypatch.setenv("LOOM_HOME", str(tmp_path))
     monkeypatch.setenv("LOOM_DB_PATH", str(tmp_path / "loom.db"))
     monkeypatch.setenv("ALLOWED_REPO_ROOTS", f"{tmp_path},{Path('.').resolve()}")
     monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
+    from loom.api.dependencies import get_entitlements
+    from loom.auth.context import clear_principal
+
+    clear_principal()
     reset_entitlements()
+    get_entitlements()
     reset_usage_ledger()
     get_usage_ledger(str(tmp_path / "ledger"))
     reset_webhook_engine()
@@ -34,6 +42,8 @@ def setup_api_key_env(monkeypatch, tmp_path):
     get_run_record_store(str(tmp_path / "records.db"))
     reset_scim_provisioner()
     get_scim_provisioner(str(tmp_path / "scim"))
+    yield
+    clear_principal()
 
 
 def test_liveness_health():
@@ -110,9 +120,9 @@ def test_create_run_rbac_blocks_developer_from_admin_action():
         "X-Org-Id": _default_org.id,
         "X-User-Id": "dev_developer",
     }
-    from loom.api.server import _entitlements
+    from loom.api.dependencies import get_entitlements
     from loom.business.models import Membership, MembershipRole
-    _entitlements.add_membership(
+    get_entitlements().add_membership(
         Membership(user_id="dev_developer", org_id=_default_org.id, role=MembershipRole.DEVELOPER)
     )
     payload = {"org_id": _default_org.id, "feature_key": "sandbox.tier_b_container"}
@@ -185,21 +195,14 @@ def test_security_headers():
 
 def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
     import time
-    from pathlib import Path
 
     import httpx
 
-    from loom.api.server import _entitlements
     from loom.api.webhooks import WebhookEventType, WebhookSubscription
     from loom.business.audit_log import get_audit_logger, reset_audit_logger
-    from loom.business.models import AuditAction, Membership, MembershipRole, RunRecord
+    from loom.business.models import AuditAction, RunRecord
     from loom.orchestrator.state import OrchestratorState
 
-    _entitlements.add_membership(Membership(user_id="dev_user", org_id="org_ci_report", role=MembershipRole.ADMIN))
-    get_run_record_store().record_run(RunRecord(run_id="run_ci_report", org_id="org_ci_report", issue_text="ci report test"))
-
-    monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
-    monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
     reset_audit_logger()
     get_audit_logger(str(tmp_path / "audit"))
 
@@ -219,13 +222,15 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
     engine.register(
         WebhookSubscription(
             id="sub_ci",
-            org_id="org_ci_report",
+            org_id="default",
             url="https://example.com/ci",
             events={WebhookEventType.RUN_ROLLED_BACK},
             max_retries=1,
             retry_backoff_base_seconds=0.01,
         )
     )
+
+    get_run_record_store().record_run(RunRecord(run_id="run_ci_report", org_id="default", issue_text="ci report test"))
 
     patch_diff = (
         "--- a/app.py\n"
@@ -239,7 +244,7 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
         repo_path=str(tmp_path / "repo"),
         issue_description="ci report test",
     )
-    state.shared_data["org_id"] = "org_ci_report"
+    state.shared_data["org_id"] = "default"
     state.patch_diff = patch_diff
     state.save_checkpoint()
 
@@ -249,7 +254,7 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
         json={"merge_time": time.time() - 30, "ci_failure_detected": True},
         headers=headers,
     )
-    assert res.status_code == 200
+    assert res.status_code == 200, f"Got {res.status_code}: {res.text}"
     data = res.json()
     assert data["rollback_needed"] is True
     assert data["revert_patch"] != ""
@@ -259,7 +264,7 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
     assert updated.shared_data["run_status"] == "rolled_back"
     assert updated.shared_data["merge_decision"]["auto_rolled_back"] is True
 
-    entries = get_audit_logger().get_entries(org_id="org_ci_report", action=AuditAction.RUN_ROLLED_BACK)
+    entries = get_audit_logger().get_entries(org_id="default", action=AuditAction.RUN_ROLLED_BACK)
     assert len(entries) == 1
     assert entries[0].actor_id == "ci_monitor"
 
@@ -271,23 +276,17 @@ def test_ci_report_triggers_auto_rollback(tmp_path, monkeypatch):
 
 
 def test_ci_report_no_rollback_without_ci_failure(tmp_path, monkeypatch):
-    from pathlib import Path
-
-    from loom.api.server import _entitlements
-    from loom.business.models import Membership, MembershipRole, RunRecord
+    from loom.business.models import RunRecord
     from loom.orchestrator.state import OrchestratorState
 
-    monkeypatch.setattr(Path, "home", lambda: Path(str(tmp_path)))
-    monkeypatch.setenv("API_KEY_ORG_ID", "org_ci_report")
-    _entitlements.add_membership(Membership(user_id="dev_user", org_id="org_ci_report", role=MembershipRole.ADMIN))
-    get_run_record_store().record_run(RunRecord(run_id="run_ci_ok", org_id="org_ci_report", issue_text="ci ok"))
+    get_run_record_store().record_run(RunRecord(run_id="run_ci_ok", org_id="default", issue_text="ci ok"))
 
     state = OrchestratorState(
         run_id="run_ci_ok",
         repo_path=str(tmp_path / "repo"),
         issue_description="ci ok",
     )
-    state.shared_data["org_id"] = "org_ci_report"
+    state.shared_data["org_id"] = "default"
     state.patch_diff = "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+new\n"
     state.save_checkpoint()
 
@@ -392,7 +391,15 @@ def test_scim_users_crud_authenticated(monkeypatch):
 
 
 def test_issue_and_authenticate_with_api_token(monkeypatch):
+    from loom.auth.api_tokens import reset_api_token_store
+
+    reset_api_token_store()
     monkeypatch.setenv("API_KEY", "env-secret-key")
+    monkeypatch.setenv("API_KEY_ORG_ID", "default")
+    monkeypatch.setenv("API_KEY_USER_ID", "dev_user")
+    monkeypatch.setenv("LOOM_ENV", "development")
+    monkeypatch.setenv("DEV_MODE", "true")
+    monkeypatch.setenv("LOOM_TOKEN_ADMIN_ENABLED", "true")
 
     # Issue API token through the authenticated shared API key.
     issue_res = client.post(

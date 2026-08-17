@@ -9,7 +9,8 @@ from loom.telemetry.tracer import TelemetryTracer
 
 
 @pytest.mark.asyncio
-async def test_full_pipeline_e2e(tmp_path):
+async def test_full_pipeline_e2e(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALLOWED_REPO_ROOTS", str(tmp_path))
     # Setup temporary repository fixture
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()

@@ -146,6 +146,20 @@ def _evidence_dir() -> Path:
     return Path.home() / ".loom" / "evidence"
 
 
+def _checkpoint_dir() -> Path:
+    raw = os.getenv("LOOM_CHECKPOINT_DIR")
+    if raw:
+        return Path(raw)
+    return Path.home() / ".loom" / "checkpoints"
+
+
+def _trace_dir() -> Path:
+    raw = os.getenv("LOOM_TRACE_DIR")
+    if raw:
+        return Path(raw)
+    return Path.home() / ".loom" / "traces"
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -280,7 +294,9 @@ def resolve_request_org(client_org_id: Optional[str] = None) -> str:
 
 router_health = APIRouter(tags=["health"])
 
-BACKUP_LAST_STATUS = Gauge("loom_backup_last_status", "Status of the last production database backup (1=success, 0=failed)")
+BACKUP_LAST_STATUS = _safe_prometheus_metric(
+    Gauge, "loom_backup_last_status", "Status of the last production database backup (1=success, 0=failed)"
+)
 
 
 @router_health.get("/metrics")
@@ -393,9 +409,6 @@ def list_api_tokens(
     user_id: Optional[str] = None,
     _auth: AuthDep = None,
 ) -> list:
-    root_api_key = os.getenv("API_KEY")
-    if _auth and root_api_key and _auth == root_api_key:
-        return []
     token_store = get_api_token_store()
     principal = get_effective_principal()
     try:
@@ -411,8 +424,8 @@ def list_api_tokens(
             }
             for r in token_store.list_active(org_id=principal.org_id, user_id=user_id)
         ]
-    except TokenAdministrationDisabled:
-        return []
+    except TokenAdministrationDisabled as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
 @router_auth.delete("/api/v1/auth/tokens/{token_id}")
@@ -848,7 +861,7 @@ def get_run_ast(
     # Authorize run access
     require_run_access(run_id, Action.VIEW_RUN, principal=principal)
 
-    checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
+    checkpoint_file = _checkpoint_dir() / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
         if run_id not in ACTIVE_RUNS:
             record_store = get_records_store()
@@ -895,7 +908,7 @@ def get_run_evidence(
             "chain_integrity": chain_ok,
             "chain_reason": chain_reason,
         }
-    checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
+    checkpoint_file = _checkpoint_dir() / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
         return {"verified": False, "score": 0, "pytest_output": "No evidence recorded yet."}
     data = json.loads(checkpoint_file.read_text(encoding="utf-8"))
@@ -916,8 +929,8 @@ def get_run(
 ) -> dict:
     require_run_access(run_id, Action.VIEW_RUN, principal=principal)
 
-    checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
-    trace_file = Path.home() / ".loom" / "traces" / f"trace_{run_id}.json"
+    checkpoint_file = _checkpoint_dir() / f"checkpoint_{run_id}.json"
+    trace_file = _trace_dir() / f"trace_{run_id}.json"
 
     if not checkpoint_file.exists():
         raise HTTPException(status_code=404, detail="Run not found")
@@ -964,7 +977,7 @@ def rollback(
 
 
 def _do_rollback(run_id: str) -> dict:
-    checkpoint_file = Path.home() / ".loom" / "checkpoints" / f"checkpoint_{run_id}.json"
+    checkpoint_file = _checkpoint_dir() / f"checkpoint_{run_id}.json"
     if not checkpoint_file.exists():
         raise HTTPException(status_code=404, detail="Checkpoint not found")
 

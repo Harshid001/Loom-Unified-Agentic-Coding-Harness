@@ -1,10 +1,23 @@
 import tempfile
+from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from loom.cli.main import app
+from loom.db.records_store import reset_run_record_store
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def setup_cli_test_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOOM_ENV", "development")
+    monkeypatch.setenv("DEV_MODE", "true")
+    monkeypatch.setenv("ALLOWED_REPO_ROOTS", f"{tmp_path},{Path('.').resolve()}")
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    monkeypatch.setenv("LOOM_RECORDS_DB", str(tmp_path / "records.db"))
+    reset_run_record_store()
 
 
 def test_cli_version():
