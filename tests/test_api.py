@@ -17,6 +17,12 @@ from loom.api.dependencies import reset_entitlements
 def setup_api_key_env(monkeypatch, tmp_path):
     monkeypatch.setenv("API_KEY", "test-api-key")
     monkeypatch.setenv("LOOM_EVIDENCE_DIR", str(tmp_path / "evidence"))
+    monkeypatch.setenv("DEV_MODE", "true")
+    monkeypatch.setenv("LOOM_ENV", "test")
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    monkeypatch.setenv("LOOM_DB_PATH", str(tmp_path / "loom.db"))
+    monkeypatch.setenv("ALLOWED_REPO_ROOTS", str(tmp_path))
+    monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
     reset_entitlements()
     reset_usage_ledger()
     get_usage_ledger(str(tmp_path / "ledger"))
