@@ -2,6 +2,7 @@
 
 import type { FormEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import { Shield, Key, Loader2, AlertCircle } from 'lucide-react';
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const [token, setToken] = useState('');
@@ -101,40 +102,49 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (sessionChecking) {
     return (
-      <main className="min-h-screen bg-[#0B0F19] text-gray-100 flex items-center justify-center px-6">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          <p className="text-xs text-gray-400">Verifying session…</p>
+      <main className="min-h-screen bg-[var(--bg-root)] text-[var(--text-primary)] flex items-center justify-center px-6">
+        <div className="flex flex-col items-center gap-3 font-mono">
+          <Loader2 className="h-6 w-6 animate-spin text-[var(--brand)]" />
+          <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Verifying session…</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#0B0F19] text-gray-100 flex items-center justify-center px-6 selection:bg-indigo-500 selection:text-white">
-      <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-[#111827] p-8 shadow-2xl">
+    <main className="min-h-screen bg-[var(--bg-root)] text-[var(--text-primary)] flex items-center justify-center px-6 selection:bg-[var(--brand)] selection:text-white">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-8 shadow-2xl space-y-6 animate-fadeIn">
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-bold">
+          <div className="h-10 w-10 rounded-xl bg-[var(--brand)] flex items-center justify-center shadow-lg shadow-[var(--brand)]/20 text-white font-mono font-bold text-sm shrink-0">
             L
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Loom Dashboard</h1>
-            <p className="text-xs text-gray-400">Sign in to manage and monitor agentic workflows</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-bold tracking-tight text-[var(--text-primary)] uppercase font-mono">
+                Loom Dashboard
+              </h1>
+              <span className="status-pill status-pill-idle text-[9px] py-0 px-1.5 font-mono">
+                CONTROL PLANE
+              </span>
+            </div>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Authenticate to access autonomous engineering harness
+            </p>
           </div>
         </div>
 
         {error && (
-          <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400 flex items-start gap-2" role="alert">
-            <span className="font-semibold shrink-0">Error:</span>
-            <span>{error}</span>
+          <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-3.5 text-xs text-[var(--danger)] flex items-start gap-2 font-mono" role="alert">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="leading-relaxed flex-1">{error}</div>
           </div>
         )}
 
         {/* Google Sign-In Option */}
-        <div className="mt-6">
+        <div>
           <a
             href="/api/auth/google"
-            className="flex w-full items-center justify-center gap-3 rounded-xl border border-gray-700 bg-gray-900/90 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-gray-800 hover:border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            className="btn-secondary w-full h-10 text-xs font-mono font-semibold gap-2.5 flex items-center justify-center"
           >
             <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
               <path
@@ -158,9 +168,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </a>
         </div>
 
-        <div className="relative my-6 flex items-center justify-center">
-          <div className="w-full border-t border-gray-800" />
-          <span className="absolute bg-[#111827] px-3 text-[11px] font-medium uppercase tracking-wider text-gray-500">
+        <div className="relative my-4 flex items-center justify-center">
+          <div className="w-full border-t border-[var(--border-subtle)]" />
+          <span className="absolute bg-[var(--bg-surface)] px-2.5 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
             or continue with token
           </span>
         </div>
@@ -168,7 +178,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         {/* Token Sign-In Form */}
         <form onSubmit={login} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
+            <label className="block text-[11px] font-mono font-bold uppercase text-[var(--text-muted)] mb-1.5">
               Dashboard Token / Root API Key
             </label>
             <input
@@ -177,19 +187,28 @@ export function AuthGate({ children }: { children: ReactNode }) {
               onChange={(event) => setToken(event.target.value)}
               placeholder="Enter master token or API key"
               autoComplete="current-password"
-              className="w-full rounded-xl border border-gray-700 bg-gray-950 px-3.5 py-2.5 text-sm text-gray-100 outline-none transition placeholder:text-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-root)] px-3.5 py-2 text-xs font-mono text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--brand)]"
             />
           </div>
           <button
             type="submit"
             disabled={checking || !token.trim()}
-            className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-500 disabled:opacity-40"
+            className="btn-primary w-full h-10 text-xs font-mono font-bold uppercase tracking-wider gap-2"
           >
-            {checking ? 'Authenticating…' : 'Sign in with Token'}
+            {checking ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Authenticating…</span>
+              </>
+            ) : (
+              <>
+                <Key className="h-3.5 w-3.5" />
+                <span>Sign in with Token</span>
+              </>
+            )}
           </button>
         </form>
       </div>
     </main>
   );
 }
-
