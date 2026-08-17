@@ -4,8 +4,7 @@ import {
   SESSION_TTL_SECONDS,
   createDashboardSession,
 } from '@/lib/auth';
-// The cookie name is now defined locally to avoid a circular import
-const GOOGLE_OAUTH_STATE_COOKIE = 'google_oauth_state';
+import { verifyOAuthState } from '../route';
 
 function getAppOrigin(req: NextRequest): string {
   const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
@@ -37,9 +36,8 @@ export async function GET(req: NextRequest) {
 
   const code = searchParams.get('code');
   const state = searchParams.get('state');
-  const storedState = req.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)?.value;
 
-  if (!code || !state || !storedState || state !== storedState) {
+  if (!code || !state || !verifyOAuthState(state)) {
     return NextResponse.redirect(`${origin}/?error=invalid_oauth_state`);
   }
 
@@ -108,7 +106,6 @@ export async function GET(req: NextRequest) {
       path: '/',
       maxAge: SESSION_TTL_SECONDS,
     });
-    response.cookies.delete(GOOGLE_OAUTH_STATE_COOKIE);
 
     return response;
   } catch (err) {

@@ -1,7 +1,29 @@
 import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
-export const GOOGLE_OAUTH_STATE_COOKIE = 'loom_google_oauth_state';
+export function signOAuthState(): string {
+  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
+  const payload = Buffer.from(JSON.stringify({ t: Date.now(), n: crypto.randomBytes(16).toString('hex') })).toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+export function verifyOAuthState(state: string | null | undefined): boolean {
+  if (!state || typeof state !== 'string') return false;
+  const parts = state.split('.');
+  if (parts.length !== 2) return false;
+  const [payload, sig] = parts;
+  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
+  const expectedSig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  if (sig !== expectedSig) return false;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const ageMs = Date.now() - Number(data.t);
+    return ageMs >= 0 && ageMs < 15 * 60 * 1000; // 15 minutes validity
+  } catch {
+    return false;
+  }
+}
 
 function getAppOrigin(req: NextRequest): string {
   const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
@@ -20,7 +42,7 @@ export async function GET(req: NextRequest) {
 
   const origin = getAppOrigin(req);
   const redirectUri = `${origin}/api/auth/callback/google`;
-  const state = crypto.randomBytes(32).toString('base64url');
+  const state = signOAuthState();
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', clientId);
@@ -31,16 +53,6 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set('prompt', 'select_account');
   authUrl.searchParams.set('access_type', 'offline');
 
-  const response = NextResponse.redirect(authUrl.toString());
-  response.cookies.set({
-    name: GOOGLE_OAUTH_STATE_COOKIE,
-    value: state,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 10, // 10 minutes
-  });
-
-  return response;
+  return NextResponse.redirect(authUrl.toString());
 }
+
