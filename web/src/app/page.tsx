@@ -174,9 +174,22 @@ function LoomDashboard() {
       <main className="flex-1 flex max-w-7xl w-full mx-auto p-6 gap-6">
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} runHistory={runHistory} selectedRun={selectedRun} setSelectedRun={setSelectedRun} isLoadingRuns={isLoadingRuns} />
         <section className="flex-1 flex flex-col min-w-0">
-          {activeTab === 'overview' && <OverviewTab displayData={displayData} selectedRun={selectedRun} onRollback={handleRollback} isLoadingDetails={isLoadingDetails} />}
-          {activeTab === 'dag' && <DagTab displayData={displayData} />}
-          {activeTab === 'diff' && <DiffTab displayData={displayData} />}
+          {activeTab === 'overview' && (
+            <OverviewTab
+              displayData={displayData}
+              selectedRun={selectedRun}
+              onRollback={handleRollback}
+              isLoadingDetails={isLoadingDetails}
+              onOpenLiveBox={handleOpenLiveBox}
+              onSelectStarterIssue={(issue: string) => {
+                setNewIssue(issue);
+                setIsLiveBoxOpen(true);
+              }}
+              activeModel={selectedModel}
+            />
+          )}
+          {activeTab === 'dag' && <DagTab displayData={displayData} onOpenLiveBox={handleOpenLiveBox} />}
+          {activeTab === 'diff' && <DiffTab displayData={displayData} onOpenLiveBox={handleOpenLiveBox} />}
           {activeTab === 'ablations' && <AblationsTab displayData={displayData} />}
         </section>
       </main>

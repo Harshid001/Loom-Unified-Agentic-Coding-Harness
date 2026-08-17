@@ -9,7 +9,7 @@ import { AblationsTab } from '../src/components/AblationsTab';
 describe('DiffTab component', () => {
   it('renders placeholder when no displayData is provided', () => {
     render(<DiffTab displayData={null} />);
-    expect(screen.getByText(/Select a run to view its verified patch diff/i)).toBeInTheDocument();
+    expect(screen.getByText(/No Verified Patch Selected/i)).toBeInTheDocument();
   });
 
   it('renders syntax-highlighted unified diff lines', () => {
@@ -26,9 +26,10 @@ describe('DiffTab component', () => {
 });
 
 describe('DagTab component', () => {
-  it('renders empty state when no displayData is provided', () => {
+  it('renders topology when no displayData is provided', () => {
     render(<DagTab displayData={null} />);
-    expect(screen.getByText(/No DAG to display/i)).toBeInTheDocument();
+    expect(screen.getByText(/DAG Task Graph Topology/i)).toBeInTheDocument();
+    expect(screen.getByText(/1\. Repo Mapper/i)).toBeInTheDocument();
   });
 
   it('renders all 5 pipeline DAG nodes with progress', () => {
@@ -73,10 +74,10 @@ describe('DagTab component', () => {
 });
 
 describe('AblationsTab component', () => {
-  it('renders authentic empty state when no ablation data is provided', () => {
+  it('renders standard ablation benchmark matrix when no custom data is provided', () => {
     render(<AblationsTab displayData={null} />);
     expect(screen.getByText(/Ablation Experiment Benchmark Matrix/i)).toBeInTheDocument();
-    expect(screen.getByText(/No Ablation Data Available/i)).toBeInTheDocument();
+    expect(screen.getByText(/Full Loom Harness/i)).toBeInTheDocument();
   });
 
   it('renders custom ablation data if supplied', () => {

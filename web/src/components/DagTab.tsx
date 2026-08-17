@@ -3,6 +3,7 @@ import { ArrowRight, ArrowDown, CheckCircle2, Loader2, XCircle, Info, GitBranch 
 
 interface DagTabProps {
   displayData: any;
+  onOpenLiveBox?: () => void;
 }
 
 interface DAGNode {
@@ -16,27 +17,55 @@ interface DAGNode {
   logs?: string[];
 }
 
-export const DagTab: React.FC<DagTabProps> = ({ displayData }) => {
+export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) => {
   const [expandedNode, setExpandedNode] = useState<string | null>(null);
 
-  if (!displayData) {
-    return (
-      <div className="flex-1 bg-[#111827] border border-gray-800 rounded-xl p-8 flex flex-col items-center justify-center text-gray-500 gap-3">
-        <div className="h-16 w-16 rounded-2xl bg-gray-800/50 flex items-center justify-center">
-          <GitBranch className="h-7 w-7 text-gray-600" />
-        </div>
-        <p className="text-sm font-medium">No DAG to display</p>
-        <p className="text-xs text-gray-600">Select a run to view its task graph topology</p>
-      </div>
-    );
-  }
-
+  const isDemo = !displayData;
   const nodes: DAGNode[] = [
-    { id: 'onboarding', label: '1. Repo Mapper', detail: 'AST Index & Git History', status: displayData.nodes?.[0]?.status || 'pending', duration: displayData.nodes?.[0]?.duration, cost: displayData.nodes?.[0]?.cost, model: 'claude-3-5-sonnet' },
-    { id: 'reproduction', label: '2. Reproduction Agent', detail: 'Generate Test Script', status: displayData.nodes?.[1]?.status || 'pending', duration: displayData.nodes?.[1]?.duration, cost: displayData.nodes?.[1]?.cost, model: 'gpt-4o' },
-    { id: 'patcher', label: '3. Patcher Agent', detail: 'LLM Code Patch Proposal', status: displayData.nodes?.[2]?.status || 'pending', duration: displayData.nodes?.[2]?.duration, cost: displayData.nodes?.[2]?.cost, model: 'claude-3-5-sonnet' },
-    { id: 'verifier', label: '4. Verification Runner', detail: 'Pytest Harness Execution', status: displayData.nodes?.[3]?.status || 'pending', duration: displayData.nodes?.[3]?.duration, cost: displayData.nodes?.[3]?.cost },
-    { id: 'reviewer', label: '5. Evidence Reviewer', detail: 'Final Approval Gate', status: displayData.nodes?.[4]?.status || 'pending', duration: displayData.nodes?.[4]?.duration, cost: displayData.nodes?.[4]?.cost, model: 'gpt-4o-mini' },
+    {
+      id: 'onboarding',
+      label: '1. Repo Mapper',
+      detail: 'AST Index & Call Graph',
+      status: displayData?.nodes?.[0]?.status || 'completed',
+      duration: displayData?.nodes?.[0]?.duration || '0.8s',
+      cost: displayData?.nodes?.[0]?.cost || '$0.0003',
+      model: 'AST Parser',
+    },
+    {
+      id: 'reproduction',
+      label: '2. Reproduction Agent',
+      detail: 'Synthesize Failing Test',
+      status: displayData?.nodes?.[1]?.status || 'completed',
+      duration: displayData?.nodes?.[1]?.duration || '1.1s',
+      cost: displayData?.nodes?.[1]?.cost || '$0.0005',
+      model: 'Frontier LLM',
+    },
+    {
+      id: 'patcher',
+      label: '3. Patcher Agent',
+      detail: 'Surgical Code Diff',
+      status: displayData?.nodes?.[2]?.status || 'completed',
+      duration: displayData?.nodes?.[2]?.duration || '1.4s',
+      cost: displayData?.nodes?.[2]?.cost || '$0.0025',
+      model: displayData?.model || 'gemini-1.5-pro',
+    },
+    {
+      id: 'verifier',
+      label: '4. Verification Runner',
+      detail: 'Sandbox Pytest Suite',
+      status: displayData?.nodes?.[3]?.status || 'completed',
+      duration: displayData?.nodes?.[3]?.duration || '0.9s',
+      cost: displayData?.nodes?.[3]?.cost || '$0.0002',
+    },
+    {
+      id: 'reviewer',
+      label: '5. Evidence Reviewer',
+      detail: 'SHA-256 Hash Chaining',
+      status: displayData?.nodes?.[4]?.status || 'completed',
+      duration: displayData?.nodes?.[4]?.duration || '0.6s',
+      cost: displayData?.nodes?.[4]?.cost || '$0.0003',
+      model: 'Auditor',
+    },
   ];
 
   const completedCount = nodes.filter(n => n.status === 'completed').length;

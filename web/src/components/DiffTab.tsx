@@ -3,13 +3,28 @@ import { FileCode } from 'lucide-react';
 
 interface DiffTabProps {
   displayData: any;
+  onOpenLiveBox?: () => void;
 }
 
-export const DiffTab: React.FC<DiffTabProps> = ({ displayData }) => {
+export const DiffTab: React.FC<DiffTabProps> = ({ displayData, onOpenLiveBox }) => {
   if (!displayData) {
     return (
-      <div className="flex-1 bg-[#111827] border border-gray-800 rounded-xl p-8 flex items-center justify-center text-gray-500 text-sm">
-        Select a run to view its verified patch diff.
+      <div className="flex-1 bg-[#111827] border border-gray-800 rounded-xl p-8 flex flex-col items-center justify-center text-center gap-4">
+        <div className="h-16 w-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+          <FileCode className="h-8 w-8" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-white mb-1">No Verified Patch Selected</h3>
+          <p className="text-xs text-gray-400 max-w-md">
+            When an autonomous run executes, Loom's Patcher agent synthesizes a surgical code diff, verifies it in an isolated sandbox, and renders it here with syntax-highlighted additions and removals.
+          </p>
+        </div>
+        <button
+          onClick={onOpenLiveBox}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition flex items-center gap-2"
+        >
+          <span>Launch Run to Generate Patch</span>
+        </button>
       </div>
     );
   }
