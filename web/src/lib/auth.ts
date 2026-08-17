@@ -58,9 +58,11 @@ export function validateDashboardSession(value: string): boolean {
 export function validateSameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get('origin');
   if (!origin) return true;
-  const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
-  if (configured) return origin === configured;
-  return origin === `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+  const appOrigin = getAppOrigin(req);
+  if (origin === appOrigin) return true;
+  const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const cleanAppOrigin = appOrigin.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return cleanOrigin === cleanAppOrigin;
 }
 
 export function validateRequestAuth(req: NextRequest): { isAuthorized: boolean; reason?: string } {
