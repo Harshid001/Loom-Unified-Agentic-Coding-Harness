@@ -156,7 +156,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <Layers className="h-3.5 w-3.5 text-[var(--brand-hover)]" />
           </div>
           <span className="font-bold tracking-tight text-[var(--text-primary)] uppercase text-[11px]">
-            LOOM <span className="text-[var(--text-muted)] font-normal">// v0.1.0</span>
+            LOOM <span className="text-[var(--text-muted)] font-normal">{'// v0.1.0'}</span>
           </span>
         </div>
 
