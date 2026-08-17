@@ -4,7 +4,8 @@ import {
   SESSION_TTL_SECONDS,
   createDashboardSession,
 } from '@/lib/auth';
-import { GOOGLE_OAUTH_STATE_COOKIE } from '../route';
+// The cookie name is now defined locally to avoid a circular import
+const GOOGLE_OAUTH_STATE_COOKIE = 'google_oauth_state';
 
 function getAppOrigin(req: NextRequest): string {
   const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
