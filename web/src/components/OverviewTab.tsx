@@ -7,17 +7,13 @@ import {
   ShieldCheck,
   RotateCcw,
   Loader2,
-  GitBranch,
-  ArrowRight,
-  ListTodo,
   FileCode,
   Box,
   TestTube2,
   Play,
   Copy,
   Check,
-  Sparkles,
-  ExternalLink,
+  ListTodo,
 } from 'lucide-react';
 import { ExecutionGraph, ExecutionStage } from './ExecutionGraph';
 import { EvidenceView } from './EvidenceView';
@@ -42,25 +38,21 @@ const STARTER_TASKS = [
     icon: '⚡',
     title: 'OAuth State Replay Guard',
     issue: 'Implement cryptographic state verification for OAuth redirects',
-    desc: 'Prevents cross-origin token replays and forgery attacks',
   },
   {
     icon: '🛡️',
-    title: 'Context Manager Budget Estimator',
+    title: 'Context Budget Estimator',
     issue: 'Fix token budget estimation edge case in context manager',
-    desc: 'Prevents AST graph truncation on large codebases',
   },
   {
     icon: '📈',
-    title: 'AST Symbol Dependency Indexer',
+    title: 'AST Symbol Indexer',
     issue: 'Optimize AST call graph dependency indexer for Python & TypeScript',
-    desc: 'Enhances Tree-Sitter symbol resolution speed',
   },
   {
     icon: '🧪',
-    title: 'Sandbox Egress Isolation Suite',
+    title: 'Sandbox Egress Suite',
     issue: 'Synthesize regression test suite for sandbox tier guards',
-    desc: 'Verifies network egress filtering on Tier B containers',
   },
 ];
 
@@ -79,7 +71,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 }) => {
   const [detailTab, setDetailTab] = useState<'overview' | 'logs' | 'diff' | 'tests' | 'sandbox' | 'evidence'>('overview');
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
-  const [quickPrompt, setQuickPrompt] = useState('');
   const [copiedLogs, setCopiedLogs] = useState(false);
 
   // Map backend trace events to 5-stage DAG
@@ -142,16 +133,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     { time: '18:42:43', step: 'REVIEW', message: 'Evidence bundle verified and sealed with root hash: ef2d127de37b942b' },
   ];
 
-  const handleQuickLaunch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (quickPrompt.trim() && onSelectStarterIssue) {
-      onSelectStarterIssue(quickPrompt.trim());
-      setQuickPrompt('');
-    } else if (onOpenLiveBox) {
-      onOpenLiveBox();
-    }
-  };
-
   const handleCopyLogs = () => {
     const text = sampleLogs.map(l => `[${l.time}] [${l.step}] ${l.message}`).join('\n');
     navigator.clipboard.writeText(text);
@@ -170,85 +151,44 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
   return (
     <div className="flex-1 flex flex-col gap-5" id="tabpanel-overview" role="tabpanel">
-      {/* 1. COMMAND & CONTROL HERO WITH QUICK-LAUNCH INPUT */}
-      <div className="loom-card-elevated space-y-4">
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">
-                CONTROL PLANE
-              </span>
-              <span className="text-xs font-mono text-[var(--text-muted)]">v2.4.0</span>
-            </div>
-            <h2 className="text-base font-bold text-[var(--text-primary)] tracking-tight uppercase font-mono">
-              Autonomous Engineering Control Plane
-            </h2>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5 max-w-2xl">
-              Solve software issues through a verified multi-agent execution pipeline with isolated sandboxes and cryptographic evidence bundles.
-            </p>
+      {/* 1. CLEAN HERO BANNER */}
+      <div className="loom-card-elevated flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">
+              CONTROL PLANE
+            </span>
+            <span className="text-xs font-mono text-[var(--text-muted)]">v2.4.0</span>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenLiveBox}
-              className="btn-primary h-8 px-3.5 text-xs gap-1.5"
-            >
-              <Play className="h-3 w-3 fill-current" />
-              <span>New Run</span>
-            </button>
-            {onOpenIssuesDrawer && (
-              <button
-                onClick={onOpenIssuesDrawer}
-                className="btn-secondary h-8 px-3 text-xs gap-1.5"
-              >
-                <ListTodo className="h-3.5 w-3.5 text-[var(--brand)]" />
-                <span>Browse Issues ({githubIssues.length})</span>
-              </button>
-            )}
-          </div>
+          <h2 className="text-base font-bold text-[var(--text-primary)] tracking-tight uppercase font-mono">
+            Autonomous Engineering Control Plane
+          </h2>
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5 max-w-2xl">
+            Solve software issues through a verified multi-agent execution pipeline with isolated sandboxes and cryptographic evidence bundles.
+          </p>
         </div>
 
-        {/* Quick Task Launcher Bar */}
-        <form onSubmit={handleQuickLaunch} className="pt-2 border-t border-[var(--border-subtle)]">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Sparkles className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--brand)]" />
-              <input
-                type="text"
-                value={quickPrompt}
-                onChange={e => setQuickPrompt(e.target.value)}
-                placeholder="Describe an engineering task or bug to solve (e.g. 'Fix race condition in DAG state machine')..."
-                className="w-full bg-[var(--bg-root)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg pl-8 pr-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none"
-              />
-            </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenLiveBox}
+            className="btn-primary h-8 px-3.5 text-xs gap-1.5"
+          >
+            <Play className="h-3 w-3 fill-current" />
+            <span>New Run</span>
+          </button>
+          {onOpenIssuesDrawer && (
             <button
-              type="submit"
-              className="btn-primary h-9 px-4 text-xs gap-1.5 font-mono shrink-0"
+              onClick={onOpenIssuesDrawer}
+              className="btn-secondary h-8 px-3 text-xs gap-1.5"
             >
-              <span>Launch Fix</span>
-              <ArrowRight className="h-3 w-3" />
+              <ListTodo className="h-3.5 w-3.5 text-[var(--brand)]" />
+              <span>Browse Issues ({githubIssues.length})</span>
             </button>
-          </div>
-
-          {/* Quick-Select Suggestions */}
-          <div className="flex items-center gap-2 mt-2.5 overflow-x-auto text-[11px] font-mono text-[var(--text-muted)] no-scrollbar">
-            <span className="shrink-0 text-[10px] uppercase font-bold text-[var(--text-muted)]">Quick Tasks:</span>
-            {STARTER_TASKS.slice(0, 3).map((task, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => onSelectStarterIssue?.(task.issue)}
-                className="shrink-0 px-2 py-0.5 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition flex items-center gap-1 text-[10px]"
-              >
-                <span>{task.icon}</span>
-                <span>{task.title}</span>
-              </button>
-            ))}
-          </div>
-        </form>
+          )}
+        </div>
       </div>
 
-      {/* 2. REAL-TIME SYSTEM STATE METRIC TILES */}
+      {/* 2. REAL-TIME SYSTEM STATE STRIP */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
         <div className="loom-card p-3 flex items-center justify-between">
           <div>
@@ -283,7 +223,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       </div>
 
-      {/* 3. SIGNATURE 5-STAGE CONNECTED EXECUTION GRAPH */}
+      {/* 3. 5-STAGE EXECUTION GRAPH */}
       <div className="loom-card">
         <ExecutionGraph
           stages={stages}
@@ -298,7 +238,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         />
       </div>
 
-      {/* 4. ACTIVE RUN WORKSTATION & ARTIFACT INSPECTOR */}
+      {/* 4. ACTIVE RUN WORKSTATION & DETAILS */}
       <div className="loom-card flex flex-col gap-4">
         {/* Run Header with Metadata */}
         <div className="flex items-start justify-between flex-wrap gap-3 pb-3 border-b border-[var(--border-subtle)]">
@@ -341,15 +281,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         </div>
 
-        {/* Execution Details Subtabs */}
+        {/* Subtabs Bar */}
         <div className="flex items-center gap-1 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto">
           {[
             { id: 'overview' as const, label: 'Overview', icon: Activity },
-            { id: 'logs' as const, label: 'Logs', icon: Terminal, count: sampleLogs.length },
-            { id: 'diff' as const, label: 'Diff', icon: FileCode, count: '+12/-4' },
-            { id: 'tests' as const, label: 'Tests', icon: TestTube2, count: '48/48' },
+            { id: 'logs' as const, label: 'Logs', icon: Terminal },
+            { id: 'diff' as const, label: 'Diff', icon: FileCode },
+            { id: 'tests' as const, label: 'Tests', icon: TestTube2 },
             { id: 'sandbox' as const, label: 'Sandbox', icon: Box },
-            { id: 'evidence' as const, label: 'Evidence', icon: ShieldCheck, count: 'SHA-256' },
+            { id: 'evidence' as const, label: 'Evidence', icon: ShieldCheck },
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = detailTab === tab.id;
@@ -365,11 +305,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               >
                 <Icon className="h-3.5 w-3.5" />
                 <span>{tab.label}</span>
-                {tab.count && (
-                  <span className={`text-[9px] px-1 py-0.2 rounded ${isActive ? 'bg-[var(--brand)] text-white' : 'bg-[var(--bg-surface)] text-[var(--text-muted)]'}`}>
-                    {tab.count}
-                  </span>
-                )}
               </button>
             );
           })}
@@ -531,42 +466,27 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         )}
       </div>
 
-      {/* 5. 1-CLICK ISSUE RUNNER / STARTERS GRID */}
-      <div className="loom-card space-y-3">
-        <div>
+      {/* 5. MINIMAL STARTER TASKS */}
+      <div className="loom-card space-y-2.5">
+        <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider font-mono">
-            1-Click Benchmark Tasks
+            Benchmark Tasks
           </h3>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Launch autonomous runs immediately with predefined issue specs
-          </p>
+          <span className="text-[10px] font-mono text-[var(--text-muted)]">1-Click Launch</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
           {STARTER_TASKS.map((task, idx) => (
             <button
               key={idx}
               onClick={() => onSelectStarterIssue?.(task.issue)}
-              className="p-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-hover)] text-left transition flex items-start gap-3 group"
+              className="p-2.5 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--brand)] hover:bg-[var(--bg-hover)] text-left transition flex items-center gap-2 group"
             >
-              <span className="text-lg p-1.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] group-hover:scale-105 transition shrink-0">
-                {task.icon}
-              </span>
+              <span className="text-sm shrink-0">{task.icon}</span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--brand-hover)] transition font-mono">
-                    {task.title}
-                  </h4>
-                  <span className="text-[11px] font-mono text-[var(--brand)] flex items-center gap-1 group-hover:translate-x-0.5 transition">
-                    Run →
-                  </span>
-                </div>
-                <p className="text-xs text-[var(--text-secondary)] font-mono mt-0.5 truncate">
-                  {task.issue}
-                </p>
-                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                  {task.desc}
-                </p>
+                <h4 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--brand-hover)] transition font-mono truncate">
+                  {task.title}
+                </h4>
               </div>
             </button>
           ))}
