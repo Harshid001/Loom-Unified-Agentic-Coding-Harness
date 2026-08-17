@@ -4,13 +4,11 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from fnmatch import fnmatch
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from loom.adapters.base import BaseModelAdapter
 from loom.adapters.litellm_adapter import LiteLLMAdapter
-from loom.business.path_policy import DEFAULT_SENSITIVE_GLOBS, PatchApprovalPolicy
-
+from loom.business.path_policy import PatchApprovalPolicy
 
 logger = logging.getLogger("loom.adapters.router")
 
@@ -30,6 +28,7 @@ DEFAULT_SENSITIVE_GLOBS = [
 ]
 
 PROVIDER_KEY_ENV_MAP: Dict[str, List[str]] = {
+
     "anthropic": ["ANTHROPIC_API_KEY"],
     "openai": ["OPENAI_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
