@@ -5,7 +5,7 @@ import {
   DASHBOARD_SESSION_COOKIE,
   SESSION_TTL_SECONDS,
   createDashboardSession,
-  isDashboardTokenValid,
+  isDashboardTokenValidAsync,
   validateSameOrigin,
 } from '@/lib/auth';
 
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ detail: 'Too many failed login attempts' }, { status: 429 });
   }
 
-  if (!isDashboardTokenValid(token)) {
+  if (!(await isDashboardTokenValidAsync(token))) {
     recordFailure(key);
     return NextResponse.json({ detail: 'Invalid dashboard credentials' }, { status: 401 });
   }
