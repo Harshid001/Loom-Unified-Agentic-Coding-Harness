@@ -18,9 +18,9 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
       number: '01',
       name: 'MAPPER',
       role: 'AST Call Graph',
-      status: displayData ? (displayData.nodes?.[0]?.status === 'completed' ? 'SUCCEEDED' : 'RUNNING') : 'SUCCEEDED',
-      duration: displayData?.nodes?.[0]?.duration || '12.4s',
-      cost: displayData?.nodes?.[0]?.cost || '$0.0003',
+      status: displayData ? (displayData.nodes?.[0]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[0]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
+      duration: displayData?.nodes?.[0]?.duration || '--',
+      cost: displayData?.nodes?.[0]?.cost || '--',
       model: 'Tree-Sitter AST',
       summary: 'Indexes repository files and resolves symbol proximity call graphs.',
     },
@@ -29,10 +29,10 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
       number: '02',
       name: 'REPRO',
       role: 'Failing Test Synthesis',
-      status: displayData ? (displayData.nodes?.[1]?.status === 'completed' ? 'SUCCEEDED' : 'RUNNING') : 'SUCCEEDED',
-      duration: displayData?.nodes?.[1]?.duration || '31.2s',
-      cost: displayData?.nodes?.[1]?.cost || '$0.0008',
-      model: 'Claude 3.7 Sonnet',
+      status: displayData ? (displayData.nodes?.[1]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[1]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
+      duration: displayData?.nodes?.[1]?.duration || '--',
+      cost: displayData?.nodes?.[1]?.cost || '--',
+      model: displayData?.model || 'Active Model',
       summary: 'Synthesizes deterministic failing test suite validating the target bug (Red phase).',
     },
     {
@@ -40,10 +40,10 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
       number: '03',
       name: 'PATCH',
       role: 'Surgical Code Modification',
-      status: displayData ? (displayData.nodes?.[2]?.status === 'completed' ? 'SUCCEEDED' : 'RUNNING') : 'SUCCEEDED',
-      duration: displayData?.nodes?.[2]?.duration || '18.7s',
-      cost: displayData?.nodes?.[2]?.cost || '$0.0025',
-      model: 'Claude 3.7 Sonnet',
+      status: displayData ? (displayData.nodes?.[2]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[2]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
+      duration: displayData?.nodes?.[2]?.duration || '--',
+      cost: displayData?.nodes?.[2]?.cost || '--',
+      model: displayData?.model || 'Active Model',
       summary: 'Generates unified code patch modifying only relevant AST subtrees.',
     },
     {
@@ -51,9 +51,9 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
       number: '04',
       name: 'VERIFY',
       role: 'Sandbox Pytest Suite',
-      status: displayData ? (displayData.nodes?.[3]?.status === 'completed' ? 'SUCCEEDED' : 'RUNNING') : 'SUCCEEDED',
-      duration: displayData?.nodes?.[3]?.duration || '9.1s',
-      cost: displayData?.nodes?.[3]?.cost || '$0.0002',
+      status: displayData ? (displayData.nodes?.[3]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[3]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
+      duration: displayData?.nodes?.[3]?.duration || '--',
+      cost: displayData?.nodes?.[3]?.cost || '--',
       model: 'Tier B Container',
       summary: 'Executes reproduction and full regression test suite inside isolated sandbox (Green phase).',
     },
@@ -62,9 +62,9 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
       number: '05',
       name: 'REVIEW',
       role: 'Evidence Bundle Seal',
-      status: displayData ? (displayData.nodes?.[4]?.status === 'completed' ? 'SUCCEEDED' : 'RUNNING') : 'VERIFIED',
-      duration: displayData?.nodes?.[4]?.duration || '4.3s',
-      cost: displayData?.nodes?.[4]?.cost || '$0.0003',
+      status: displayData ? (displayData.nodes?.[4]?.status === 'completed' ? 'VERIFIED' : displayData.nodes?.[4]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
+      duration: displayData?.nodes?.[4]?.duration || '--',
+      cost: displayData?.nodes?.[4]?.cost || '--',
       model: 'Proof Layer Auditor',
       summary: 'Constructs SHA-256 hash chains across all artifacts and seals execution proof.',
     },
@@ -105,6 +105,58 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
           onSelectStage={setSelectedStage}
         />
       </div>
+
+      {/* Selected Stage Detail Inspector */}
+      {selectedStage && (
+        (() => {
+          const currentStage = stages.find(s => s.id === selectedStage);
+          if (!currentStage) return null;
+          return (
+            <div className="loom-card-active space-y-3 animate-fadeIn">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-[var(--brand)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">
+                    STAGE {currentStage.number}
+                  </span>
+                  <h3 className="text-sm font-bold text-[var(--text-primary)] font-mono">
+                    {currentStage.name} — {currentStage.role}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`status-pill ${currentStage.status === 'SUCCEEDED' || currentStage.status === 'VERIFIED' ? 'status-pill-verified' : currentStage.status === 'RUNNING' ? 'status-pill-running' : 'status-pill-idle'} text-[10px]`}>
+                    {currentStage.status}
+                  </span>
+                  <button
+                    onClick={() => setSelectedStage(null)}
+                    className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-mono px-2 py-0.5 rounded hover:bg-[var(--bg-hover)] transition"
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-[var(--text-secondary)]">
+                {currentStage.summary}
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-[var(--border-subtle)] text-xs font-mono">
+                <div className="p-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                  <span className="text-[10px] text-[var(--text-muted)] uppercase">Assigned Model / Engine</span>
+                  <p className="font-bold text-[var(--cyan)] mt-0.5">{currentStage.model || 'Active Model'}</p>
+                </div>
+                <div className="p-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                  <span className="text-[10px] text-[var(--text-muted)] uppercase">Stage Duration</span>
+                  <p className="font-bold text-[var(--text-primary)] mt-0.5">{currentStage.duration || '--'}</p>
+                </div>
+                <div className="p-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                  <span className="text-[10px] text-[var(--text-muted)] uppercase">Attributed Cost</span>
+                  <p className="font-bold text-[var(--success)] mt-0.5">{currentStage.cost || '--'}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()
+      )}
 
       {/* Precondition State Machine Matrix */}
       <div className="loom-card">

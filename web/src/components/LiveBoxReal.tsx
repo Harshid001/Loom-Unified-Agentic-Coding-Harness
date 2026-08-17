@@ -63,8 +63,22 @@ export function LiveBoxReal({
   const [prError, setPrError] = useState<string | null>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const logsEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => () => eventSourceRef.current?.close(), []);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const addLog = useCallback((entry: LogEntry) => {
     setLogs(prev => [...prev, entry]);
@@ -203,8 +217,17 @@ export function LiveBoxReal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="livebox-title">
-      <div className="flex h-[88vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn cursor-pointer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="livebox-title"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-[88vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-2xl cursor-default"
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] px-6 py-4">
           <div className="flex items-center gap-3">
@@ -361,6 +384,7 @@ export function LiveBoxReal({
                     <span className="text-[var(--text-primary)]">{log.message}</span>
                   </div>
                 ))}
+                <div ref={logsEndRef} />
               </div>
             </div>
 

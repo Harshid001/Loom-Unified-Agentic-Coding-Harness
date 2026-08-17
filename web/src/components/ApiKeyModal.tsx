@@ -101,15 +101,28 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn"
+      className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn cursor-pointer"
       role="dialog"
       aria-modal="true"
+      onClick={onClose}
     >
-      <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+      <div
+        className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 cursor-default"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
           <div className="flex items-center gap-2">
             <div className="h-7 w-7 rounded-lg bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center text-[var(--brand)]">

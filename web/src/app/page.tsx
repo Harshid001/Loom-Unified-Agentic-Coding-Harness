@@ -70,7 +70,7 @@ function LoomControlPlane() {
     createPullRequest,
   } = githubState;
 
-  const repoPath = connectedRepo?.fullName || 'Loom-Unified-Agentic';
+  const repoPath = connectedRepo?.fullName || '';
 
   const {
     selectedRun,
@@ -178,13 +178,13 @@ function LoomControlPlane() {
                 cost: t.cost ? `$${t.cost.toFixed(4)}` : '--',
               }))
             : [
-                { name: 'onboarding', label: 'Repo Mapper', status: 'completed', duration: '12.4s', cost: '$0.0003' },
-                { name: 'reproduction', label: 'Reproduction Agent', status: 'completed', duration: '31.2s', cost: '$0.0008' },
-                { name: 'patcher', label: 'Patcher Agent', status: 'completed', duration: '18.7s', cost: '$0.0025' },
-                { name: 'verifier', label: 'Verification Runner', status: 'completed', duration: '9.1s', cost: '$0.0002' },
-                { name: 'reviewer', label: 'Evidence Bundle Reviewer', status: 'completed', duration: '4.3s', cost: '$0.0003' },
+                { name: 'onboarding', label: 'Repo Mapper', status: checkpoint.verification_passed ? 'completed' : 'pending', duration: '--', cost: '--' },
+                { name: 'reproduction', label: 'Reproduction Agent', status: checkpoint.verification_passed ? 'completed' : 'pending', duration: '--', cost: '--' },
+                { name: 'patcher', label: 'Patcher Agent', status: checkpoint.verification_passed ? 'completed' : 'pending', duration: '--', cost: '--' },
+                { name: 'verifier', label: 'Verification Runner', status: checkpoint.verification_passed ? 'completed' : 'pending', duration: '--', cost: '--' },
+                { name: 'reviewer', label: 'Evidence Bundle Reviewer', status: checkpoint.verification_passed ? 'completed' : 'pending', duration: '--', cost: '--' },
               ],
-        patchDiff: checkpoint.patch_diff || 'No patch diff recorded for this run.',
+        patchDiff: checkpoint.patch_diff || '',
         reproductionTest: checkpoint.reproduction_test,
         snapshotId: checkpoint.snapshot_id,
         createdAt: checkpoint.created_at,
@@ -228,7 +228,7 @@ function LoomControlPlane() {
           setSelectedRun={setSelectedRun}
           isLoadingRuns={isLoadingRuns}
           onOpenRepoModal={() => setIsRepoModalOpen(true)}
-          connectedRepoName={connectedRepo?.fullName || 'Loom-Unified-Agentic'}
+          connectedRepoName={connectedRepo?.fullName || 'No Repository Connected'}
         />
 
         <main className="flex-1 flex flex-col min-w-0">
@@ -261,7 +261,7 @@ function LoomControlPlane() {
                     Execution Runs History
                   </h2>
                   <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                    Chronological ledger of multi-agent DAG runs and verification checkpoints
+                    Chronological ledger of multi-agent DAG runs for {connectedRepo?.fullName || 'this workspace'}
                   </p>
                 </div>
                 <button
@@ -273,31 +273,44 @@ function LoomControlPlane() {
                 </button>
               </div>
 
-              <div className="space-y-2">
-                {runHistory.map(r => (
-                  <div
-                    key={r.id}
-                    onClick={() => {
-                      setSelectedRun(r.id);
-                      setActiveTab('overview');
-                    }}
-                    className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-hover)] transition cursor-pointer flex items-center justify-between gap-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs font-bold text-[var(--brand-hover)]">{r.id}</span>
-                        <span className={`status-pill ${r.status === 'VERIFIED SUCCESS' ? 'status-pill-verified' : r.status === 'FAILED' ? 'status-pill-failed' : 'status-pill-running'} text-[10px]`}>
-                          {r.status}
-                        </span>
+              {runHistory.length > 0 ? (
+                <div className="space-y-2">
+                  {runHistory.map(r => (
+                    <div
+                      key={r.id}
+                      onClick={() => {
+                        setSelectedRun(r.id);
+                        setActiveTab('overview');
+                      }}
+                      className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-hover)] transition cursor-pointer flex items-center justify-between gap-4"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-xs font-bold text-[var(--brand-hover)]">{r.id}</span>
+                          <span className={`status-pill ${r.status === 'VERIFIED SUCCESS' ? 'status-pill-verified' : r.status === 'FAILED' ? 'status-pill-failed' : 'status-pill-running'} text-[10px]`}>
+                            {r.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[var(--text-primary)] font-sans">{r.issue}</p>
                       </div>
-                      <p className="text-xs text-[var(--text-primary)] font-sans">{r.issue}</p>
+                      <div className="text-right font-mono text-xs text-[var(--text-muted)] shrink-0">
+                        <span>{r.cost ? `$${r.cost.toFixed(4)}` : '--'}</span>
+                      </div>
                     </div>
-                    <div className="text-right font-mono text-xs text-[var(--text-muted)] shrink-0">
-                      <span>{r.cost ? `$${r.cost.toFixed(4)}` : '$0.0038'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-xs text-[var(--text-muted)] flex flex-col items-center gap-3">
+                  <p>No execution runs recorded yet for {connectedRepo?.fullName || 'this repository'}.</p>
+                  <button
+                    onClick={() => setIsNewRunModalOpen(true)}
+                    className="btn-primary h-8 px-3 text-xs gap-1.5"
+                  >
+                    <Play className="h-3 w-3 fill-current" />
+                    <span>Launch First Run</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -314,17 +327,17 @@ function LoomControlPlane() {
                   Multi-Agent Architecture
                 </h2>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Specialized agent roles coordinated under the preconditioned DAG harness
+                  Specialized agent roles coordinated under the DAG harness for {connectedRepo?.fullName || 'current workspace'}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[
-                  { name: 'Repo Mapper Agent', role: 'Tree-Sitter AST & Call Graph Proximity', model: 'Tree-Sitter / TF-IDF', budget: '2,000 tokens' },
-                  { name: 'Reproduction Agent', role: 'Failing Pytest Synthesis (Red Phase)', model: selectedModel, budget: '16,000 tokens' },
+                  { name: 'Repo Mapper Agent', role: 'Tree-Sitter AST & Call Graph Proximity', model: 'Tree-Sitter AST', budget: 'Symbol Indexer' },
+                  { name: 'Reproduction Agent', role: 'Failing Test Synthesis (Red Phase)', model: selectedModel, budget: '16,000 tokens' },
                   { name: 'Patcher Agent', role: 'Surgical Unified Code Modification', model: selectedModel, budget: '32,000 tokens' },
-                  { name: 'Verifier Agent', role: 'Isolated Container Pytest Execution', model: 'Sandbox Tier B', budget: '60s timeout' },
-                  { name: 'Reviewer Agent', role: 'SHA-256 Hash Chain Proof Construction', model: 'Cryptographic Engine', budget: '5 artifacts' },
+                  { name: 'Verifier Agent', role: 'Isolated Container Pytest Execution', model: 'Sandbox Tier B', budget: 'Strict Isolation' },
+                  { name: 'Reviewer Agent', role: 'SHA-256 Hash Chain Proof Construction', model: 'Cryptographic Proof Engine', budget: '5 artifacts' },
                 ].map((agent, i) => (
                   <div key={i} className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
                     <div className="flex items-center gap-2 text-[var(--brand)]">
@@ -334,7 +347,7 @@ function LoomControlPlane() {
                     <p className="text-xs text-[var(--text-secondary)]">{agent.role}</p>
                     <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)]">
                       <span>Model: {agent.model}</span>
-                      <span>Budget: {agent.budget}</span>
+                      <span>Config: {agent.budget}</span>
                     </div>
                   </div>
                 ))}
@@ -350,7 +363,7 @@ function LoomControlPlane() {
                   Sandbox Tier Isolation
                 </h2>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Multi-tier execution environments protecting against untrusted code execution
+                  Execution isolation configured for {connectedRepo?.fullName || 'current workspace'}
                 </p>
               </div>
 
@@ -393,24 +406,41 @@ function LoomControlPlane() {
                     Red-phase synthesis and green-phase verification test traces
                   </p>
                 </div>
-                <span className="status-pill status-pill-verified text-[10px]">ALL PASSING</span>
+                {displayData && (
+                  <span className={`status-pill ${displayData.status === 'VERIFIED SUCCESS' ? 'status-pill-verified' : 'status-pill-running'} text-[10px]`}>
+                    {displayData.status === 'VERIFIED SUCCESS' ? 'VERIFIED PASSED' : 'EXECUTING'}
+                  </span>
+                )}
               </div>
 
-              <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-xl p-4 font-mono text-xs text-[var(--text-secondary)] overflow-x-auto space-y-1">
-                <pre className="text-[var(--brand)]">=== RUNNING PYTEST VERIFICATION IN TIER B SANDBOX ===</pre>
-                <pre className="text-[var(--text-muted)]">collected 48 items</pre>
-                <pre className="text-[var(--success)]">tests/test_auth.py::test_oauth_state_nonce PASSED [ 2%]</pre>
-                <pre className="text-[var(--success)]">tests/test_auth.py::test_oauth_replay_defense PASSED [ 4%]</pre>
-                <pre className="text-[var(--success)]">tests/test_context.py::test_token_budget PASSED [ 6%]</pre>
-                <pre className="text-[var(--success)]">... 45 more items passed ...</pre>
-                <pre className="text-[var(--success)] font-bold">====================== 48 passed in 9.12s ======================</pre>
-              </div>
+              {displayData?.reproductionTest ? (
+                <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-xl p-4 font-mono text-xs text-[var(--text-secondary)] overflow-x-auto space-y-2">
+                  <p className="text-[var(--brand)] font-bold">// Synthesized Reproduction Test for Run {displayData.id}:</p>
+                  <pre className="whitespace-pre-wrap text-[var(--text-primary)]">{displayData.reproductionTest}</pre>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-xs text-[var(--text-muted)] flex flex-col items-center gap-3">
+                  <p>No test suite execution recorded yet for {connectedRepo?.fullName || 'this repository'}.</p>
+                  <button
+                    onClick={() => setIsNewRunModalOpen(true)}
+                    className="btn-primary h-8 px-3 text-xs gap-1.5"
+                  >
+                    <Play className="h-3 w-3 fill-current" />
+                    <span>Launch Run to Synthesize Tests</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
           {/* View: Evidence Proof Layer */}
           {activeTab === 'evidence' && (
-            <EvidenceView runId={displayData?.id || selectedRun || 'run_427'} />
+            <EvidenceView
+              displayData={displayData}
+              runId={displayData?.id || selectedRun || undefined}
+              connectedRepoName={connectedRepo?.fullName}
+              onOpenLiveBox={() => setIsNewRunModalOpen(true)}
+            />
           )}
 
           {/* View: Ablations */}
@@ -431,7 +461,7 @@ function LoomControlPlane() {
           setIsNewRunModalOpen(false);
           setIsLiveBoxOpen(true);
         }}
-        repoName={connectedRepo?.fullName || 'Loom-Unified-Agentic'}
+        repoName={connectedRepo?.fullName || 'No Repository Connected'}
         branchName={connectedRepo?.selectedBranch || 'main'}
         onOpenIssuesDrawer={() => setIsIssuesDrawerOpen(true)}
       />

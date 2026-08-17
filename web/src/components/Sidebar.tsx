@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isLoadingRuns,
   onOpenRepoModal,
   onOpenApiKeyModal,
-  connectedRepoName = 'Loom-Unified-Agentic',
+  connectedRepoName = 'No Repository Connected',
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pass' | 'fail' | 'exec'>('all');

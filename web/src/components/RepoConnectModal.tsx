@@ -90,6 +90,15 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
     });
   }, [userRepos, searchQuery, visibilityFilter]);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleConnectToken = async (e: React.FormEvent) => {
@@ -225,13 +234,14 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn cursor-pointer"
       role="dialog"
       aria-modal="true"
       aria-labelledby="repo-modal-title"
+      onClick={onClose}
     >
       <div
-        className="relative w-full max-w-4xl bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-4xl bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] cursor-default"
         onClick={e => e.stopPropagation()}
       >
         {/* 1. Modal Header */}

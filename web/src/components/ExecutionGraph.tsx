@@ -41,55 +41,55 @@ const DEFAULT_STAGES: ExecutionStage[] = [
     number: '01',
     name: 'MAPPER',
     role: 'AST Index & Call Graph',
-    status: 'SUCCEEDED',
-    duration: '12.4s',
-    cost: '$0.0003',
+    status: 'IDLE',
+    duration: '--',
+    cost: '--',
     model: 'Tree-Sitter AST',
-    summary: 'Generated symbol graph with 142 functions and ranked TF-IDF proximity tokens.',
+    summary: 'Indexes repository workspace and resolves symbol proximity call graphs.',
   },
   {
     id: 'reproduction',
     number: '02',
     name: 'REPRO',
     role: 'Synthesize Failing Test',
-    status: 'SUCCEEDED',
-    duration: '31.2s',
-    cost: '$0.0008',
-    model: 'Claude 3.7 Sonnet',
-    summary: 'Generated reproduction test case asserting expected bug behavior (Red phase).',
+    status: 'IDLE',
+    duration: '--',
+    cost: '--',
+    model: 'Active LLM',
+    summary: 'Synthesizes deterministic failing test suite validating the target bug (Red phase).',
   },
   {
     id: 'patcher',
     number: '03',
     name: 'PATCH',
     role: 'Surgical Code Modification',
-    status: 'RUNNING',
-    duration: '18.7s',
-    cost: '$0.0025',
-    model: 'Claude 3.7 Sonnet',
-    summary: 'Generating unified patch diff across 4 impacted files within budget limits.',
+    status: 'IDLE',
+    duration: '--',
+    cost: '--',
+    model: 'Active LLM',
+    summary: 'Generates unified code patch modifying only relevant AST subtrees.',
   },
   {
     id: 'verifier',
     number: '04',
     name: 'VERIFY',
     role: 'Sandbox Pytest Suite',
-    status: 'QUEUED',
+    status: 'IDLE',
     duration: '--',
     cost: '--',
-    model: 'Sandbox Tier A/B',
-    summary: 'Awaiting patch candidate for execution in isolated container.',
+    model: 'Sandbox Tier B',
+    summary: 'Executes reproduction and full regression test suite inside isolated sandbox (Green phase).',
   },
   {
     id: 'reviewer',
     number: '05',
     name: 'REVIEW',
     role: 'SHA-256 Evidence Seal',
-    status: 'QUEUED',
+    status: 'IDLE',
     duration: '--',
     cost: '--',
-    model: 'Proof Layer Hash Chain',
-    summary: 'Awaiting verification pass to compute cryptographic hash chain bundle.',
+    model: 'Proof Layer Auditor',
+    summary: 'Constructs SHA-256 hash chains across all artifacts and seals execution proof.',
   },
 ];
 
@@ -118,24 +118,23 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   };
 
   const getStageStatusClasses = (status: StageState, isSelected: boolean) => {
+    if (isSelected) {
+      return 'border-[var(--brand)] bg-[var(--brand-soft)]/30 ring-2 ring-[var(--brand)]/70 shadow-[0_0_20px_rgba(124,92,255,0.25)]';
+    }
     if (status === 'RUNNING') {
       return 'border-[var(--brand)] bg-[var(--bg-surface)] shadow-[0_0_24px_rgba(124,92,255,0.22)] ring-1 ring-[var(--brand)]/50';
     }
     if (status === 'SUCCEEDED' || status === 'VERIFIED') {
-      return isSelected
-        ? 'border-[var(--success)] bg-[var(--bg-surface)] ring-1 ring-[var(--success)]/40'
-        : 'border-[var(--border-default)] bg-[var(--bg-surface)] hover:border-[var(--success)]/60';
+      return 'border-[var(--border-default)] bg-[var(--bg-surface)] hover:border-[var(--success)]/60';
     }
     if (status === 'FAILED') {
-      return isSelected
-        ? 'border-[var(--danger)] bg-[var(--bg-surface)] ring-1 ring-[var(--danger)]/40'
-        : 'border-[var(--border-default)] bg-[var(--bg-surface)] hover:border-[var(--danger)]/60';
+      return 'border-[var(--border-default)] bg-[var(--bg-surface)] hover:border-[var(--danger)]/60';
     }
     if (status === 'BLOCKED') {
       return 'border-[var(--warning)]/50 bg-[var(--bg-surface)]';
     }
     // QUEUED / IDLE / SKIPPED
-    return 'border-[var(--border-subtle)] bg-[var(--bg-surface)] opacity-70 hover:opacity-100 hover:border-[var(--border-default)]';
+    return 'border-[var(--border-subtle)] bg-[var(--bg-surface)] opacity-80 hover:opacity-100 hover:border-[var(--border-default)]';
   };
 
   const getStatusTextClass = (status: StageState) => {

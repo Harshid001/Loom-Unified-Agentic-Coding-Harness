@@ -85,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <FolderGit2 className="h-3.5 w-3.5 text-[var(--text-secondary)] group-hover:text-[var(--brand)] transition shrink-0" />
             <span className="font-mono text-xs max-w-[150px] truncate text-[var(--text-primary)]">
-              {connectedRepo?.fullName || 'Loom-Unified-Agentic'}
+              {connectedRepo?.fullName || 'No Repository Connected'}
             </span>
           </button>
         )}

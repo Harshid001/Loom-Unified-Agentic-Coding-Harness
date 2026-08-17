@@ -55,8 +55,21 @@ describe('DagTab component', () => {
 });
 
 describe('EvidenceView component', () => {
-  it('renders cryptographic proof layer and SHA-256 artifacts', () => {
-    render(<EvidenceView runId="run_427" integrityValid={true} />);
+  it('renders standby state when no run is active', () => {
+    render(<EvidenceView displayData={null} runId={undefined} connectedRepoName="Harshid001/Loom-Harness" />);
+    expect(screen.getByText(/No Execution Evidence Generated Yet/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Harshid001\/Loom-Harness/i).length).toBeGreaterThan(0);
+  });
+
+  it('renders cryptographic proof layer and SHA-256 artifacts for active run', () => {
+    const mockDisplay = {
+      id: 'run_101',
+      status: 'VERIFIED SUCCESS',
+      patchDiff: '+ surgical fix',
+      reproductionTest: 'def test_repro(): pass',
+      snapshotId: 'snap_101',
+    };
+    render(<EvidenceView displayData={mockDisplay} runId="run_101" integrityValid={true} />);
     expect(screen.getByText(/SHA-256 Hash Chain Audit Bundle/i)).toBeInTheDocument();
     expect(screen.getByText(/INTEGRITY VALID/i)).toBeInTheDocument();
     expect(screen.getByText(/Verification Proof Checklist/i)).toBeInTheDocument();

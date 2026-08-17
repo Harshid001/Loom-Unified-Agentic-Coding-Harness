@@ -22,7 +22,7 @@ export const NewRunModal: React.FC<NewRunModalProps> = ({
   setNewIssue,
   isExecuting,
   onSubmit,
-  repoName = 'Loom-Unified-Agentic',
+  repoName = 'Select Repository',
   branchName = 'main',
   onOpenIssuesDrawer,
 }) => {
