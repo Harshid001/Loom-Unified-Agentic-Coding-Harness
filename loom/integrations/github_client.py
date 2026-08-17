@@ -1,7 +1,7 @@
 import logging
 import os
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import httpx
 
@@ -113,8 +113,14 @@ class GitHubAPIClient:
         if resp.status_code != 200:
             raise GitHubAPIError(f"Failed to fetch branch reference: {resp.text}", status_code=resp.status_code)
 
-        data = resp.json()
-        return data["object"]["sha"]
+        data = cast(Dict[str, Any], resp.json())
+        object_data = data.get("object")
+        if not isinstance(object_data, dict):
+            raise GitHubAPIError("GitHub returned an invalid branch reference payload", status_code=resp.status_code)
+        sha = object_data.get("sha")
+        if not isinstance(sha, str):
+            raise GitHubAPIError("GitHub returned an invalid branch SHA", status_code=resp.status_code)
+        return sha
 
     async def create_branch(self, repo: str, branch: str, base_branch: str = "main") -> Dict[str, Any]:
         """Create a new branch reference from base_branch."""
@@ -135,7 +141,7 @@ class GitHubAPIClient:
         if resp.status_code not in (200, 201):
             raise GitHubAPIError(f"Failed to create branch: {resp.text}", status_code=resp.status_code)
 
-        return resp.json()
+        return cast(Dict[str, Any], resp.json())
 
     async def create_pull_request(
         self,
@@ -173,7 +179,7 @@ class GitHubAPIClient:
         if resp.status_code not in (200, 201):
             raise GitHubAPIError(f"Failed to create PR: {resp.text}", status_code=resp.status_code)
 
-        pr_data = resp.json()
+        pr_data = cast(Dict[str, Any], resp.json())
         pr_number = pr_data.get("number")
 
         # Add labels if provided and PR creation succeeded

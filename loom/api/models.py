@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -138,7 +138,7 @@ def validate_key_format(provider_norm: str, key: str) -> bool:
 @router_models.post("/api/models/detect", response_model=DetectModelsResponse)
 async def detect_models(
     req: DetectModelsRequest,
-    _auth: DashboardAuth = None,
+    _auth: DashboardAuth = cast(DashboardAuth, None),
 ) -> DetectModelsResponse:
     provider_norm = normalize_provider(req.provider)
     if not provider_norm:

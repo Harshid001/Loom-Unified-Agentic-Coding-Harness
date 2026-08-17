@@ -16,7 +16,7 @@ export const DiffTab: React.FC<DiffTabProps> = ({ displayData, onOpenLiveBox }) 
         <div>
           <h3 className="text-sm font-bold text-white mb-1">No Verified Patch Selected</h3>
           <p className="text-xs text-gray-400 max-w-md">
-            When an autonomous run executes, Loom's Patcher agent synthesizes a surgical code diff, verifies it in an isolated sandbox, and renders it here with syntax-highlighted additions and removals.
+            When an autonomous run executes, Loom&apos;s Patcher agent synthesizes a surgical code diff, verifies it in an isolated sandbox, and renders it here with syntax-highlighted additions and removals.
           </p>
         </div>
         <button
