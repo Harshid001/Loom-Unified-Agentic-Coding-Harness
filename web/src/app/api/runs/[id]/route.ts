@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateRequestAuth } from '@/lib/auth';
+import { globalRunsStore } from '@/lib/runs_store';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = validateRequestAuth(req);
@@ -17,12 +18,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       headers['X-API-Key'] = apiKey;
     }
     const res = await fetch(`${backendUrl}/api/v1/runs/${runId}`, { headers, cache: 'no-store' });
-    if (!res.ok) {
-      return NextResponse.json({ detail: `Run not found` }, { status: res.status });
+    if (res.ok) {
+      const data = await res.json();
+      return NextResponse.json(data);
     }
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (err: any) {
-    return NextResponse.json({ detail: err.message || 'Failed to fetch run details' }, { status: 500 });
+  } catch {
+    // Backend offline or unreachable
   }
+
+  const stored = globalRunsStore.get(runId);
+  if (stored) {
+    return NextResponse.json({
+      checkpoint: stored.checkpoint,
+      trace_events: stored.trace_events,
+    });
+  }
+
+  return NextResponse.json({ detail: `Run not found` }, { status: 404 });
 }

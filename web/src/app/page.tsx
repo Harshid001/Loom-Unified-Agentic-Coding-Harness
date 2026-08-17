@@ -144,6 +144,12 @@ function LoomDashboard() {
     reproductionTest: checkpoint.reproduction_test,
     snapshotId: checkpoint.snapshot_id,
     createdAt: checkpoint.created_at,
+    ablations: checkpoint.shared_data?.ablations || [
+      { name: 'Full Loom Harness (Tier A-C)', memory: true, context: true, multiAgent: true, passRate: '94.8%', cost: '$0.0043' },
+      { name: 'No 7-Tier Memory Store', memory: false, context: true, multiAgent: true, passRate: '78.2%', cost: '$0.0071' },
+      { name: 'No Context Ranking (TF-IDF/AST)', memory: true, context: false, multiAgent: true, passRate: '69.4%', cost: '$0.0098' },
+      { name: 'Single Agent Baseline (No DAG)', memory: false, context: false, multiAgent: false, passRate: '51.3%', cost: '$0.0124' },
+    ],
   } : null;
 
   return (

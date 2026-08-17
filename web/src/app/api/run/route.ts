@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateRequestAuth, validateSameOrigin } from '@/lib/auth';
+import { createRunRecord, globalRunsStore } from '@/lib/runs_store';
 import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
@@ -36,11 +37,17 @@ export async function POST(req: NextRequest) {
 
   // 2. Standalone serverless execution generator
   const runId = `run_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+  const issue = body.issue || 'Target task';
+  const model = body.model || 'gemini-1.5-pro';
+
+  const newRun = createRunRecord(runId, issue, model);
+  globalRunsStore.set(runId, newRun);
+
   return NextResponse.json({
     run_id: runId,
     status: 'starting',
-    issue: body.issue || 'Target task',
-    model: body.model || 'gemini-1.5-pro',
+    issue,
+    model,
     message: 'Pipeline execution started',
   }, { status: 200 });
 }
