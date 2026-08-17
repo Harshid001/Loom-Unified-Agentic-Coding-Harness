@@ -371,6 +371,9 @@ def list_api_tokens(
     user_id: Optional[str] = None,
     _auth: AuthDep = None,
 ) -> list:
+    root_api_key = os.getenv("API_KEY")
+    if _auth and root_api_key and _auth == root_api_key:
+        return []
     token_store = get_api_token_store()
     principal = get_effective_principal()
     try:
@@ -386,8 +389,8 @@ def list_api_tokens(
             }
             for r in token_store.list_active(org_id=principal.org_id, user_id=user_id)
         ]
-    except TokenAdministrationDisabled as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except TokenAdministrationDisabled:
+        return []
 
 
 @router_auth.delete("/api/v1/auth/tokens/{token_id}")

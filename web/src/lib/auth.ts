@@ -107,18 +107,34 @@ export async function isDashboardTokenValidAsync(token: string): Promise<boolean
   }
 
   const backendUrl = process.env.LOOM_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+  const cleanToken = token.trim();
+
   try {
     const res = await fetch(`${backendUrl}/api/v1/auth/tokens`, {
       method: 'GET',
       headers: {
-        'X-API-Key': token.trim(),
+        'X-API-Key': cleanToken,
       },
     });
     if (res.ok) {
       return true;
     }
   } catch {
-    // If backend call fails, fallback to false
+    // Continue to fallback
+  }
+
+  try {
+    const res = await fetch(`${backendUrl}/api/settings/model`, {
+      method: 'GET',
+      headers: {
+        'X-API-Key': cleanToken,
+      },
+    });
+    if (res.ok) {
+      return true;
+    }
+  } catch {
+    // Backend unreachable
   }
 
   return false;
