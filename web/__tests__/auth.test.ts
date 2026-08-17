@@ -80,7 +80,9 @@ describe('Google OAuth & Session Routes', () => {
     vi.stubEnv('DASHBOARD_AUTH_TOKEN', 'test-auth-token-123');
     const req = new NextRequest('http://localhost:3000/api/auth/session');
     const res = await sessionHandler(req);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.authenticated).toBe(false);
   });
 
   it('redirects to Google accounts on /api/auth/google when configured', async () => {
