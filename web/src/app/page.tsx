@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRuns } from '../hooks/useRuns';
 import { Header } from '../components/Header';
 import { Sidebar } from '../components/Sidebar';
