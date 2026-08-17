@@ -115,9 +115,12 @@ class GitHubAPIClient:
 
         data = cast(Dict[str, Any], resp.json())
         object_data = data.get("object")
-        if not isinstance(object_data, dict) or not isinstance(object_data.get("sha"), str):
+        if not isinstance(object_data, dict):
             raise GitHubAPIError("GitHub returned an invalid branch reference payload", status_code=resp.status_code)
-        return object_data["sha"]
+        sha = object_data.get("sha")
+        if not isinstance(sha, str):
+            raise GitHubAPIError("GitHub returned an invalid branch SHA", status_code=resp.status_code)
+        return sha
 
     async def create_branch(self, repo: str, branch: str, base_branch: str = "main") -> Dict[str, Any]:
         """Create a new branch reference from base_branch."""
