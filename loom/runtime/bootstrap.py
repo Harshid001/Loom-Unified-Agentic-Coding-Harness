@@ -54,6 +54,9 @@ def validate_authentication_environment() -> None:
 
 
 def validate_production_environment() -> None:
+    # Allow Render deploy in dev mode
+    if os.getenv("DEV_MODE", "").lower() in _TRUE_VALUES:
+        return
     if not is_production():
         return
 
