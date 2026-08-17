@@ -2,7 +2,7 @@
 
 This document tracks production controls implemented on the canonical `main` branch.
 
-## Implemented in this hardening branch
+## Implemented on main
 
 - Production Docker sandbox fails closed when Docker is unavailable.
 - Patch and verification agents honor the selected sandbox tier.
