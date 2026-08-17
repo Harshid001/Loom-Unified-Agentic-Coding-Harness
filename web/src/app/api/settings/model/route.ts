@@ -13,6 +13,8 @@ const DEFAULT_MODELS = {
   gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'],
 };
 
+let currentActiveModel = process.env.MODEL_DEFAULT || 'claude-3-5-sonnet-20241022';
+
 export async function GET(req: NextRequest) {
   if (!validateSameOrigin(req)) {
     return NextResponse.json({ detail: 'Invalid request origin' }, { status: 403 });
@@ -36,6 +38,9 @@ export async function GET(req: NextRequest) {
 
     if (res.ok) {
       const data = await res.json();
+      if (data.active_model) {
+        currentActiveModel = data.active_model;
+      }
       return NextResponse.json(data, { status: 200 });
     }
   } catch {
@@ -43,7 +48,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    active_model: 'claude-3-5-sonnet-20241022',
+    active_model: currentActiveModel,
     available_models: [
       'claude-3-5-sonnet-20241022',
       'claude-3-7-sonnet-20250219',
@@ -51,13 +56,14 @@ export async function GET(req: NextRequest) {
       'gpt-4o-mini',
       'deepseek-v3',
       'gemini-1.5-pro',
+      'gemini-1.5-flash',
       'gemini-2.0-flash',
     ],
     providers: {
       anthropic: { configured: Boolean(process.env.ANTHROPIC_API_KEY), models: DEFAULT_MODELS.anthropic },
       openai: { configured: Boolean(process.env.OPENAI_API_KEY), models: DEFAULT_MODELS.openai },
       deepseek: { configured: Boolean(process.env.DEEPSEEK_API_KEY), models: DEFAULT_MODELS.deepseek },
-      gemini: { configured: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY), models: DEFAULT_MODELS.gemini },
+      gemini: { configured: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_CLIENT_SECRET), models: DEFAULT_MODELS.gemini },
     },
   });
 }
@@ -74,6 +80,10 @@ export async function PUT(req: NextRequest) {
   const backendUrl = process.env.LOOM_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
   const apiKey = process.env.API_KEY || process.env.LOOM_API_KEY || '';
   const body = await req.json().catch(() => ({}));
+
+  if (body.model) {
+    currentActiveModel = String(body.model).trim();
+  }
 
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -93,11 +103,10 @@ export async function PUT(req: NextRequest) {
     // Fall through to standalone response
   }
 
-  const model = body.model || 'claude-3-5-sonnet-20241022';
   return NextResponse.json({
-    active_model: model,
-    provider: body.provider || 'anthropic',
+    active_model: currentActiveModel,
+    provider: body.provider || 'gemini',
     status: 'success',
-    detail: `Active model set to ${model}`,
+    detail: `Active model set to ${currentActiveModel}`,
   });
 }

@@ -13,9 +13,11 @@ import { AuthGate } from '../components/AuthGate';
 
 const AVAILABLE_MODELS = [
   'claude-3-5-sonnet-20241022',
+  'claude-3-7-sonnet-20250219',
   'gpt-4o',
   'gpt-4o-mini',
   'gemini-1.5-pro',
+  'gemini-1.5-flash',
   'deepseek-v3',
   'claude-3-opus-20240229',
 ];
@@ -23,7 +25,13 @@ const AVAILABLE_MODELS = [
 function LoomDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'dag' | 'diff' | 'ablations'>('overview');
   const [isLiveBoxOpen, setIsLiveBoxOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0]);
+  const [availableModels, setAvailableModels] = useState<string[]>(AVAILABLE_MODELS);
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('loom_active_model') || AVAILABLE_MODELS[0];
+    }
+    return AVAILABLE_MODELS[0];
+  });
   const [newIssue, setNewIssue] = useState('');
   const [repoPath] = useState('.');
   const [mockMode, setMockMode] = useState(false);
@@ -40,6 +48,43 @@ function LoomDashboard() {
     setErrorBanner,
     fetchRuns
   } = useRuns();
+
+  // Synchronize active model and available models with backend & localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('loom_active_model');
+      if (saved) setSelectedModel(saved);
+    }
+
+    fetch('/api/settings/model')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          if (data.active_model) {
+            setSelectedModel(data.active_model);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('loom_active_model', data.active_model);
+            }
+          }
+          if (Array.isArray(data.available_models) && data.available_models.length > 0) {
+            setAvailableModels(Array.from(new Set([...data.available_models, ...AVAILABLE_MODELS])));
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleModelChange = useCallback((model: string) => {
+    setSelectedModel(model);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('loom_active_model', model);
+    }
+    fetch('/api/settings/model', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    }).catch(() => {});
+  }, []);
 
   const showNotification = useCallback((msg: string) => {
     setNotification(msg);
@@ -103,7 +148,7 @@ function LoomDashboard() {
 
   return (
     <div className="min-h-screen bg-[#0B0F19] text-gray-100 flex flex-col font-sans">
-      <Header modelName={selectedModel} availableModels={AVAILABLE_MODELS} onModelChange={setSelectedModel} onOpenLiveBox={handleOpenLiveBox} runCount={runHistory.length} />
+      <Header modelName={selectedModel} availableModels={availableModels} onModelChange={handleModelChange} onOpenLiveBox={handleOpenLiveBox} runCount={runHistory.length} />
       {notification && <div className="bg-emerald-500/10 border-b border-emerald-500/30 px-6 py-2.5 text-xs text-emerald-400 font-medium" role="status">{notification}</div>}
       {errorBanner && <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2.5 text-xs text-amber-400 font-mono" role="alert">{errorBanner}</div>}
 
@@ -112,8 +157,8 @@ function LoomDashboard() {
           <div className="flex-1 min-w-[300px]">
             <input type="text" value={newIssue} onChange={e => setNewIssue(e.target.value)} placeholder="Enter issue description..." className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" onKeyDown={e => { if (e.key === 'Enter' && newIssue.trim()) handleOpenLiveBox(); }} />
           </div>
-          <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            {AVAILABLE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          <select value={selectedModel} onChange={e => handleModelChange(e.target.value)} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            {availableModels.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
           <label className="flex items-center gap-2 text-xs text-gray-400"><input type="checkbox" checked={mockMode} onChange={e => setMockMode(e.target.checked)} className="rounded bg-gray-800 border-gray-700" /> Mock mode</label>
           <button onClick={handleOpenLiveBox} disabled={!newIssue.trim()} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg text-xs font-medium">Execute Pipeline</button>

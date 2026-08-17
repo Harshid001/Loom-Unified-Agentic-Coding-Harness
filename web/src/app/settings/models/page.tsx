@@ -264,6 +264,10 @@ function ModelSettingsContent() {
       const data = await res.json();
       if (res.ok) {
         setActiveModel(selectedModel);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('loom_active_model', selectedModel);
+          localStorage.setItem('loom_active_provider', selectedProvider);
+        }
         setFeedback({
           type: 'success',
           message: `Active model set to "${selectedModel}". All subsequent tasks will execute using this model.`,
