@@ -99,3 +99,48 @@ def evaluate_commit_gateway(
         reason=f"Sensitive paths blocked by commit gateway: {', '.join(blocked)}",
         status="security_hold",
     )
+
+
+@dataclass
+class PatchApprovalPolicy:
+    """Configurable patch risk & human review governance policy (compliance-auditable)."""
+
+    max_autonomous_diff_lines: int = 150
+    min_autonomous_confidence: float = 0.60
+    require_human_signoff: bool = False
+    sensitive_path_globs: List[str] = field(default_factory=lambda: list(DEFAULT_SENSITIVE_GLOBS))
+
+    @classmethod
+    def enterprise_default(cls) -> "PatchApprovalPolicy":
+        """Strict enterprise-grade compliance policy: tighter line limits, higher confidence, mandatory signoff."""
+        return cls(
+            max_autonomous_diff_lines=75,
+            min_autonomous_confidence=0.85,
+            require_human_signoff=True,
+        )
+
+    def classify_risk(
+        self,
+        diff_size: int,
+        touched_files: List[str],
+        prior_confidence: Optional[float] = None,
+    ) -> bool:
+        """Classify whether a proposed patch carries high risk and requires manual approval/consensus."""
+        # 1. Path sensitivity check
+        for file_path in touched_files:
+            clean = file_path.strip().removeprefix("b/").removeprefix("a/")
+            if matches_sensitive_glob(clean, self.sensitive_path_globs) or matches_sensitive_glob(
+                file_path, self.sensitive_path_globs
+            ):
+                return True
+
+        # 2. Diff line count threshold
+        if diff_size > self.max_autonomous_diff_lines:
+            return True
+
+        # 3. Model confidence threshold
+        if prior_confidence is not None and prior_confidence < self.min_autonomous_confidence:
+            return True
+
+        return False
+

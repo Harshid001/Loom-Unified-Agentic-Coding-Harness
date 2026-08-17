@@ -9,6 +9,7 @@ from loom.integrations.github_client import (
     GitHubAuthError,
     GitHubBranchExistsError,
     GitHubPROpenError,
+    VaultSecretResolutionError,
     resolve_vault_token,
 )
 
@@ -19,10 +20,21 @@ def test_resolve_vault_token(monkeypatch):
 
     # Vault prefix resolved to matching env
     assert resolve_vault_token("vault:github_install_1") == "ghp_vaultsecret123"
-    # Unmatched vault ref falls back to GITHUB_TOKEN
-    assert resolve_vault_token("vault:nonexistent") == "ghp_generic123"
-    # Direct token
+
+    # Unmatched vault ref fails closed by default (raises VaultSecretResolutionError)
+    with pytest.raises(VaultSecretResolutionError) as exc_info:
+        resolve_vault_token("vault:nonexistent")
+    assert "vault:nonexistent" in str(exc_info.value)
+
+    # Explicit opt-in to fallback
+    assert resolve_vault_token("vault:nonexistent", allow_ambient_fallback=True) == "ghp_generic123"
+
+    # Empty token_ref returns ambient token
+    assert resolve_vault_token("") == "ghp_generic123"
+
+    # Direct raw token returns unchanged
     assert resolve_vault_token("raw_token_xyz") == "raw_token_xyz"
+
 
 
 @pytest.mark.asyncio

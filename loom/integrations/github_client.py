@@ -36,13 +36,29 @@ class GitHubPushError(GitHubAPIError):
         super().__init__(message, status_code=500, error_code="PUSH_REJECTED")
 
 
-def resolve_vault_token(token_ref: str) -> str:
+class VaultSecretResolutionError(GitHubAuthError):
+    """Raised when an explicit vault reference cannot be resolved."""
+
+    def __init__(self, token_ref: str, message: Optional[str] = None):
+        msg = (
+            message
+            or f"Unable to resolve vault secret reference '{token_ref}': secret not found in vault/encrypted environment."
+        )
+        super().__init__(msg)
+        self.token_ref = token_ref
+        self.error_code = "VAULT_SECRET_NOT_FOUND"
+
+
+
+def resolve_vault_token(token_ref: str, allow_ambient_fallback: bool = False) -> str:
     """Resolve a vault-prefixed secret reference to an actual secret token.
 
-    Tokens are looked up from environment variables in order:
-    1. LOOM_VAULT_<REF_NAME_UPPER>
-    2. GITHUB_TOKEN / GH_TOKEN if generic ref
-    3. Direct token value if non-vault ref provided in test mode
+    Security & Tenant Isolation Policy:
+    - Explicit `vault:<ref>` references MUST resolve to the exact key in the vault/encrypted
+      store or scoped environment (`LOOM_VAULT_<REF>`). They fail closed and NEVER silently
+      fall back to ambient host credentials unless allow_ambient_fallback is explicitly True.
+    - If token_ref is empty/omitted, ambient environment tokens (GITHUB_TOKEN / GH_TOKEN) are returned.
+    - Raw direct token strings (non-vault refs) are returned as-is (e.g. dev/testing).
     """
     if not token_ref:
         return os.getenv("GITHUB_TOKEN", os.getenv("GH_TOKEN", ""))
@@ -53,10 +69,22 @@ def resolve_vault_token(token_ref: str) -> str:
         val = os.getenv(env_var_name)
         if val:
             return val
-        # Fallback to standard github token env
-        return os.getenv("GITHUB_TOKEN", os.getenv("GH_TOKEN", ""))
+
+        if allow_ambient_fallback:
+            logger.warning(
+                "Vault secret reference '%s' unresolvable; fallback to ambient GITHUB_TOKEN permitted by caller.",
+                token_ref,
+            )
+            return os.getenv("GITHUB_TOKEN", os.getenv("GH_TOKEN", ""))
+
+        logger.error(
+            "Security Policy Violation: Unresolved vault secret reference '%s'. Refusing ambient fallback.",
+            token_ref,
+        )
+        raise VaultSecretResolutionError(token_ref)
 
     return token_ref
+
 
 
 class GitHubAPIClient:

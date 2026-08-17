@@ -9,6 +9,8 @@ from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from loom.adapters.base import BaseModelAdapter
 from loom.adapters.litellm_adapter import LiteLLMAdapter
+from loom.business.path_policy import DEFAULT_SENSITIVE_GLOBS, PatchApprovalPolicy
+
 
 logger = logging.getLogger("loom.adapters.router")
 
@@ -119,12 +121,17 @@ class ModelRouter:
         mock_mode: bool = False,
         weights: Optional[Dict[str, float]] = None,
         sensitive_globs: Optional[List[str]] = None,
+        policy: Optional[PatchApprovalPolicy] = None,
     ):
         self.default_model = default_model
         self.mock_mode = mock_mode
         self.weights = weights or dict(DEFAULT_WEIGHTS)
         self.sensitive_globs = sensitive_globs or list(DEFAULT_SENSITIVE_GLOBS)
+        self.policy = policy or PatchApprovalPolicy(
+            sensitive_path_globs=self.sensitive_globs,
+        )
         self.adapter = LiteLLMAdapter(mock_mode=mock_mode)
+
 
         self._eligible_models: List[str] = [
             "claude-3-5-sonnet-20241022",
@@ -309,25 +316,10 @@ class ModelRouter:
         touched_files: List[str],
         prior_confidence: Optional[float] = None,
     ) -> bool:
-        normalized_files = []
-        for p in touched_files:
-            clean = p.strip()
-            clean = clean.removeprefix("b/").removeprefix("a/")
-            normalized_files.append(clean)
-            normalized_files.append(p)
+        if self.sensitive_globs != self.policy.sensitive_path_globs:
+            self.policy.sensitive_path_globs = list(self.sensitive_globs)
+        return self.policy.classify_risk(diff_size, touched_files, prior_confidence)
 
-        for glob_pattern in self.sensitive_globs:
-            for path in normalized_files:
-                if fnmatch(path, glob_pattern) or fnmatch(path.lower(), glob_pattern.lower()):
-                    return True
-
-        if diff_size > 150:
-            return True
-
-        if prior_confidence is not None and prior_confidence < 0.6:
-            return True
-
-        return False
 
     def _extract_patch_intent(self, patch_content: str) -> str:
         lines = patch_content.strip().split("\n")

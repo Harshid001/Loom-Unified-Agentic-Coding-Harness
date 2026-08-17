@@ -151,3 +151,27 @@ class TestPatcherIntegration:
         entries = audit.get_entries(org_id="org_gw", action=AuditAction.PATCH_SENSITIVE_BLOCKED)
         assert len(entries) == 1
         assert entries[0].target == "run_gw"
+
+
+class TestPatchApprovalPolicy:
+    def test_default_policy_classification(self):
+        from loom.business.path_policy import PatchApprovalPolicy
+
+        policy = PatchApprovalPolicy()
+        assert not policy.classify_risk(diff_size=50, touched_files=["src/utils.py"], prior_confidence=0.9)
+        assert policy.classify_risk(diff_size=200, touched_files=["src/utils.py"], prior_confidence=0.9)
+        assert policy.classify_risk(diff_size=50, touched_files=["src/auth/login.ts"], prior_confidence=0.9)
+        assert policy.classify_risk(diff_size=50, touched_files=["src/utils.py"], prior_confidence=0.4)
+
+    def test_enterprise_default_policy_strictness(self):
+        from loom.business.path_policy import PatchApprovalPolicy
+
+        policy = PatchApprovalPolicy.enterprise_default()
+        assert policy.require_human_signoff is True
+        assert policy.max_autonomous_diff_lines == 75
+        assert policy.min_autonomous_confidence == 0.85
+        # Diff of 80 lines is high risk under enterprise policy
+        assert policy.classify_risk(diff_size=80, touched_files=["src/utils.py"], prior_confidence=0.95)
+        # Confidence of 0.80 is high risk under enterprise policy (min is 0.85)
+        assert policy.classify_risk(diff_size=20, touched_files=["src/utils.py"], prior_confidence=0.80)
+
