@@ -47,11 +47,8 @@ function LoomDashboard() {
   }, []);
 
   const handleOpenLiveBox = useCallback(() => {
-    if (!newIssue.trim()) {
-      setNewIssue('Fix calculation edge case in token cost tracker');
-    }
     setIsLiveBoxOpen(true);
-  }, [newIssue]);
+  }, []);
 
   const handleRunComplete = useCallback((runId: string, success: boolean) => {
     if (success) showNotification(`Run ${runId} completed successfully`);

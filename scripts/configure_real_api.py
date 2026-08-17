@@ -85,7 +85,7 @@ def run_configuration(args: argparse.Namespace) -> int:
 
     backend_url = args.backend_url or existing_web.get("LOOM_API_URL", "http://127.0.0.1:8000")
     vercel_origin = args.vercel_origin or existing_web.get(
-        "NEXT_PUBLIC_APP_ORIGIN", "https://loom-unified-agentic-coding-harness-lv5a90jx.vercel.app"
+        "NEXT_PUBLIC_APP_ORIGIN", ""
     )
 
     backend_env = {

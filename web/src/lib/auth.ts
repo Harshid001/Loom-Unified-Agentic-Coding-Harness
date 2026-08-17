@@ -16,13 +16,17 @@ function configuredToken(): string | null {
   return token || null;
 }
 
-function sessionSecret(): string | null {
+// Ephemeral secret generated once per runtime instance if no secret is configured in environment
+const ephemeralProcessSecret = crypto.randomBytes(32).toString('hex');
+
+function sessionSecret(): string {
   return (
     process.env.DASHBOARD_SESSION_SECRET?.trim() ||
     configuredToken() ||
     process.env.API_KEY?.trim() ||
     process.env.LOOM_API_KEY?.trim() ||
-    'loom_dashboard_default_session_secret_2026'
+    process.env.GOOGLE_CLIENT_SECRET?.trim() ||
+    ephemeralProcessSecret
   );
 }
 
@@ -60,14 +64,7 @@ export function validateSameOrigin(req: NextRequest): boolean {
 }
 
 export function validateRequestAuth(req: NextRequest): { isAuthorized: boolean; reason?: string } {
-  const authToken = configuredToken();
-  const isDev = process.env.NODE_ENV === 'development';
-
-  if (!authToken) {
-    if (isDev) return { isAuthorized: true };
-    return { isAuthorized: false, reason: 'DASHBOARD_AUTH_TOKEN environment variable is not configured' };
-  }
-
+  // 1. Check session cookie first (used by Google OAuth & web dashboard sessions)
   const cookieToken = req.cookies.get(DASHBOARD_SESSION_COOKIE)?.value;
   if (cookieToken) {
     if (validateDashboardSession(cookieToken)) {
@@ -76,17 +73,33 @@ export function validateRequestAuth(req: NextRequest): { isAuthorized: boolean; 
     return { isAuthorized: false, reason: 'Invalid dashboard session cookie' };
   }
 
+  // 2. Check Bearer / custom header tokens (used for API / CLI callers)
   const authHeader = req.headers.get('Authorization') || req.headers.get('x-dashboard-auth');
   const headerToken = authHeader?.replace(/^Bearer\s+/i, '').trim();
-  if (!headerToken) {
-    return { isAuthorized: false, reason: 'Authentication required' };
-  }
+  const authToken = configuredToken();
 
-  if (!safeCompare(headerToken, authToken)) {
+  if (headerToken) {
+    if (authToken && safeCompare(headerToken, authToken)) {
+      return { isAuthorized: true };
+    }
+    const apiKey = process.env.API_KEY?.trim() || process.env.LOOM_API_KEY?.trim();
+    if (apiKey && safeCompare(headerToken, apiKey)) {
+      return { isAuthorized: true };
+    }
     return { isAuthorized: false, reason: 'Invalid authorization token' };
   }
 
-  return { isAuthorized: true };
+  // 3. Fallback for development mode when no token is configured
+  const isDev = process.env.NODE_ENV === 'development';
+  if (!authToken && isDev) {
+    return { isAuthorized: true };
+  }
+
+  if (!authToken) {
+    return { isAuthorized: false, reason: 'DASHBOARD_AUTH_TOKEN environment variable is not configured' };
+  }
+
+  return { isAuthorized: false, reason: 'Authentication required' };
 }
 
 export function isDashboardTokenValid(token: string): boolean {
@@ -154,7 +167,7 @@ export function getAppOrigin(req: NextRequest): string {
 }
 
 export function signOAuthState(data?: { redirectUri?: string }): string {
-  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
+  const secret = sessionSecret();
   const payloadObj = {
     t: Date.now(),
     n: crypto.randomBytes(16).toString('hex'),
@@ -170,7 +183,7 @@ export function verifyOAuthState(state: string | null | undefined): { valid: boo
   const parts = state.split('.');
   if (parts.length !== 2) return { valid: false };
   const [payload, sig] = parts;
-  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
+  const secret = sessionSecret();
   const expectedSig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
   if (sig !== expectedSig) return { valid: false };
   try {
