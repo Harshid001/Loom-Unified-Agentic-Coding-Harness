@@ -7,6 +7,7 @@ import os
 import uvicorn
 
 from loom.api import server as server_module
+from loom.api.dependencies import verify_api_key
 from loom.runtime.bootstrap import validate_production_environment
 from loom.runtime.distributed_runtime import install_production_runtime
 from loom.runtime.health import install_distributed_health
@@ -17,7 +18,7 @@ if __name__ == "__main__":
     validate_production_environment()
     asyncio.run(install_production_runtime(server_module.app, server_module))
     install_production_queue(server_module.app)
-    install_distributed_health(server_module.app, server_module.verify_api_key)
+    install_distributed_health(server_module.app, verify_api_key)
     uvicorn.run(
         server_module.app,
         host=os.getenv("HOST", "0.0.0.0"),
