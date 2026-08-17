@@ -88,10 +88,12 @@ describe('ModelSettingsPage', () => {
     });
   });
 
-  it('protects ModelSettingsPage behind AuthGate', () => {
+  it('protects ModelSettingsPage behind AuthGate', async () => {
     render(<ModelSettingsPage />);
-    expect(screen.getByText(/Loom Dashboard/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Dashboard token/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Loom Dashboard/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Enter master token or API key/i)).toBeInTheDocument();
+    });
   });
 });
 

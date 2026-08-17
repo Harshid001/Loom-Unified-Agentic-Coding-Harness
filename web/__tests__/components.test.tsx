@@ -91,3 +91,29 @@ describe('AblationsTab component', () => {
     expect(screen.getByText(/98.5%/i)).toBeInTheDocument();
   });
 });
+
+describe('AuthGate component', () => {
+  it('renders Google sign in button and token login form', async () => {
+    const { AuthGate } = await import('../src/components/AuthGate');
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ authenticated: false }),
+    });
+
+    render(
+      <AuthGate>
+        <div>Protected Content</div>
+      </AuthGate>
+    );
+
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => {
+      expect(screen.getByText(/Sign in with Google/i)).toBeInTheDocument();
+      expect(screen.getByText(/or continue with token/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Enter master token or API key/i)).toBeInTheDocument();
+      expect(screen.getByText(/Sign in with Token/i)).toBeInTheDocument();
+    });
+  });
+});
+

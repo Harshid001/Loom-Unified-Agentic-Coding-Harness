@@ -40,7 +40,7 @@ export function createDashboardSession(): string | null {
   return signature ? `${sessionId}.${issuedAt}.${signature}` : null;
 }
 
-function validateDashboardSession(value: string): boolean {
+export function validateDashboardSession(value: string): boolean {
   const parts = value.split('.');
   if (parts.length !== 3) return false;
   const [sessionId, issuedAtRaw, signature] = parts;
