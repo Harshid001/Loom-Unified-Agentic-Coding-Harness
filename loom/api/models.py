@@ -38,66 +38,85 @@ def clear_session_keys() -> None:
 
 class DetectModelsRequest(BaseModel):
     provider: str = Field(..., description="Provider name: anthropic, openai, deepseek, gemini")
-    api_key: str = Field(..., min_length=1)
+    api_key: str = Field(..., description="Provider API key")
 
 
 class DetectModelsResponse(BaseModel):
     models: List[str]
     valid: bool
-    provider: str
+    provider: str = ""
     detail: Optional[str] = None
 
 
+CURATED_MODELS: Dict[str, List[str]] = {
+    "anthropic": [
+        "claude-3-5-sonnet-20241022",
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-haiku-20241022",
+        "claude-3-opus-20240229",
+    ],
+    "openai": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4-turbo",
+        "o1",
+        "o1-mini",
+        "o3-mini",
+    ],
+    "deepseek": [
+        "deepseek-chat",
+        "deepseek-reasoner",
+        "deepseek-v3",
+        "deepseek/deepseek-chat",
+    ],
+    "gemini": [
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+        "gemini-2.0-flash",
+        "gemini-pro",
+    ],
+}
+
+
 def normalize_provider(provider: str) -> str:
-    value = provider.strip().lower()
-    aliases = {
-        "google": "gemini",
-        "google-gemini": "gemini",
-        "gemini": "gemini",
-        "claude": "anthropic",
-        "anthropic": "anthropic",
-        "openai": "openai",
-        "deepseek": "deepseek",
-    }
-    return aliases.get(value, value)
+    p = provider.strip().lower()
+    if p in {"google", "google_ai", "gemini"}:
+        return "gemini"
+    if p in {"claude", "anthropic"}:
+        return "anthropic"
+    return p
 
 
-def get_provider_models(provider: str) -> List[str]:
-    provider = normalize_provider(provider)
-    curated = {
-        "anthropic": [
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-        ],
-        "openai": [
-            "gpt-4o",
-            "gpt-4o-mini",
-            "o3-mini",
-        ],
-        "deepseek": [
-            "deepseek-chat",
-            "deepseek-reasoner",
-        ],
-        "gemini": [
-            "gemini-2.5-pro",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-        ],
-    }.get(provider, [])
+def get_provider_models(provider_norm: str) -> List[str]:
+    curated = CURATED_MODELS.get(provider_norm, [])
 
     try:
         import litellm
 
-        model_list = getattr(litellm, "model_list", [])
-        if model_list:
-            for item in model_list:
-                if isinstance(item, dict):
-                    model_name = item.get("model_name") or item.get("model")
-                    if isinstance(model_name, str):
-                        if model_name.lower().startswith(provider) or provider in model_name.lower():
-                            if model_name not in curated:
-                                curated.append(model_name)
+        if hasattr(litellm, "get_model_list") and callable(litellm.get_model_list):
+            raw = litellm.get_model_list()
+            if isinstance(raw, list) and raw:
+                filtered = [m for m in raw if provider_norm in str(m).lower()]
+                if filtered:
+                    return list(dict.fromkeys(curated + filtered))
+
+        if hasattr(litellm, "models_by_provider") and isinstance(litellm.models_by_provider, dict):
+            provider_key = provider_norm
+            models = litellm.models_by_provider.get(provider_key, [])
+            if not models and provider_norm == "gemini":
+                models = litellm.models_by_provider.get("gemini", []) or litellm.models_by_provider.get("vertex_ai", [])
+
+            clean = [
+                m
+                for m in models
+                if isinstance(m, str)
+                and not any(
+                    skip in m.lower()
+                    for skip in ["embed", "audio", "tts", "realtime", "image", "transcribe", "moderation"]
+                )
+            ]
+            if clean:
+                return list(dict.fromkeys(curated + clean[:25]))
     except Exception as exc:
         logger.debug("LiteLLM model retrieval exception: %s", exc)
 
@@ -139,17 +158,24 @@ async def detect_models(
             models=[],
             valid=False,
             provider=provider_norm,
-            detail="API key format is invalid",
+            detail="Invalid API key format",
         )
 
     models = get_provider_models(provider_norm)
+    if not models:
+        models = [f"{provider_norm}-default"]
+
+    # Temporarily store in memory dict
     _session_keys[provider_norm] = api_key
     _detected_models[provider_norm] = models
+
+    # Update runtime environment variable
     set_runtime_api_key(provider_norm, api_key)
 
+    logger.info("Successfully detected %d models for provider '%s'", len(models), provider_norm)
     return DetectModelsResponse(
         models=models,
         valid=True,
         provider=provider_norm,
-        detail="Provider API key accepted",
+        detail=f"Detected {len(models)} models for {provider_norm}",
     )
