@@ -68,8 +68,17 @@ class Organization(BaseModel):
             "**/auth/**",
             "**/billing/**",
             "**/migrations/**",
+            "**/security/**",
+            "**/secrets/**",
+            "**/payment/**",
+            "**/credentials/**",
+            "*token*",
+            "*secret*",
+            "*password*",
+            "*credential*",
         ]
     )
+    require_patch_approval: bool = False
     created_at: float = Field(default_factory=time.time)
 
 

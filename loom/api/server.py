@@ -624,8 +624,15 @@ async def create_run(
     state.shared_data["org_tier"] = org.tier.value if hasattr(org, "tier") and hasattr(org.tier, "value") else str(getattr(org, "tier", "solo"))
     state.shared_data["sandbox_tier"] = sandbox_tier
     state.shared_data["auto_merge_threshold"] = org.auto_merge_threshold
+    if getattr(org, "require_patch_approval", False):
+        state.shared_data["require_patch_approval"] = True
 
-    router = ModelRouter(default_model=req.model, mock_mode=req.mock)
+    sensitive_globs = getattr(org, "sensitive_path_globs", None)
+    router = ModelRouter(
+        default_model=req.model,
+        mock_mode=req.mock,
+        sensitive_globs=list(sensitive_globs) if sensitive_globs else None,
+    )
     tracer = TelemetryTracer(run_id=run_id)
     cost_tracker = CostTracker(run_id=run_id)
     records_store = get_records_store()

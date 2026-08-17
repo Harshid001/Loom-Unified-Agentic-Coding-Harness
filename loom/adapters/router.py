@@ -13,7 +13,19 @@ from loom.adapters.litellm_adapter import LiteLLMAdapter
 logger = logging.getLogger("loom.adapters.router")
 
 DEFAULT_WEIGHTS = {"w1_cost": 0.25, "w2_latency": 0.15, "w3_success_rate": 0.35, "w4_capability": 0.25}
-DEFAULT_SENSITIVE_GLOBS = ["**/auth/**", "**/billing/**", "**/migrations/**"]
+DEFAULT_SENSITIVE_GLOBS = [
+    "**/auth/**",
+    "**/billing/**",
+    "**/migrations/**",
+    "**/security/**",
+    "**/secrets/**",
+    "**/payment/**",
+    "**/credentials/**",
+    "*token*",
+    "*secret*",
+    "*password*",
+    "*credential*",
+]
 
 PROVIDER_KEY_ENV_MAP: Dict[str, List[str]] = {
     "anthropic": ["ANTHROPIC_API_KEY"],
@@ -297,9 +309,16 @@ class ModelRouter:
         touched_files: List[str],
         prior_confidence: Optional[float] = None,
     ) -> bool:
+        normalized_files = []
+        for p in touched_files:
+            clean = p.strip()
+            clean = clean.removeprefix("b/").removeprefix("a/")
+            normalized_files.append(clean)
+            normalized_files.append(p)
+
         for glob_pattern in self.sensitive_globs:
-            for path in touched_files:
-                if fnmatch(path, glob_pattern):
+            for path in normalized_files:
+                if fnmatch(path, glob_pattern) or fnmatch(path.lower(), glob_pattern.lower()):
                     return True
 
         if diff_size > 150:
