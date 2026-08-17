@@ -140,27 +140,46 @@ export async function isDashboardTokenValidAsync(token: string): Promise<boolean
   return false;
 }
 
-export function signOAuthState(): string {
+export function getAppOrigin(req: NextRequest): string {
+  const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+
+  const rawHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
+  const host = (rawHost || '').split(',')[0].trim();
+
+  const rawProto = req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(/:$/, '') || 'https';
+  const proto = (rawProto || '').split(',')[0].trim() || 'https';
+
+  return `${proto}://${host}`;
+}
+
+export function signOAuthState(data?: { redirectUri?: string }): string {
   const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
-  const payload = Buffer.from(JSON.stringify({ t: Date.now(), n: crypto.randomBytes(16).toString('hex') })).toString('base64url');
+  const payloadObj = {
+    t: Date.now(),
+    n: crypto.randomBytes(16).toString('hex'),
+    ...(data?.redirectUri ? { r: data.redirectUri } : {}),
+  };
+  const payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
   return `${payload}.${sig}`;
 }
 
-export function verifyOAuthState(state: string | null | undefined): boolean {
-  if (!state || typeof state !== 'string') return false;
+export function verifyOAuthState(state: string | null | undefined): { valid: boolean; redirectUri?: string } {
+  if (!state || typeof state !== 'string') return { valid: false };
   const parts = state.split('.');
-  if (parts.length !== 2) return false;
+  if (parts.length !== 2) return { valid: false };
   const [payload, sig] = parts;
   const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
   const expectedSig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-  if (sig !== expectedSig) return false;
+  if (sig !== expectedSig) return { valid: false };
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     const ageMs = Date.now() - Number(data.t);
-    return ageMs >= 0 && ageMs < 15 * 60 * 1000; // 15 minutes validity
+    const valid = ageMs >= 0 && ageMs < 15 * 60 * 1000; // 15 minutes validity
+    return { valid, redirectUri: typeof data.r === 'string' ? data.r : undefined };
   } catch {
-    return false;
+    return { valid: false };
   }
 }
 

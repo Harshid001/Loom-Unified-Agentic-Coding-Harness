@@ -3,16 +3,9 @@ import {
   DASHBOARD_SESSION_COOKIE,
   SESSION_TTL_SECONDS,
   createDashboardSession,
+  getAppOrigin,
   verifyOAuthState,
 } from '@/lib/auth';
-
-function getAppOrigin(req: NextRequest): string {
-  const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
-  if (configured) return configured.replace(/\/+$/, '');
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
-  const proto = req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(/:$/, '') || 'https';
-  return `${proto}://${host}`;
-}
 
 function isEmailAllowed(email: string): boolean {
   const allowed = process.env.ALLOWED_GOOGLE_EMAILS?.trim();
@@ -31,13 +24,23 @@ export async function GET(req: NextRequest) {
 
   const oauthError = searchParams.get('error');
   if (oauthError) {
-    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(oauthError)}`);
+    const errorDescription = searchParams.get('error_description') || '';
+    const params = new URLSearchParams({
+      error: oauthError,
+      ...(errorDescription ? { detail: errorDescription } : {}),
+    });
+    return NextResponse.redirect(`${origin}/?${params.toString()}`);
   }
 
   const code = searchParams.get('code');
   const state = searchParams.get('state');
 
-  if (!code || !state || !verifyOAuthState(state)) {
+  if (!code || !state) {
+    return NextResponse.redirect(`${origin}/?error=missing_oauth_parameters`);
+  }
+
+  const stateCheck = verifyOAuthState(state);
+  if (!stateCheck.valid) {
     return NextResponse.redirect(`${origin}/?error=invalid_oauth_state`);
   }
 
@@ -47,7 +50,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${origin}/?error=google_oauth_unconfigured`);
   }
 
-  const redirectUri = `${origin}/api/auth/callback/google`;
+  // Use the exact redirect URI signed into the state token, fallback to current origin
+  const redirectUri = stateCheck.redirectUri || `${origin}/api/auth/callback/google`;
 
   try {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -63,19 +67,46 @@ export async function GET(req: NextRequest) {
     });
 
     if (!tokenRes.ok) {
-      const errText = await tokenRes.text();
-      console.error('Google token exchange error:', errText);
-      return NextResponse.redirect(`${origin}/?error=google_token_exchange_failed`);
+      let errorReason = 'google_token_exchange_failed';
+      let errorDetail = '';
+      try {
+        const errJson = await tokenRes.json();
+        errorReason = errJson.error || errorReason;
+        errorDetail = errJson.error_description || '';
+      } catch {
+        const errText = await tokenRes.text().catch(() => '');
+        errorDetail = errText.slice(0, 250);
+      }
+
+      console.error('Google token exchange error:', {
+        status: tokenRes.status,
+        error: errorReason,
+        detail: errorDetail,
+        redirectUri,
+        clientIdPreview: clientId ? `${clientId.slice(0, 12)}...` : 'missing',
+      });
+
+      const params = new URLSearchParams({
+        error: errorReason,
+        ...(errorDetail ? { detail: errorDetail } : {}),
+      });
+      return NextResponse.redirect(`${origin}/?${params.toString()}`);
     }
 
     const tokenData = await tokenRes.json();
     const accessToken = tokenData.access_token;
+
+    if (!accessToken) {
+      return NextResponse.redirect(`${origin}/?error=google_token_missing`);
+    }
 
     const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!userRes.ok) {
+      const errText = await userRes.text().catch(() => '');
+      console.error('Google userinfo fetch error:', errText);
       return NextResponse.redirect(`${origin}/?error=google_userinfo_failed`);
     }
 

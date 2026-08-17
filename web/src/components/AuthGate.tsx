@@ -36,16 +36,31 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const oauthErr = params.get('error');
+      const detail = params.get('detail');
       if (oauthErr) {
         if (oauthErr === 'unauthorized_email') {
           const email = params.get('email');
           setError(`Google account (${email || 'email'}) is not on the allowed whitelist.`);
         } else if (oauthErr === 'google_oauth_unconfigured') {
-          setError('Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
-        } else if (oauthErr === 'invalid_oauth_state') {
-          setError('Invalid OAuth session state. Please try signing in again.');
+          setError('Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in environment variables.');
+        } else if (oauthErr === 'invalid_oauth_state' || oauthErr === 'missing_oauth_parameters') {
+          setError('OAuth session expired or invalid. Please try clicking "Sign in with Google" again.');
+        } else if (oauthErr === 'invalid_client') {
+          setError(`Google OAuth Client Secret is invalid or expired (invalid_client). Verify GOOGLE_CLIENT_SECRET in Vercel environment variables matches your Google Cloud Console credentials.${detail ? ` (${detail})` : ''}`);
+        } else if (oauthErr === 'redirect_uri_mismatch') {
+          setError(`Redirect URI mismatch (redirect_uri_mismatch). Make sure ${window.location.origin}/api/auth/callback/google is added to 'Authorized redirect URIs' in Google Cloud Console.${detail ? ` (${detail})` : ''}`);
+        } else if (oauthErr === 'invalid_grant') {
+          setError(`The Google authorization code was invalid, expired, or already used (invalid_grant). Please try signing in again.${detail ? ` (${detail})` : ''}`);
+        } else if (oauthErr === 'unauthorized_client') {
+          setError(`OAuth client unauthorized for this flow (unauthorized_client). Ensure Application type is set to 'Web application' in Google Cloud Console.${detail ? ` (${detail})` : ''}`);
+        } else if (oauthErr === 'google_userinfo_failed') {
+          setError('Failed to fetch user profile from Google API.');
+        } else if (oauthErr === 'unverified_email') {
+          setError('Your Google account email is not verified.');
+        } else if (oauthErr === 'google_token_exchange_failed') {
+          setError(`Google token exchange failed.${detail ? ` Detail: ${detail}` : ' Check GOOGLE_CLIENT_SECRET and Google Cloud Console settings.'}`);
         } else {
-          setError(`Google Sign-In error: ${oauthErr}`);
+          setError(`Google Sign-In error: ${oauthErr}${detail ? ` (${detail})` : ''}`);
         }
       }
     }

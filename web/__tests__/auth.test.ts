@@ -105,5 +105,28 @@ describe('Google OAuth & Session Routes', () => {
     const location = res.headers.get('location');
     expect(location).toContain('error=google_oauth_unconfigured');
   });
+
+  it('signs and verifies OAuth state with redirectUri payload', async () => {
+    const { signOAuthState, verifyOAuthState } = await import('../src/lib/auth');
+    const redirectUri = 'https://loom-harness.vercel.app/api/auth/callback/google';
+    const state = signOAuthState({ redirectUri });
+    const verified = verifyOAuthState(state);
+    expect(verified.valid).toBe(true);
+    expect(verified.redirectUri).toBe(redirectUri);
+
+    const tampered = `${state}tampered`;
+    expect(verifyOAuthState(tampered).valid).toBe(false);
+  });
+
+  it('correctly resolves app origin from request headers', async () => {
+    const { getAppOrigin } = await import('../src/lib/auth');
+    const req = new NextRequest('http://localhost:3000/api/auth/google', {
+      headers: {
+        'x-forwarded-host': 'loom-harness.vercel.app, proxy.vercel.app',
+        'x-forwarded-proto': 'https,http',
+      },
+    });
+    expect(getAppOrigin(req)).toBe('https://loom-harness.vercel.app');
+  });
 });
 

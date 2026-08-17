@@ -1,24 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { signOAuthState } from '@/lib/auth';
-
-function getAppOrigin(req: NextRequest): string {
-  const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
-  if (configured) return configured.replace(/\/+$/, '');
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
-  const proto = req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(/:$/, '') || 'https';
-  return `${proto}://${host}`;
-}
+import { getAppOrigin, signOAuthState } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const origin = getAppOrigin(req);
+
   if (!clientId) {
-    const origin = getAppOrigin(req);
     return NextResponse.redirect(`${origin}/?error=google_oauth_unconfigured`);
   }
 
-  const origin = getAppOrigin(req);
   const redirectUri = `${origin}/api/auth/callback/google`;
-  const state = signOAuthState();
+  const state = signOAuthState({ redirectUri });
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', clientId);
