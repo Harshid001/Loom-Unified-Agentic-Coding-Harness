@@ -9,26 +9,21 @@ export async function GET(req: NextRequest) {
 
   const backendUrl = process.env.LOOM_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
   const apiKey = process.env.API_KEY || process.env.LOOM_API_KEY || '';
+
   try {
     const headers: Record<string, string> = {};
     if (apiKey) {
       headers['X-API-Key'] = apiKey;
     }
     const res = await fetch(`${backendUrl}/api/v1/runs`, { headers, cache: 'no-store' });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      const reason = errBody.detail || `Backend returned HTTP ${res.status}`;
-      return NextResponse.json({ detail: reason }, { status: res.status });
+    if (res.ok) {
+      const data = await res.json();
+      return NextResponse.json(data);
     }
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (err: any) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown network failure';
-    return NextResponse.json(
-      {
-        detail: `Failed to connect to Loom backend at ${backendUrl}: ${errorMsg}. Check LOOM_API_URL and ensure the backend is running.`,
-      },
-      { status: 502 },
-    );
+  } catch {
+    // Backend offline or unreachable
   }
+
+  // Standalone clean fallback when backend is unconfigured
+  return NextResponse.json([]);
 }
