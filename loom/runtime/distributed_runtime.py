@@ -22,6 +22,8 @@ from loom.runtime.budget import BudgetExceeded, RunBudget, cost_from_summary, to
 
 async def install_production_runtime(app: FastAPI, server_module: Any) -> None:
     """Attach Redis-backed controls without changing existing API handler contracts."""
+    if os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"}:
+        return
     coordinator = RedisCoordinator()
     if not coordinator.enabled:
         raise RuntimeError("Production runtime requires REDIS_URL")
