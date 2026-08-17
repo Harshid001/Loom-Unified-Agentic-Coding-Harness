@@ -415,7 +415,7 @@ function LoomControlPlane() {
 
               {displayData?.reproductionTest ? (
                 <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-xl p-4 font-mono text-xs text-[var(--text-secondary)] overflow-x-auto space-y-2">
-                  <p className="text-[var(--brand)] font-bold">// Synthesized Reproduction Test for Run {displayData.id}:</p>
+                  <p className="text-[var(--brand)] font-bold">{'// Synthesized Reproduction Test for Run '}{displayData.id}:</p>
                   <pre className="whitespace-pre-wrap text-[var(--text-primary)]">{displayData.reproductionTest}</pre>
                 </div>
               ) : (
