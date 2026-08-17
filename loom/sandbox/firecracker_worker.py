@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import re
 import secrets
 import time
@@ -14,7 +15,6 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
 from pydantic import BaseModel, Field
-from starlette.middleware.wsgi import WSGIMiddleware
 
 from loom.sandbox.base import CommandResult
 from loom.sandbox.firecracker_vm import FirecrackerConfig, FirecrackerVM, FirecrackerVMError, reconcile_runtime
@@ -59,7 +59,7 @@ VM_CLEANUP_FAILURES_TOTAL = _safe_metric(Counter, "firecracker_vm_cleanup_failur
 EXECUTION_DURATION = _safe_metric(Histogram, "firecracker_execution_duration", "Firecracker execution duration seconds")
 ACTIVE_VMS = _safe_metric(Gauge, "firecracker_active_vms", "Active Firecracker VMs")
 WORKER_QUEUE_DEPTH = _safe_metric(Gauge, "firecracker_worker_queue_depth", "Firecracker worker queue depth")
-app.mount("/metrics", WSGIMiddleware(make_asgi_app()))
+app.mount("/metrics", make_asgi_app())
 
 
 class ExecuteRequest(BaseModel):
@@ -128,7 +128,7 @@ def sha256_file(path: Path) -> str:
 def host_health() -> dict:
     if os.name != "posix":
         raise RuntimeError("Firecracker worker requires Linux")
-    if os.uname().machine != "x86_64":  # type: ignore[attr-defined]
+    if platform.machine() != "x86_64":
         raise RuntimeError("current worker validation policy requires x86_64")
     kvm = Path("/dev/kvm")
     if not kvm.exists() or not os.access(kvm, os.R_OK | os.W_OK):
@@ -187,7 +187,7 @@ def execute(req: ExecuteRequest, _: None = Depends(authenticate)):
     metadata = {
         "run_id": req.run_id,
         "vm_id": vm_id,
-        "worker_id": os.getenv("LOOM_FIRECRACKER_WORKER_ID", os.uname().nodename if hasattr(os, "uname") else "worker-host"),
+        "worker_id": os.getenv("LOOM_FIRECRACKER_WORKER_ID", platform.node() or "worker-host"),
         "org_id": req.org_id,
         "repo_path": str(repo),
         "kernel_hash": sha256_file(KERNEL_PATH),
