@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from 'react';
 import Link from 'next/link';
 import {
@@ -17,8 +19,13 @@ import {
   GitBranch,
   Layers,
   ArrowRight,
-  Settings2,
+  FolderGit2,
+  ExternalLink,
+  MessageSquare,
+  ListTodo,
 } from 'lucide-react';
+import { Github } from './GithubIcon';
+import { ConnectedRepoState, GitHubIssue } from '../hooks/useGitHub';
 
 interface OverviewTabProps {
   displayData: any;
@@ -28,6 +35,10 @@ interface OverviewTabProps {
   onOpenLiveBox?: () => void;
   onSelectStarterIssue?: (issue: string) => void;
   activeModel?: string;
+  connectedRepo?: ConnectedRepoState | null;
+  githubIssues?: GitHubIssue[];
+  onOpenRepoModal?: () => void;
+  onOpenIssuesDrawer?: () => void;
 }
 
 const STARTER_TASKS = [
@@ -65,8 +76,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   onOpenLiveBox,
   onSelectStarterIssue,
   activeModel = 'gemini-1.5-pro',
+  connectedRepo,
+  githubIssues = [],
+  onOpenRepoModal,
+  onOpenIssuesDrawer,
 }) => {
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [taskViewMode, setTaskViewMode] = useState<'starters' | 'github'>(
+    githubIssues.length > 0 ? 'github' : 'starters'
+  );
 
   if (isLoadingDetails) {
     return (
@@ -106,7 +124,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   <Cpu className="h-4 w-4 text-gray-400" />
                 </div>
                 <h3 className="text-xs font-bold text-white mb-1">Active Model</h3>
-                <p className="text-[11px] text-gray-400 font-mono mb-2">{activeModel}</p>
+                <p className="text-[11px] text-gray-400 font-mono mb-2 truncate">{activeModel}</p>
                 <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 mb-3">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Ready for execution</span>
@@ -164,45 +182,199 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         </div>
 
-        {/* 1-Click Starter Tasks Grid */}
+        {/* Connected Repository & GitHub Workspace Banner */}
+        <div className="bg-gradient-to-r from-gray-900 via-[#111827] to-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-600/30 to-purple-600/30 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner">
+                <FolderGit2 className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
+                    Target Repository
+                  </span>
+                  {connectedRepo?.isPrivate ? (
+                    <span className="text-[10px] bg-amber-500/10 text-amber-400 px-1.5 py-0.2 rounded border border-amber-500/30">
+                      Private
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                      Public
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2 mt-0.5">
+                  {connectedRepo?.fullName || 'No Repository Connected'}
+                  {connectedRepo?.htmlUrl && (
+                    <a
+                      href={connectedRepo.htmlUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-gray-400 hover:text-indigo-400 transition"
+                      title="View on GitHub"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </h3>
+                {connectedRepo?.description && (
+                  <p className="text-xs text-gray-400 max-w-xl truncate mt-0.5">
+                    {connectedRepo.description}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              {connectedRepo?.selectedBranch && (
+                <div className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                  <GitBranch className="h-3.5 w-3.5" />
+                  <span>{connectedRepo.selectedBranch}</span>
+                </div>
+              )}
+
+              {onOpenIssuesDrawer && (
+                <button
+                  onClick={onOpenIssuesDrawer}
+                  className="flex items-center gap-1.5 text-xs bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 hover:border-indigo-500/60 px-3.5 py-2 rounded-xl font-semibold transition"
+                >
+                  <ListTodo className="h-4 w-4 text-indigo-400" />
+                  <span>Browse GitHub Issues ({githubIssues.length})</span>
+                </button>
+              )}
+
+              {onOpenRepoModal && (
+                <button
+                  onClick={onOpenRepoModal}
+                  className="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 px-3.5 py-2 rounded-xl font-semibold transition"
+                >
+                  <Github className="h-4 w-4 text-gray-300" />
+                  <span>Connect / Switch Repo</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Tasks Section: Toggle between Starter Workflows and Live GitHub Issues */}
         <div className="bg-[#111827] border border-gray-800 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <div>
               <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                Quick Start: 1-Click Starter Workflows
+                1-Click Issues & Tasks
               </h3>
               <p className="text-xs text-gray-500">
-                Click any starter task below to immediately launch an autonomous pipeline execution
+                Select any task or GitHub issue below to immediately launch an autonomous pipeline execution
               </p>
+            </div>
+
+            <div className="flex items-center bg-gray-900 border border-gray-800 rounded-xl p-1 text-xs">
+              <button
+                onClick={() => setTaskViewMode('starters')}
+                className={`px-3 py-1 rounded-lg transition ${
+                  taskViewMode === 'starters'
+                    ? 'bg-indigo-600 text-white font-semibold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Starter Tasks
+              </button>
+              <button
+                onClick={() => setTaskViewMode('github')}
+                className={`px-3 py-1 rounded-lg transition flex items-center gap-1.5 ${
+                  taskViewMode === 'github'
+                    ? 'bg-indigo-600 text-white font-semibold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Github className="h-3 w-3" />
+                <span>GitHub Issues ({githubIssues.length})</span>
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {STARTER_TASKS.map((task, idx) => (
-              <button
-                key={idx}
-                onClick={() => onSelectStarterIssue?.(task.issue)}
-                className="flex items-start gap-3.5 p-4 rounded-xl bg-gray-900/60 border border-gray-800/80 hover:border-indigo-500/40 hover:bg-gray-900 text-left transition group"
-              >
-                <span className="text-2xl p-2 rounded-lg bg-gray-800/80 group-hover:scale-110 transition shrink-0">
-                  {task.icon}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition">
-                      {task.title}
-                    </h4>
-                    <span className="text-[10px] text-indigo-400 font-medium opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5">
-                      <span>Run</span>
-                      <ArrowRight className="h-3 w-3" />
-                    </span>
+          {taskViewMode === 'starters' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {STARTER_TASKS.map((task, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onSelectStarterIssue?.(task.issue)}
+                  className="flex items-start gap-3.5 p-4 rounded-xl bg-gray-900/60 border border-gray-800/80 hover:border-indigo-500/40 hover:bg-gray-900 text-left transition group"
+                >
+                  <span className="text-2xl p-2 rounded-lg bg-gray-800/80 group-hover:scale-110 transition shrink-0">
+                    {task.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition">
+                        {task.title}
+                      </h4>
+                      <span className="text-[10px] text-indigo-400 font-medium opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5">
+                        <span>Run</span>
+                        <ArrowRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-300 font-mono mt-0.5 truncate">{task.issue}</p>
+                    <p className="text-[11px] text-gray-500 mt-1">{task.desc}</p>
                   </div>
-                  <p className="text-xs text-gray-300 font-mono mt-0.5 truncate">{task.issue}</p>
-                  <p className="text-[11px] text-gray-500 mt-1">{task.desc}</p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {githubIssues.length === 0 ? (
+                <div className="col-span-2 text-center py-8 text-xs text-gray-500 bg-gray-900/30 rounded-xl border border-gray-800">
+                  No open issues found for {connectedRepo?.fullName || 'the connected repository'}.
                 </div>
-              </button>
-            ))}
-          </div>
+              ) : (
+                githubIssues.slice(0, 4).map(issue => (
+                  <button
+                    key={issue.id}
+                    onClick={() =>
+                      onSelectStarterIssue?.(
+                        `[GitHub Issue #${issue.number}] ${issue.title}\n\n${issue.body || ''}`.trim()
+                      )
+                    }
+                    className="flex items-start gap-3.5 p-4 rounded-xl bg-gray-900/60 border border-gray-800/80 hover:border-indigo-500/40 hover:bg-gray-900 text-left transition group"
+                  >
+                    <div className="h-9 w-9 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-emerald-400 font-mono text-xs font-bold shrink-0">
+                      #{issue.number}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition truncate">
+                          {issue.title}
+                        </h4>
+                        {issue.comments > 0 && (
+                          <span className="text-[10px] text-gray-400 flex items-center gap-0.5 font-mono shrink-0">
+                            <MessageSquare className="h-3 w-3" />
+                            {issue.comments}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-400 line-clamp-2 mt-1">
+                        {issue.body || 'No description provided.'}
+                      </p>
+                      {issue.labels && issue.labels.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                          {issue.labels.slice(0, 3).map(l => (
+                            <span
+                              key={l.id}
+                              className="text-[9px] px-1.5 py-0.5 rounded font-mono"
+                              style={{ backgroundColor: `#${l.color}20`, color: `#${l.color}` }}
+                            >
+                              {l.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Multi-Agent DAG Architecture Breakdown */}
@@ -247,7 +419,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   }
 
   const isSuccess = displayData.status === 'VERIFIED SUCCESS';
-  const costValue = displayData.cost !== '--' ? parseFloat(displayData.cost.replace('$', '')) : 0;
 
   return (
     <div className="flex-1 flex flex-col gap-5" id="tabpanel-overview" role="tabpanel" aria-labelledby="tab-overview">
