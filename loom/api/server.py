@@ -1265,6 +1265,10 @@ def system_status() -> dict:
     return snapshot.to_dict()
 
 
+from loom.api.models import router_models
+from loom.api.routes.settings import router_settings
+
+
 # ---------------------------------------------------------------------------
 # Backward-compat: module-level `app` for uvicorn entry-points
 # ---------------------------------------------------------------------------

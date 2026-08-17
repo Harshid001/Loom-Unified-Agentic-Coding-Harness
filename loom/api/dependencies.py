@@ -93,6 +93,8 @@ async def verify_api_key(
 
 
 AuthDep = Annotated[str, Depends(verify_api_key)]
+DashboardAuth = AuthDep
+verify_dashboard_auth = verify_api_key
 
 
 def is_dev_headers_trusted() -> bool:

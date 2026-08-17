@@ -1,0 +1,52 @@
+# Loom runtime data & snapshots (huge)
+.loom/
+.loom_snapshots/
+.loom_patch.diff
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# Node & Next.js
+node_modules/
+web/node_modules/
+.next/
+web/.next/
+out/
+web/out/
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+web/.env*
+!.web/.env.example
+
+# Vercel itself
+.vercel/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Scratch / artifacts / tests
+scratch/
+artifacts/
+test_loom_*.py
+
+# Git
+.git/
+.gitignore

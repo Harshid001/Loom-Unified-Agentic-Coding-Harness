@@ -39,3 +39,6 @@ artifacts/
 test_loom_*.py
 
 
+
+.vercel
+.env*

@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -13,6 +14,21 @@ logger = logging.getLogger("loom.adapters.router")
 
 DEFAULT_WEIGHTS = {"w1_cost": 0.25, "w2_latency": 0.15, "w3_success_rate": 0.35, "w4_capability": 0.25}
 DEFAULT_SENSITIVE_GLOBS = ["**/auth/**", "**/billing/**", "**/migrations/**"]
+
+PROVIDER_KEY_ENV_MAP: Dict[str, List[str]] = {
+    "anthropic": ["ANTHROPIC_API_KEY"],
+    "openai": ["OPENAI_API_KEY"],
+    "deepseek": ["DEEPSEEK_API_KEY"],
+    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+}
+
+
+def set_runtime_api_key(provider: str, key: str) -> None:
+    """Override environment variables at runtime for the given provider."""
+    env_vars = PROVIDER_KEY_ENV_MAP.get(provider.lower().strip(), [f"{provider.upper().strip()}_API_KEY"])
+    for var in env_vars:
+        os.environ[var] = key
 
 MODEL_PRICING: Dict[str, Dict[str, float]] = {
     "claude-3-5-sonnet-20241022": {"input": 3.00 / 1e6, "output": 15.00 / 1e6},
@@ -109,13 +125,30 @@ class ModelRouter:
 
         self.node_model_map: Dict[str, str] = {t.value: default_model for t in TaskType}
 
-    def set_model(self, new_model: str) -> None:
+    @staticmethod
+    def set_runtime_api_key(provider: str, key: str) -> None:
+        """Override environment variables at runtime for the given provider."""
+        set_runtime_api_key(provider, key)
+
+    def persist_runtime_models(self, shared_data: Dict[str, Any]) -> None:
+        """Persist model selector state into shared_data['_runtime_models']."""
+        shared_data["_runtime_models"] = {
+            "active_model": self.default_model,
+            "eligible_models": list(self._eligible_models),
+            "node_model_map": dict(self.node_model_map),
+        }
+
+    def set_model(self, new_model: str, shared_data: Optional[Dict[str, Any]] = None) -> None:
         self.default_model = new_model
         for key in self.node_model_map:
             self.node_model_map[key] = new_model
+        if shared_data is not None:
+            self.persist_runtime_models(shared_data)
 
-    def set_eligible_models(self, models: List[str]) -> None:
+    def set_eligible_models(self, models: List[str], shared_data: Optional[Dict[str, Any]] = None) -> None:
         self._eligible_models = list(models)
+        if shared_data is not None:
+            self.persist_runtime_models(shared_data)
 
     def set_quota_headroom(self, model: str, remaining_tokens: int) -> None:
         self._model_quota_headroom[model] = remaining_tokens

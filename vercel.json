@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "name": "loom-harness-dashboard",
   "buildCommand": "npm --prefix web run build",
   "outputDirectory": "web/.next"
 }

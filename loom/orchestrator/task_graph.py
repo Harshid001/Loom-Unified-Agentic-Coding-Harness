@@ -166,6 +166,8 @@ class TaskGraph:
         self.advanced_model_map = advanced_model_map or {}
         self.state.shared_data["mock_mode"] = self.router.mock_mode
         self.state.shared_data["_router"] = self.router
+        if hasattr(self.router, "persist_runtime_models"):
+            self.router.persist_runtime_models(self.state.shared_data)
         self.on_step_start_cb = on_step_start
         self.on_step_log_cb = on_step_log
         self.on_step_complete_cb = on_step_complete

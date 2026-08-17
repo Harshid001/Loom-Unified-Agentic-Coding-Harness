@@ -168,7 +168,9 @@ def _attach_routers(app: FastAPI) -> None:
         router_billing,
         router_health,
         router_integrations,
+        router_models,
         router_runs,
+        router_settings,
         router_system,
         router_webhooks,
     )
@@ -180,6 +182,8 @@ def _attach_routers(app: FastAPI) -> None:
     app.include_router(router_admin)
     app.include_router(router_billing)
     app.include_router(router_system)
+    app.include_router(router_models)
+    app.include_router(router_settings)
 
     from loom.api.compat_routes import install_compat_routes
     install_compat_routes(app)

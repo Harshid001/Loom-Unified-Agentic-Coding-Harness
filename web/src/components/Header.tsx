@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Layers, Cpu, Search, Activity, Settings, ChevronDown, Key } from 'lucide-react';
 
 interface HeaderProps {
@@ -46,6 +47,15 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="font-mono">{runCount} runs</span>
         </div>
 
+        <Link
+          href="/settings/models"
+          className="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg hover:border-indigo-500/50 hover:text-white transition font-medium"
+          title="Model Settings"
+        >
+          <Settings className="h-3.5 w-3.5 text-indigo-400" />
+          <span>Model Settings</span>
+        </Link>
+
         {onOpenApiKeyModal && (
           <button
             onClick={onOpenApiKeyModal}
@@ -70,7 +80,12 @@ export const Header: React.FC<HeaderProps> = ({
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowModelDropdown(false)} />
               <div className="absolute right-0 mt-1.5 w-64 bg-[#111827] border border-gray-800 rounded-xl shadow-2xl z-20 py-1.5 overflow-hidden">
-                <div className="px-3 py-1.5 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Select Model</div>
+                <div className="px-3 py-1.5 text-[10px] text-gray-500 uppercase tracking-wider font-semibold flex items-center justify-between">
+                  <span>Select Model</span>
+                  <Link href="/settings/models" className="text-indigo-400 hover:underline text-[10px]">
+                    Configure
+                  </Link>
+                </div>
                 {availableModels.map(m => (
                   <button
                     key={m}

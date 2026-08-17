@@ -18,6 +18,9 @@ from loom.business.models import AuditAction
 from loom.business.rbac import Action, RBACEnforcer
 from loom.db.records_store import get_run_record_store
 
+DashboardAuth = AuthDep
+verify_dashboard_auth = AuthDep
+
 
 def is_dev_headers_trusted() -> bool:
     """Return whether dev-mode client headers should override principal identity."""
