@@ -1,5 +1,7 @@
+"use client";
+
 import React, { useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Play, GitBranch, FolderGit2, ListTodo, X } from 'lucide-react';
 
 interface NewRunModalProps {
   isOpen: boolean;
@@ -8,6 +10,9 @@ interface NewRunModalProps {
   setNewIssue: (val: string) => void;
   isExecuting: boolean;
   onSubmit: () => void;
+  repoName?: string;
+  branchName?: string;
+  onOpenIssuesDrawer?: () => void;
 }
 
 export const NewRunModal: React.FC<NewRunModalProps> = ({
@@ -16,14 +21,15 @@ export const NewRunModal: React.FC<NewRunModalProps> = ({
   newIssue,
   setNewIssue,
   isExecuting,
-  onSubmit
+  onSubmit,
+  repoName = 'Loom-Unified-Agentic',
+  branchName = 'main',
+  onOpenIssuesDrawer,
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
-      if (e.key === 'Escape') {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -32,61 +38,105 @@ export const NewRunModal: React.FC<NewRunModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
     >
-      <div className="bg-[#111827] border border-gray-800 rounded-xl p-6 max-w-lg w-full shadow-2xl space-y-4">
-        <h2 id="modal-title" className="text-lg font-bold text-white flex items-center justify-between">
-          <span>Start New Loom Harness Run</span>
-          <button 
+      <div className="bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl p-6 max-w-xl w-full shadow-2xl space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">
+                PIPELINE EXECUTION
+              </span>
+            </div>
+            <h2 id="modal-title" className="text-base font-bold text-[var(--text-primary)] uppercase font-mono mt-1">
+              New Engineering Run
+            </h2>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              What should Loom investigate?
+            </p>
+          </div>
+          <button
             onClick={onClose}
             aria-label="Close dialog"
-            className="text-gray-400 hover:text-white text-sm"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded transition"
           >
-            ✕
+            <X className="h-4 w-4" />
           </button>
-        </h2>
-        <p className="text-xs text-gray-400">
-          Enter an issue description to trigger the multi-agent DAG task pipeline (Reproduction, Patch Proposal, Verification).
-        </p>
+        </div>
 
+        {/* Target Repo & Branch Pills */}
+        <div className="flex items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+          <div className="flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 py-1 rounded-lg">
+            <FolderGit2 className="h-3.5 w-3.5 text-[var(--brand)]" />
+            <span>{repoName}</span>
+          </div>
+          <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2 py-1 rounded-lg text-[var(--success)]">
+            <GitBranch className="h-3 w-3" />
+            <span>{branchName}</span>
+          </div>
+        </div>
+
+        {/* Input Area */}
         <div>
-          <label 
-            htmlFor="issue-description-input" 
-            className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2"
-          >
-            Issue Description / Prompt
-          </label>
           <textarea
             id="issue-description-input"
-            rows={4}
+            rows={5}
             value={newIssue}
             onChange={(e) => setNewIssue(e.target.value)}
-            placeholder="e.g. Fix memory leak when processing large JSON payloads in telemetry tracer"
-            className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+            placeholder="Describe the bug, feature, refactor, or GitHub issue..."
+            className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg p-3 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none font-mono leading-relaxed resize-none"
             aria-required="true"
           />
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            onClick={onClose}
-            disabled={isExecuting}
-            className="px-4 py-2 text-xs font-medium text-gray-400 hover:text-white transition focus:outline-none"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onSubmit}
-            disabled={isExecuting || !newIssue.trim()}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
-          >
-            {isExecuting && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-            {isExecuting ? 'Dispatching Run...' : 'Execute Harness Run'}
-          </button>
+        {/* Action Controls */}
+        <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)]">
+          <div>
+            {onOpenIssuesDrawer && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenIssuesDrawer();
+                }}
+                className="btn-secondary h-8 px-3 text-xs gap-1.5"
+              >
+                <ListTodo className="h-3.5 w-3.5 text-[var(--brand)]" />
+                <span>Attach Issue</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              disabled={isExecuting}
+              className="btn-tertiary text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onSubmit}
+              disabled={isExecuting || !newIssue.trim()}
+              className="btn-primary h-8 px-4 text-xs gap-1.5"
+            >
+              {isExecuting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Launching...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-3 w-3 fill-current" />
+                  <span>Launch Run →</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

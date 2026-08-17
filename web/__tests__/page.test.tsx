@@ -20,7 +20,7 @@ describe('Header component', () => {
       />
     );
 
-    expect(screen.getByText(/Loom/i)).toBeInTheDocument();
+    expect(screen.getByText(/LOOM/i)).toBeInTheDocument();
     expect(screen.getByText(/claude-3-5-sonnet/i)).toBeInTheDocument();
 
     const startButton = screen.getByRole('button', { name: /Open Live Box/i });
@@ -32,7 +32,7 @@ describe('Header component', () => {
 });
 
 describe('Sidebar component', () => {
-  it('renders view navigation tabs with proper ARIA attributes', () => {
+  it('renders view navigation tabs with proper lifecycle groups', () => {
     const setTab = vi.fn();
     const setRun = vi.fn();
     render(
@@ -46,11 +46,11 @@ describe('Sidebar component', () => {
       />
     );
 
-    const overviewTab = screen.getByRole('tab', { name: /Overview & Traces/i });
-    expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+    const overviewTab = screen.getByRole('button', { name: /Overview/i });
+    expect(overviewTab).toBeInTheDocument();
 
-    const dagTab = screen.getByRole('tab', { name: /DAG Task Graph/i });
-    expect(dagTab).toHaveAttribute('aria-selected', 'false');
+    const dagTab = screen.getByRole('button', { name: /DAG Execution/i });
+    expect(dagTab).toBeInTheDocument();
 
     fireEvent.click(dagTab);
     expect(setTab).toHaveBeenCalledWith('dag');
@@ -75,13 +75,13 @@ describe('NewRunModal component', () => {
     );
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    const textarea = screen.getByLabelText(/Issue Description \/ Prompt/i);
+    const textarea = screen.getByPlaceholderText(/Describe the bug, feature, refactor, or GitHub issue/i);
     expect(textarea).toHaveValue('Test issue description');
 
     fireEvent.change(textarea, { target: { value: 'Updated prompt' } });
     expect(setNewIssue).toHaveBeenCalledWith('Updated prompt');
 
-    const submitBtn = screen.getByRole('button', { name: /Execute Harness Run/i });
+    const submitBtn = screen.getByRole('button', { name: /Launch Run →/i });
     fireEvent.click(submitBtn);
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });

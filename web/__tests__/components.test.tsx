@@ -5,6 +5,7 @@ import { screen, fireEvent } from '@testing-library/dom';
 import { DiffTab } from '../src/components/DiffTab';
 import { DagTab } from '../src/components/DagTab';
 import { AblationsTab } from '../src/components/AblationsTab';
+import { EvidenceView } from '../src/components/EvidenceView';
 
 describe('DiffTab component', () => {
   it('renders placeholder when no displayData is provided', () => {
@@ -19,7 +20,7 @@ describe('DiffTab component', () => {
 
     render(<DiffTab displayData={mockData} />);
     expect(screen.getByText(/Verified Unified Patch Diff/i)).toBeInTheDocument();
-    expect(screen.getByText(/Unified Diff Format/i)).toBeInTheDocument();
+    expect(screen.getByText('VALIDATED')).toBeInTheDocument();
     expect(screen.getByText(/-old line/i)).toBeInTheDocument();
     expect(screen.getByText(/\+new line/i)).toBeInTheDocument();
   });
@@ -28,8 +29,8 @@ describe('DiffTab component', () => {
 describe('DagTab component', () => {
   it('renders topology when no displayData is provided', () => {
     render(<DagTab displayData={null} />);
-    expect(screen.getByText(/DAG Task Graph Topology/i)).toBeInTheDocument();
-    expect(screen.getByText(/1\. Repo Mapper/i)).toBeInTheDocument();
+    expect(screen.getByText(/5-Stage Autonomous Execution Graph/i)).toBeInTheDocument();
+    expect(screen.getByText('MAPPER')).toBeInTheDocument();
   });
 
   it('renders all 5 pipeline DAG nodes with progress', () => {
@@ -44,32 +45,22 @@ describe('DagTab component', () => {
     };
 
     render(<DagTab displayData={mockData} />);
-    expect(screen.getByText(/DAG Task Graph Topology/i)).toBeInTheDocument();
-    expect(screen.getByText(/1\. Repo Mapper/i)).toBeInTheDocument();
-    expect(screen.getByText(/2\. Reproduction Agent/i)).toBeInTheDocument();
-    expect(screen.getByText(/3\. Patcher Agent/i)).toBeInTheDocument();
-    expect(screen.getByText(/4\. Verification Runner/i)).toBeInTheDocument();
-    expect(screen.getByText(/5\. Evidence Reviewer/i)).toBeInTheDocument();
-    expect(screen.getByText(/2\/5/i)).toBeInTheDocument();
+    expect(screen.getByText(/5-Stage Autonomous Execution Graph/i)).toBeInTheDocument();
+    expect(screen.getByText('MAPPER')).toBeInTheDocument();
+    expect(screen.getByText('REPRO')).toBeInTheDocument();
+    expect(screen.getByText('PATCH')).toBeInTheDocument();
+    expect(screen.getByText('VERIFY')).toBeInTheDocument();
+    expect(screen.getByText('REVIEW')).toBeInTheDocument();
   });
+});
 
-  it('allows clicking nodes to expand agent details', () => {
-    const mockData = {
-      nodes: [
-        { status: 'completed', duration: '1.2s', cost: '$0.001' },
-        { status: 'pending' },
-        { status: 'pending' },
-        { status: 'pending' },
-        { status: 'pending' },
-      ],
-    };
-
-    render(<DagTab displayData={mockData} />);
-    const mapperBtn = screen.getByRole('button', { name: /1\. Repo Mapper/i });
-    fireEvent.click(mapperBtn);
-
-    expect(screen.getByText(/Agent:/i)).toBeInTheDocument();
-    expect(screen.getByText(/onboarding/i)).toBeInTheDocument();
+describe('EvidenceView component', () => {
+  it('renders cryptographic proof layer and SHA-256 artifacts', () => {
+    render(<EvidenceView runId="run_427" integrityValid={true} />);
+    expect(screen.getByText(/SHA-256 Hash Chain Audit Bundle/i)).toBeInTheDocument();
+    expect(screen.getByText(/INTEGRITY VALID/i)).toBeInTheDocument();
+    expect(screen.getByText(/Verification Proof Checklist/i)).toBeInTheDocument();
+    expect(screen.getByText(/Chained Artifact Manifest/i)).toBeInTheDocument();
   });
 });
 
@@ -117,4 +108,3 @@ describe('AuthGate component', () => {
     });
   });
 });
-

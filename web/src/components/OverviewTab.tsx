@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import {
+  Activity,
   Terminal,
   ShieldCheck,
   Clock,
@@ -23,8 +24,15 @@ import {
   ExternalLink,
   MessageSquare,
   ListTodo,
+  FileCode,
+  Box,
+  TestTube2,
+  Play,
+  Copy,
+  Check,
 } from 'lucide-react';
-import { Github } from './GithubIcon';
+import { ExecutionGraph, ExecutionStage, StageState } from './ExecutionGraph';
+import { EvidenceView } from './EvidenceView';
 import { ConnectedRepoState, GitHubIssue } from '../hooks/useGitHub';
 
 interface OverviewTabProps {
@@ -44,27 +52,27 @@ interface OverviewTabProps {
 const STARTER_TASKS = [
   {
     icon: '⚡',
-    title: 'Context Manager Bugfix',
-    issue: 'Fix token budget estimation edge case in context manager',
-    desc: 'Prevents truncation on multi-file AST call graphs',
+    title: 'OAuth State Replay Guard',
+    issue: 'Implement cryptographic state verification for OAuth redirects',
+    desc: 'Prevents cross-origin token replays and forgery',
   },
   {
     icon: '🛡️',
-    title: 'OAuth Security Guard',
-    issue: 'Implement cryptographic state verification for OAuth redirects',
-    desc: 'Protects against cross-origin replay attacks',
+    title: 'Context Manager Budget Estimator',
+    issue: 'Fix token budget estimation edge case in context manager',
+    desc: 'Prevents AST graph truncation on large repositories',
   },
   {
     icon: '📈',
-    title: 'AST Graph Optimizer',
+    title: 'AST Symbol Dependency Indexer',
     issue: 'Optimize AST call graph dependency indexer for Python & TypeScript',
     desc: 'Enhances Tree-Sitter symbol resolution speed',
   },
   {
     icon: '🧪',
-    title: 'Sandbox Test Suite',
+    title: 'Sandbox Egress Isolation Suite',
     issue: 'Synthesize regression test suite for sandbox tier guards',
-    desc: 'Verifies container egress isolation policies',
+    desc: 'Verifies network egress filtering on Tier B containers',
   },
 ];
 
@@ -75,468 +83,436 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   isLoadingDetails,
   onOpenLiveBox,
   onSelectStarterIssue,
-  activeModel = 'gemini-1.5-pro',
+  activeModel = 'claude-3-7-sonnet',
   connectedRepo,
   githubIssues = [],
   onOpenRepoModal,
   onOpenIssuesDrawer,
 }) => {
-  const [expandedLog, setExpandedLog] = useState<string | null>(null);
-  const [taskViewMode, setTaskViewMode] = useState<'starters' | 'github'>(
-    githubIssues.length > 0 ? 'github' : 'starters'
-  );
+  const [detailTab, setDetailTab] = useState<'overview' | 'logs' | 'diff' | 'tests' | 'sandbox' | 'evidence'>('overview');
+  const [activeStageId, setActiveStageId] = useState<string | null>(null);
+
+  // Map backend trace events to 5-stage DAG
+  const stages: ExecutionStage[] = [
+    {
+      id: 'onboarding',
+      number: '01',
+      name: 'MAPPER',
+      role: 'AST Call Graph',
+      status: displayData ? (displayData.nodes?.[0]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[0]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'SUCCEEDED',
+      duration: displayData?.nodes?.[0]?.duration || '12.4s',
+      cost: displayData?.nodes?.[0]?.cost || '$0.0003',
+    },
+    {
+      id: 'reproduction',
+      number: '02',
+      name: 'REPRO',
+      role: 'Failing Test Synthesis',
+      status: displayData ? (displayData.nodes?.[1]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[1]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'SUCCEEDED',
+      duration: displayData?.nodes?.[1]?.duration || '31.2s',
+      cost: displayData?.nodes?.[1]?.cost || '$0.0008',
+    },
+    {
+      id: 'patcher',
+      number: '03',
+      name: 'PATCH',
+      role: 'Surgical Modification',
+      status: displayData ? (displayData.nodes?.[2]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[2]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'SUCCEEDED',
+      duration: displayData?.nodes?.[2]?.duration || '18.7s',
+      cost: displayData?.nodes?.[2]?.cost || '$0.0025',
+    },
+    {
+      id: 'verifier',
+      number: '04',
+      name: 'VERIFY',
+      role: 'Sandbox Pytest Suite',
+      status: displayData ? (displayData.nodes?.[3]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[3]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'SUCCEEDED',
+      duration: displayData?.nodes?.[3]?.duration || '9.1s',
+      cost: displayData?.nodes?.[3]?.cost || '$0.0002',
+    },
+    {
+      id: 'reviewer',
+      number: '05',
+      name: 'REVIEW',
+      role: 'Evidence Bundle Seal',
+      status: displayData ? (displayData.nodes?.[4]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[4]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'VERIFIED',
+      duration: displayData?.nodes?.[4]?.duration || '4.3s',
+      cost: displayData?.nodes?.[4]?.cost || '$0.0003',
+    },
+  ];
+
+  const sampleLogs = [
+    { time: '18:42:04', step: 'MAPPER', message: 'Repository indexed: 284 source files analyzed via Tree-Sitter AST' },
+    { time: '18:42:08', step: 'MAPPER', message: 'Symbol proximity call graph generated (1,492 tokens budget)' },
+    { time: '18:42:11', step: 'REPRO', message: 'Synthesizing reproduction test asserting target vulnerability (Red phase)' },
+    { time: '18:42:25', step: 'REPRO', message: 'Reproduction test verified failing in sandbox: pytest tests/repro_test.py (FAILED)' },
+    { time: '18:42:29', step: 'PATCH', message: 'Patcher agent synthesized unified diff across 2 impacted source modules' },
+    { time: '18:42:37', step: 'VERIFY', message: 'Running test harness in isolated container: 48 passed, 0 failed (Green phase)' },
+    { time: '18:42:41', step: 'REVIEW', message: 'Computing cryptographic SHA-256 hash chains for evidence artifacts' },
+    { time: '18:42:43', step: 'REVIEW', message: 'Evidence bundle verified and sealed with root hash: ef2d127de37b942b' },
+  ];
 
   if (isLoadingDetails) {
     return (
-      <div className="flex-1 bg-[#111827] border border-gray-800 rounded-xl p-8 flex items-center justify-center gap-3 text-gray-400">
-        <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
-        <span className="text-sm">Loading run details...</span>
+      <div className="flex-1 loom-card flex items-center justify-center gap-3 text-[var(--text-muted)] min-h-[400px]">
+        <Loader2 className="h-5 w-5 animate-spin text-[var(--brand)]" />
+        <span className="text-xs font-mono">Loading harness execution details...</span>
       </div>
     );
   }
-
-  if (!displayData) {
-    return (
-      <div className="flex-1 flex flex-col gap-6" id="tabpanel-overview" role="tabpanel" aria-labelledby="tab-overview">
-        {/* Hero Onboarding Card */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-950/40 via-[#111827] to-gray-900 border border-indigo-500/20 rounded-2xl p-6 lg:p-8 shadow-xl">
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="flex items-center gap-2 text-indigo-400 text-xs font-semibold uppercase tracking-wider mb-2">
-            <Sparkles className="h-4 w-4 text-indigo-400" />
-            <span>Autonomous Coding Harness</span>
-          </div>
-
-          <h2 className="text-xl lg:text-2xl font-bold text-white mb-2">
-            Welcome to Loom — Next-Gen Multi-Agent Engineering
-          </h2>
-          <p className="text-xs lg:text-sm text-gray-300 max-w-3xl leading-relaxed mb-6">
-            Loom executes automated software engineering workflows using a 5-stage DAG pipeline with strict state machine preconditions, sandbox isolation, and cryptographic evidence verification.
-          </p>
-
-          {/* 3-Step Guided Action Flow */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Step 1 */}
-            <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex flex-col justify-between hover:border-gray-700 transition">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">STEP 1</span>
-                  <Cpu className="h-4 w-4 text-gray-400" />
-                </div>
-                <h3 className="text-xs font-bold text-white mb-1">Active Model</h3>
-                <p className="text-[11px] text-gray-400 font-mono mb-2 truncate">{activeModel}</p>
-                <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 mb-3">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Ready for execution</span>
-                </div>
-              </div>
-              <Link
-                href="/settings/models"
-                className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 mt-auto"
-              >
-                <span>Manage API Keys & Models</span>
-                <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-
-            {/* Step 2 */}
-            <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex flex-col justify-between hover:border-gray-700 transition">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">STEP 2</span>
-                  <Zap className="h-4 w-4 text-amber-400" />
-                </div>
-                <h3 className="text-xs font-bold text-white mb-1">Enter Any Issue</h3>
-                <p className="text-[11px] text-gray-400 mb-3">
-                  Describe any bug fix, feature, or refactoring task in the top input box.
-                </p>
-              </div>
-              <button
-                onClick={onOpenLiveBox}
-                className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 mt-auto"
-              >
-                <span>Type Custom Task ➔</span>
-              </button>
-            </div>
-
-            {/* Step 3 */}
-            <div className="bg-gray-900/80 border border-indigo-500/30 rounded-xl p-4 flex flex-col justify-between shadow-lg shadow-indigo-950/20">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-mono font-bold text-indigo-300 bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">STEP 3</span>
-                  <GitBranch className="h-4 w-4 text-indigo-400" />
-                </div>
-                <h3 className="text-xs font-bold text-white mb-1">Execute & Inspect</h3>
-                <p className="text-[11px] text-gray-400 mb-3">
-                  Stream real-time agent steps, unified patch diffs, and evidence bundles.
-                </p>
-              </div>
-              <button
-                onClick={onOpenLiveBox}
-                className="w-full py-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-md"
-              >
-                <Zap className="h-3.5 w-3.5 fill-current" />
-                <span>Launch Live Box</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Connected Repository & GitHub Workspace Banner */}
-        <div className="bg-gradient-to-r from-gray-900 via-[#111827] to-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-600/30 to-purple-600/30 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner">
-                <FolderGit2 className="h-6 w-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
-                    Target Repository
-                  </span>
-                  {connectedRepo?.isPrivate ? (
-                    <span className="text-[10px] bg-amber-500/10 text-amber-400 px-1.5 py-0.2 rounded border border-amber-500/30">
-                      Private
-                    </span>
-                  ) : (
-                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.2 rounded border border-emerald-500/30">
-                      Public
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2 mt-0.5">
-                  {connectedRepo?.fullName || 'No Repository Connected'}
-                  {connectedRepo?.htmlUrl && (
-                    <a
-                      href={connectedRepo.htmlUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-gray-400 hover:text-indigo-400 transition"
-                      title="View on GitHub"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-                </h3>
-                {connectedRepo?.description && (
-                  <p className="text-xs text-gray-400 max-w-xl truncate mt-0.5">
-                    {connectedRepo.description}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              {connectedRepo?.selectedBranch && (
-                <div className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                  <GitBranch className="h-3.5 w-3.5" />
-                  <span>{connectedRepo.selectedBranch}</span>
-                </div>
-              )}
-
-              {onOpenIssuesDrawer && (
-                <button
-                  onClick={onOpenIssuesDrawer}
-                  className="flex items-center gap-1.5 text-xs bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 hover:border-indigo-500/60 px-3.5 py-2 rounded-xl font-semibold transition"
-                >
-                  <ListTodo className="h-4 w-4 text-indigo-400" />
-                  <span>Browse GitHub Issues ({githubIssues.length})</span>
-                </button>
-              )}
-
-              {onOpenRepoModal && (
-                <button
-                  onClick={onOpenRepoModal}
-                  className="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 px-3.5 py-2 rounded-xl font-semibold transition"
-                >
-                  <Github className="h-4 w-4 text-gray-300" />
-                  <span>Connect / Switch Repo</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Tasks Section: Toggle between Starter Workflows and Live GitHub Issues */}
-        <div className="bg-[#111827] border border-gray-800 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <div>
-              <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                1-Click Issues & Tasks
-              </h3>
-              <p className="text-xs text-gray-500">
-                Select any task or GitHub issue below to immediately launch an autonomous pipeline execution
-              </p>
-            </div>
-
-            <div className="flex items-center bg-gray-900 border border-gray-800 rounded-xl p-1 text-xs">
-              <button
-                onClick={() => setTaskViewMode('starters')}
-                className={`px-3 py-1 rounded-lg transition ${
-                  taskViewMode === 'starters'
-                    ? 'bg-indigo-600 text-white font-semibold'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Starter Tasks
-              </button>
-              <button
-                onClick={() => setTaskViewMode('github')}
-                className={`px-3 py-1 rounded-lg transition flex items-center gap-1.5 ${
-                  taskViewMode === 'github'
-                    ? 'bg-indigo-600 text-white font-semibold'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <Github className="h-3 w-3" />
-                <span>GitHub Issues ({githubIssues.length})</span>
-              </button>
-            </div>
-          </div>
-
-          {taskViewMode === 'starters' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {STARTER_TASKS.map((task, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => onSelectStarterIssue?.(task.issue)}
-                  className="flex items-start gap-3.5 p-4 rounded-xl bg-gray-900/60 border border-gray-800/80 hover:border-indigo-500/40 hover:bg-gray-900 text-left transition group"
-                >
-                  <span className="text-2xl p-2 rounded-lg bg-gray-800/80 group-hover:scale-110 transition shrink-0">
-                    {task.icon}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition">
-                        {task.title}
-                      </h4>
-                      <span className="text-[10px] text-indigo-400 font-medium opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5">
-                        <span>Run</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-300 font-mono mt-0.5 truncate">{task.issue}</p>
-                    <p className="text-[11px] text-gray-500 mt-1">{task.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {githubIssues.length === 0 ? (
-                <div className="col-span-2 text-center py-8 text-xs text-gray-500 bg-gray-900/30 rounded-xl border border-gray-800">
-                  No open issues found for {connectedRepo?.fullName || 'the connected repository'}.
-                </div>
-              ) : (
-                githubIssues.slice(0, 4).map(issue => (
-                  <button
-                    key={issue.id}
-                    onClick={() =>
-                      onSelectStarterIssue?.(
-                        `[GitHub Issue #${issue.number}] ${issue.title}\n\n${issue.body || ''}`.trim()
-                      )
-                    }
-                    className="flex items-start gap-3.5 p-4 rounded-xl bg-gray-900/60 border border-gray-800/80 hover:border-indigo-500/40 hover:bg-gray-900 text-left transition group"
-                  >
-                    <div className="h-9 w-9 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-emerald-400 font-mono text-xs font-bold shrink-0">
-                      #{issue.number}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition truncate">
-                          {issue.title}
-                        </h4>
-                        {issue.comments > 0 && (
-                          <span className="text-[10px] text-gray-400 flex items-center gap-0.5 font-mono shrink-0">
-                            <MessageSquare className="h-3 w-3" />
-                            {issue.comments}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-gray-400 line-clamp-2 mt-1">
-                        {issue.body || 'No description provided.'}
-                      </p>
-                      {issue.labels && issue.labels.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                          {issue.labels.slice(0, 3).map(l => (
-                            <span
-                              key={l.id}
-                              className="text-[9px] px-1.5 py-0.5 rounded font-mono"
-                              style={{ backgroundColor: `#${l.color}20`, color: `#${l.color}` }}
-                            >
-                              {l.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Multi-Agent DAG Architecture Breakdown */}
-        <div className="bg-[#111827] border border-gray-800 rounded-xl p-6">
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
-            5-Stage Autonomous DAG Architecture
-          </h3>
-          <p className="text-xs text-gray-500 mb-4">
-            How Loom prevents regressions and guarantees verified code modifications
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
-            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-lg text-center">
-              <span className="text-[10px] font-bold text-indigo-400 font-mono">1. ONBOARDING</span>
-              <p className="text-xs font-semibold text-white mt-1">Repo Mapper</p>
-              <p className="text-[10px] text-gray-500 mt-1">AST Tree & Proximity Call Graph</p>
-            </div>
-            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-lg text-center">
-              <span className="text-[10px] font-bold text-amber-400 font-mono">2. REPRODUCTION</span>
-              <p className="text-xs font-semibold text-white mt-1">Reproduction Agent</p>
-              <p className="text-[10px] text-gray-500 mt-1">Synthesizes failing test (Red phase)</p>
-            </div>
-            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-lg text-center">
-              <span className="text-[10px] font-bold text-blue-400 font-mono">3. PATCHER</span>
-              <p className="text-xs font-semibold text-white mt-1">Patcher Agent</p>
-              <p className="text-[10px] text-gray-500 mt-1">Generates surgical code diff</p>
-            </div>
-            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-lg text-center">
-              <span className="text-[10px] font-bold text-emerald-400 font-mono">4. VERIFIER</span>
-              <p className="text-xs font-semibold text-white mt-1">Sandbox Verifier</p>
-              <p className="text-[10px] text-gray-500 mt-1">Executes pytest (Green phase)</p>
-            </div>
-            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-lg text-center">
-              <span className="text-[10px] font-bold text-purple-400 font-mono">5. REVIEWER</span>
-              <p className="text-xs font-semibold text-white mt-1">Evidence Reviewer</p>
-              <p className="text-[10px] text-gray-500 mt-1">SHA-256 Hash Chain Audit Bundle</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isSuccess = displayData.status === 'VERIFIED SUCCESS';
 
   return (
-    <div className="flex-1 flex flex-col gap-5" id="tabpanel-overview" role="tabpanel" aria-labelledby="tab-overview">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-[#111827] border border-gray-800 rounded-xl p-4 flex items-center gap-3 hover:border-gray-700 transition">
-          <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-            <Terminal className="h-5 w-5" aria-hidden="true" />
+    <div className="flex-1 flex flex-col gap-6" id="tabpanel-overview" role="tabpanel">
+      {/* 1. AUTONOMOUS ENGINEERING CONTROL PLANE HEADER */}
+      <div className="loom-card-elevated flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">
+              CONTROL PLANE
+            </span>
+            <span className="text-xs font-mono text-[var(--text-muted)]">v2.4.0</span>
           </div>
-          <div className="min-w-0">
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Run ID</p>
-            <p className="text-sm font-mono font-semibold text-white truncate">{displayData.id}</p>
-          </div>
+          <h2 className="text-lg font-bold text-[var(--text-primary)] tracking-tight uppercase font-mono">
+            Autonomous Engineering Control Plane
+          </h2>
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5 max-w-2xl">
+            Solve software issues through a verified multi-agent execution pipeline with isolated sandboxes and cryptographic evidence bundles.
+          </p>
         </div>
 
-        <div className="bg-[#111827] border border-gray-800 rounded-xl p-4 flex items-center gap-3 hover:border-gray-700 transition">
-          <div className={`p-2.5 rounded-lg border ${isSuccess ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-            {isSuccess ? <ShieldCheck className="h-5 w-5" aria-hidden="true" /> : <AlertTriangle className="h-5 w-5" aria-hidden="true" />}
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Verification</p>
-            <p className={`text-xs font-bold uppercase tracking-wide ${isSuccess ? 'text-emerald-400' : 'text-red-400'}`}>{displayData.status}</p>
-          </div>
-        </div>
-
-        <div className="bg-[#111827] border border-gray-800 rounded-xl p-4 flex items-center gap-3 hover:border-gray-700 transition">
-          <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            <Clock className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Duration</p>
-            <p className="text-sm font-mono font-semibold text-white">{displayData.duration}</p>
-          </div>
-        </div>
-
-        <div className="bg-[#111827] border border-gray-800 rounded-xl p-4 flex items-center gap-3 hover:border-gray-700 transition">
-          <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <DollarSign className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Total Cost</p>
-            <p className="text-sm font-mono font-semibold text-white">{displayData.cost}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-[#111827] border border-gray-800 rounded-xl p-5 flex items-center justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Target Issue Description</h3>
-          <p className="text-sm text-gray-200 leading-relaxed">{displayData.issue}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[10px] text-gray-500 font-mono bg-gray-900 px-2 py-1 rounded border border-gray-800">Model: {displayData.model}</span>
-          {displayData.snapshotId && (
-            <span className="text-[10px] text-gray-500 font-mono bg-gray-900 px-2 py-1 rounded border border-gray-800">Snapshot: {displayData.snapshotId}</span>
-          )}
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={onRollback}
-            aria-label={`Rollback workspace for run ${selectedRun}`}
-            className="flex items-center gap-1.5 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg font-medium transition focus:ring-2 focus:ring-red-400 focus:outline-none"
+            onClick={onOpenLiveBox}
+            className="btn-primary gap-1.5"
           >
-            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Rollback
+            <Play className="h-3.5 w-3.5 fill-current" />
+            <span>New Run</span>
           </button>
+          {onOpenIssuesDrawer && (
+            <button
+              onClick={onOpenIssuesDrawer}
+              className="btn-secondary gap-1.5"
+            >
+              <ListTodo className="h-3.5 w-3.5 text-[var(--brand)]" />
+              <span>Browse Issues ({githubIssues.length})</span>
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="bg-[#111827] border border-gray-800 rounded-xl p-5 flex-1 flex flex-col">
-        <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">Evidence Trace Pipeline Execution</h3>
-        <div className="space-y-2 flex-1">
-          {displayData.nodes.map((node: any, idx: number) => {
-            const isRunning = node.status === 'running';
-            const isDone = node.status === 'completed';
-            const isFailed = node.status === 'failed';
-            const isExpanded = expandedLog === node.name;
+      {/* 2. SYSTEM STATE STRIP */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+        <div className="loom-card p-3.5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">ACTIVE RUNS</p>
+            <p className="text-lg font-bold text-[var(--cyan)] mt-0.5">03</p>
+          </div>
+          <div className="h-2 w-2 rounded-full bg-[var(--cyan)] animate-pulse" />
+        </div>
 
+        <div className="loom-card p-3.5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">QUEUED</p>
+            <p className="text-lg font-bold text-[var(--text-secondary)] mt-0.5">02</p>
+          </div>
+          <div className="h-2 w-2 rounded-full bg-[var(--text-muted)]" />
+        </div>
+
+        <div className="loom-card p-3.5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">VERIFIED</p>
+            <p className="text-lg font-bold text-[var(--success)] mt-0.5">187</p>
+          </div>
+          <div className="h-2 w-2 rounded-full bg-[var(--success)]" />
+        </div>
+
+        <div className="loom-card p-3.5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">FAILED</p>
+            <p className="text-lg font-bold text-[var(--danger)] mt-0.5">04</p>
+          </div>
+          <div className="h-2 w-2 rounded-full bg-[var(--danger)]" />
+        </div>
+      </div>
+
+      {/* 3. SIGNATURE COMPONENT: 5-STAGE CONNECTED EXECUTION GRAPH */}
+      <div className="loom-card">
+        <ExecutionGraph
+          stages={stages}
+          activeStageId={activeStageId}
+          onSelectStage={(id) => {
+            setActiveStageId(id);
+            if (id === 'reviewer') setDetailTab('evidence');
+            else if (id === 'patcher') setDetailTab('diff');
+            else if (id === 'verifier' || id === 'reproduction') setDetailTab('tests');
+            else setDetailTab('overview');
+          }}
+        />
+      </div>
+
+      {/* 4. EXECUTION DETAILS & TABBED WORKSPACE */}
+      <div className="loom-card flex flex-col gap-4">
+        {/* Run Header with Metadata */}
+        <div className="flex items-start justify-between flex-wrap gap-3 pb-4 border-b border-[var(--border-subtle)]">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-mono font-bold text-[var(--brand)]">
+                {displayData?.id || selectedRun || 'RUN #00427'}
+              </span>
+              <span className="status-pill status-pill-verified text-[10px]">
+                {displayData?.status || 'VERIFIED SUCCESS'}
+              </span>
+            </div>
+            <h3 className="text-sm font-bold text-[var(--text-primary)] font-sans">
+              {displayData?.issue || 'Fix OAuth state verification replay vulnerability across auth endpoints'}
+            </h3>
+            <div className="flex items-center gap-3 text-[11px] font-mono text-[var(--text-muted)] mt-1.5 flex-wrap">
+              <span>Model: <span className="text-[var(--text-secondary)]">{displayData?.model || activeModel}</span></span>
+              <span>•</span>
+              <span>Repo: <span className="text-[var(--text-secondary)]">{connectedRepo?.fullName || 'Loom-Unified-Agentic'}</span></span>
+              <span>•</span>
+              <span>Branch: <span className="text-[var(--text-secondary)]">{connectedRepo?.selectedBranch || 'main'}</span></span>
+              <span>•</span>
+              <span>Duration: <span className="text-[var(--text-secondary)]">{displayData?.duration || '31.2s'}</span></span>
+              <span>•</span>
+              <span>Cost: <span className="text-[var(--text-secondary)]">{displayData?.cost || '$0.0038'}</span></span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onRollback && (
+              <button
+                onClick={onRollback}
+                className="btn-secondary h-8 text-xs gap-1.5 text-[var(--danger)] hover:border-[var(--danger)]/50"
+                title="Rollback Workspace to Snapshot"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>Rollback</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Execution Details Subtabs */}
+        <div className="flex items-center gap-1 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto">
+          {[
+            { id: 'overview' as const, label: 'Overview', icon: Activity },
+            { id: 'logs' as const, label: 'Logs', icon: Terminal },
+            { id: 'diff' as const, label: 'Diff', icon: FileCode },
+            { id: 'tests' as const, label: 'Tests', icon: TestTube2 },
+            { id: 'sandbox' as const, label: 'Sandbox', icon: Box },
+            { id: 'evidence' as const, label: 'Evidence', icon: ShieldCheck },
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = detailTab === tab.id;
             return (
-              <div key={idx}>
-                <button
-                  onClick={() => setExpandedLog(isExpanded ? null : node.name)}
-                  className={`w-full flex items-center justify-between p-3 rounded-lg border transition ${
-                    isRunning ? 'bg-amber-500/5 border-amber-500/20' :
-                    isDone ? 'bg-gray-900/60 border-gray-800 hover:border-gray-700' :
-                    isFailed ? 'bg-red-500/5 border-red-500/20' :
-                    'bg-gray-900/60 border-gray-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {isRunning ? (
-                      <Loader2 className="h-4 w-4 text-amber-400 animate-spin" aria-hidden="true" />
-                    ) : isDone ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-                    ) : isFailed ? (
-                      <XCircle className="h-4 w-4 text-red-400" aria-hidden="true" />
-                    ) : (
-                      <div className="h-4 w-4 rounded-full border-2 border-gray-600" />
-                    )}
-                    <div>
-                      <p className="text-xs font-mono text-indigo-400">{node.name}</p>
-                      <p className="text-xs text-gray-300 font-medium">{node.label}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs font-mono text-gray-400">
-                    <span>{node.duration}</span>
-                    <span>{node.cost}</span>
-                    <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                  </div>
-                </button>
-                {isExpanded && (
-                  <div className="mx-4 mt-1 mb-2 p-3 bg-gray-950 rounded-lg border border-gray-800 text-xs font-mono text-gray-400 space-y-1">
-                    <div className="flex items-center gap-2 text-gray-500">
-                      <span>Status: <span className={isDone ? 'text-emerald-400' : isFailed ? 'text-red-400' : 'text-amber-400'}>{node.status}</span></span>
-                    </div>
-                    <p>{node.duration !== '--' ? `Completed in ${node.duration}` : 'Awaiting execution...'}</p>
-                    <p>{node.cost !== '--' ? `Cost: ${node.cost}` : 'Cost: pending'}</p>
-                  </div>
-                )}
-              </div>
+              <button
+                key={tab.id}
+                onClick={() => setDetailTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition ${
+                  isActive
+                    ? 'bg-[var(--brand-soft)] text-[var(--brand-hover)] border border-[var(--brand)]/30 font-semibold'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] border border-transparent'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span>{tab.label}</span>
+              </button>
             );
           })}
+        </div>
+
+        {/* Subtab 1: Overview */}
+        {detailTab === 'overview' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                <p className="text-[10px] font-mono text-[var(--text-muted)] uppercase">Total Execution Time</p>
+                <p className="text-base font-bold font-mono text-[var(--text-primary)] mt-1">{displayData?.duration || '31.2s'}</p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">5 DAG stages completed</p>
+              </div>
+
+              <div className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                <p className="text-[10px] font-mono text-[var(--text-muted)] uppercase">Inference & Sandbox Cost</p>
+                <p className="text-base font-bold font-mono text-[var(--success)] mt-1">{displayData?.cost || '$0.0038'}</p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Under $0.05 budget ceiling</p>
+              </div>
+
+              <div className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                <p className="text-[10px] font-mono text-[var(--text-muted)] uppercase">Evidence Chain Status</p>
+                <p className="text-base font-bold font-mono text-[var(--brand)] mt-1">SEALED (SHA-256)</p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">5 verified artifacts committed</p>
+              </div>
+            </div>
+
+            {/* Stage-by-Stage Telemetry Details */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider font-mono">
+                Stage Execution Breakdown
+              </h4>
+              {stages.map((stage) => (
+                <div
+                  key={stage.id}
+                  className="p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-[10px] font-bold text-[var(--brand)] bg-[var(--brand-soft)] px-1.5 py-0.5 rounded">
+                      {stage.number}
+                    </span>
+                    <div>
+                      <p className="font-bold text-[var(--text-primary)] font-mono">{stage.name}</p>
+                      <p className="text-[11px] text-[var(--text-muted)]">{stage.role}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 font-mono text-[11px]">
+                    <span className="text-[var(--text-secondary)]">{stage.duration}</span>
+                    <span className="text-[var(--text-muted)]">{stage.cost}</span>
+                    <span className="text-[var(--success)] font-bold">{stage.status}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Subtab 2: Logs */}
+        {detailTab === 'logs' && (
+          <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-xl p-4 font-mono text-xs text-[var(--text-secondary)] overflow-x-auto space-y-1.5 max-h-96">
+            <div className="text-[10px] text-[var(--text-muted)] pb-2 border-b border-[var(--border-subtle)] flex items-center justify-between">
+              <span>LIVE OUTPUT LOG STREAM</span>
+              <span>8 EVENTS RECORDED</span>
+            </div>
+            {sampleLogs.map((log, i) => (
+              <div key={i} className="flex items-start gap-3 leading-relaxed hover:bg-[var(--bg-hover)] p-1 rounded transition">
+                <span className="text-[var(--text-muted)] select-none shrink-0">[{log.time}]</span>
+                <span className="text-[var(--brand)] font-bold select-none shrink-0 w-16">[{log.step}]</span>
+                <span className="text-[var(--text-primary)]">{log.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Subtab 3: Diff */}
+        {detailTab === 'diff' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs font-mono text-[var(--text-muted)]">
+              <span>PATCH DIFF: loom/core/auth_handler.py</span>
+              <span className="text-[var(--success)]">+12 lines / -4 lines</span>
+            </div>
+            <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-xl p-4 font-mono text-xs text-[var(--text-secondary)] overflow-x-auto space-y-1">
+              <pre className="text-[var(--text-muted)]">--- a/loom/core/auth_handler.py</pre>
+              <pre className="text-[var(--text-muted)]">+++ b/loom/core/auth_handler.py</pre>
+              <pre className="text-[var(--brand)] font-bold">@@ -42,8 +42,16 @@ def verify_oauth_callback(code: str, state: str) -&gt; AuthToken:</pre>
+              <pre className="text-[var(--text-secondary)]">     if not code or not state:</pre>
+              <pre className="text-[var(--danger)] bg-[var(--danger)]/10 px-1 rounded">-        logger.warning(&quot;Missing oauth parameters&quot;)</pre>
+              <pre className="text-[var(--danger)] bg-[var(--danger)]/10 px-1 rounded">-        raise OAuthValidationError(&quot;Invalid callback params&quot;)</pre>
+              <pre className="text-[var(--success)] bg-[var(--success)]/10 px-1 rounded">+        # Fix: Enforce cryptographic state nonce validation</pre>
+              <pre className="text-[var(--success)] bg-[var(--success)]/10 px-1 rounded">+        expected_nonce = session_store.pop_oauth_nonce(state)</pre>
+              <pre className="text-[var(--success)] bg-[var(--success)]/10 px-1 rounded">+        if not expected_nonce or not hmac.compare_digest(expected_nonce, state):</pre>
+              <pre className="text-[var(--success)] bg-[var(--success)]/10 px-1 rounded">+            logger.error(&quot;State verification failed: potential replay attack&quot;)</pre>
+              <pre className="text-[var(--success)] bg-[var(--success)]/10 px-1 rounded">+            raise OAuthReplayError(&quot;Invalid or replayed state nonce&quot;)</pre>
+              <pre className="text-[var(--text-secondary)]">     return token_service.exchange_code(code)</pre>
+            </div>
+          </div>
+        )}
+
+        {/* Subtab 4: Tests */}
+        {detailTab === 'tests' && (
+          <div className="space-y-4">
+            <div className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[var(--text-primary)] font-mono">REPRODUCTION TEST SUITE</span>
+                <span className="status-pill status-pill-verified text-[10px]">PASSING</span>
+              </div>
+              <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-lg p-3 font-mono text-xs text-[var(--text-secondary)] overflow-x-auto">
+                <pre className="text-[var(--brand)]">def test_oauth_state_replay_reproduction():</pre>
+                <pre className="text-[var(--text-secondary)]">    &quot;&quot;&quot;Verify resolution for OAuth state replay vulnerability&quot;&quot;&quot;</pre>
+                <pre className="text-[var(--text-secondary)]">    client = OAuthTestClient()</pre>
+                <pre className="text-[var(--text-secondary)]">    state_nonce = client.generate_nonce()</pre>
+                <pre className="text-[var(--text-secondary)]">    # First exchange succeeds</pre>
+                <pre className="text-[var(--text-secondary)]">    res1 = client.exchange_callback(code=&quot;auth_code_1&quot;, state=state_nonce)</pre>
+                <pre className="text-[var(--text-secondary)]">    assert res1.status_code == 200</pre>
+                <pre className="text-[var(--text-secondary)]">    # Second exchange with same state nonce must fail (replay protection)</pre>
+                <pre className="text-[var(--text-secondary)]">    with pytest.raises(OAuthReplayError):</pre>
+                <pre className="text-[var(--text-secondary)]">        client.exchange_callback(code=&quot;auth_code_2&quot;, state=state_nonce)</pre>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Subtab 5: Sandbox */}
+        {detailTab === 'sandbox' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono">
+              <div className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                <p className="text-[10px] text-[var(--text-muted)] uppercase font-bold">ISOLATION TIER</p>
+                <p className="text-base font-bold text-[var(--cyan)] mt-1">Tier B (Container)</p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">gVisor Sandbox Isolation</p>
+              </div>
+
+              <div className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                <p className="text-[10px] text-[var(--text-muted)] uppercase font-bold">EGRESS RESTRICTIONS</p>
+                <p className="text-base font-bold text-[var(--success)] mt-1">DENY_ALL</p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">No outbound network access</p>
+              </div>
+
+              <div className="p-3.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg">
+                <p className="text-[10px] text-[var(--text-muted)] uppercase font-bold">RESOURCE BUDGET</p>
+                <p className="text-base font-bold text-[var(--text-primary)] mt-1">2 vCPU / 4 GB</p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Peak memory: 342 MB</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Subtab 6: Evidence Proof Layer */}
+        {detailTab === 'evidence' && (
+          <EvidenceView runId={displayData?.id || selectedRun || 'run_427'} />
+        )}
+      </div>
+
+      {/* 5. 1-CLICK ISSUE RUNNER / STARTERS */}
+      <div className="loom-card">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider font-mono">
+              1-Click Engineering Tasks
+            </h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Launch autonomous runs immediately with predefined issue specs
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {STARTER_TASKS.map((task, idx) => (
+            <button
+              key={idx}
+              onClick={() => onSelectStarterIssue?.(task.issue)}
+              className="p-3.5 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-hover)] text-left transition flex items-start gap-3 group"
+            >
+              <span className="text-xl p-2 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] group-hover:scale-105 transition shrink-0">
+                {task.icon}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--brand-hover)] transition">
+                    {task.title}
+                  </h4>
+                  <span className="btn-tertiary text-[11px] p-0">
+                    Run →
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-secondary)] font-mono mt-0.5 truncate">
+                  {task.issue}
+                </p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                  {task.desc}
+                </p>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
     </div>

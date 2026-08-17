@@ -1,5 +1,7 @@
+"use client";
+
 import React from 'react';
-import { FileCode } from 'lucide-react';
+import { FileCode, Play, Copy, Check } from 'lucide-react';
 
 interface DiffTabProps {
   displayData: any;
@@ -7,53 +9,94 @@ interface DiffTabProps {
 }
 
 export const DiffTab: React.FC<DiffTabProps> = ({ displayData, onOpenLiveBox }) => {
+  const [copied, setCopied] = React.useState(false);
+
   if (!displayData) {
     return (
-      <div className="flex-1 bg-[#111827] border border-gray-800 rounded-xl p-8 flex flex-col items-center justify-center text-center gap-4">
-        <div className="h-16 w-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-          <FileCode className="h-8 w-8" />
+      <div className="flex-1 loom-card flex flex-col items-center justify-center text-center gap-4 py-16">
+        <div className="h-12 w-12 rounded-xl bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center text-[var(--brand)]">
+          <FileCode className="h-6 w-6" />
         </div>
         <div>
-          <h3 className="text-sm font-bold text-white mb-1">No Verified Patch Selected</h3>
-          <p className="text-xs text-gray-400 max-w-md">
-            When an autonomous run executes, Loom&apos;s Patcher agent synthesizes a surgical code diff, verifies it in an isolated sandbox, and renders it here with syntax-highlighted additions and removals.
+          <h3 className="text-sm font-bold text-[var(--text-primary)] font-mono mb-1">
+            No Verified Patch Selected
+          </h3>
+          <p className="text-xs text-[var(--text-muted)] max-w-md">
+            When an autonomous run executes, Loom&apos;s Patcher agent synthesizes a surgical code diff, verifies it in an isolated sandbox, and renders it here with unified syntax additions and deletions.
           </p>
         </div>
         <button
           onClick={onOpenLiveBox}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition flex items-center gap-2"
+          className="btn-primary gap-1.5"
         >
+          <Play className="h-3.5 w-3.5 fill-current" />
           <span>Launch Run to Generate Patch</span>
         </button>
       </div>
     );
   }
 
-  const diffLines = displayData.patchDiff.split('\n');
+  const patchDiff = displayData.patchDiff || '';
+  const diffLines = patchDiff.split('\n');
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(patchDiff);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
-    <div className="flex-1 bg-[#111827] border border-gray-800 rounded-xl p-6 flex flex-col gap-4" id="tabpanel-diff" role="tabpanel" aria-labelledby="tab-diff">
-      <div className="flex items-center justify-between border-b border-gray-800 pb-4">
+    <div className="flex-1 loom-card flex flex-col gap-4" id="tabpanel-diff" role="tabpanel">
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
         <div>
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Verified Unified Patch Diff</h3>
-          <p className="text-xs text-gray-400">Generated patch validated by test harness execution</p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider font-mono">
+              Verified Unified Patch Diff
+            </h3>
+            <span className="status-pill status-pill-verified text-[10px]">
+              VALIDATED
+            </span>
+          </div>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">
+            Surgical code modification validated by test harness execution
+          </p>
         </div>
-        <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-md font-mono flex items-center gap-1.5">
-          <FileCode className="h-3.5 w-3.5" aria-hidden="true" /> Unified Diff Format
-        </span>
+
+        <button
+          onClick={handleCopy}
+          className="btn-secondary h-8 px-3 text-xs gap-1.5"
+        >
+          {copied ? (
+            <>
+              <Check className="h-3.5 w-3.5 text-[var(--success)]" />
+              <span>Copied Diff</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3.5 w-3.5" />
+              <span>Copy Diff</span>
+            </>
+          )}
+        </button>
       </div>
 
-      <div className="bg-gray-950 border border-gray-800 rounded-xl p-4 font-mono text-xs overflow-x-auto flex-1 text-gray-300 space-y-1">
+      <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-xl p-4 font-mono text-xs overflow-x-auto flex-1 text-[var(--text-secondary)] space-y-1">
         {diffLines.map((line: string, i: number) => {
-          let colorClass = 'text-gray-300';
-          if (line.startsWith('+') && !line.startsWith('+++')) colorClass = 'text-emerald-400 bg-emerald-950/30 px-1 rounded';
-          else if (line.startsWith('-') && !line.startsWith('---')) colorClass = 'text-red-400 bg-red-950/30 px-1 rounded';
-          else if (line.startsWith('@@')) colorClass = 'text-indigo-400 font-semibold';
-          else if (line.startsWith('---') || line.startsWith('+++')) colorClass = 'text-gray-500 font-semibold';
+          let colorClass = 'text-[var(--text-secondary)]';
+          if (line.startsWith('+') && !line.startsWith('+++'))
+            colorClass = 'text-[var(--success)] bg-[var(--success)]/10 px-1 rounded';
+          else if (line.startsWith('-') && !line.startsWith('---'))
+            colorClass = 'text-[var(--danger)] bg-[var(--danger)]/10 px-1 rounded';
+          else if (line.startsWith('@@'))
+            colorClass = 'text-[var(--brand-hover)] font-bold';
+          else if (line.startsWith('---') || line.startsWith('+++'))
+            colorClass = 'text-[var(--text-muted)] font-semibold';
 
           return (
             <div key={i} className={`flex items-start gap-4 ${colorClass}`}>
-              <span className="text-gray-600 select-none w-8 text-right font-mono text-[11px]">{i + 1}</span>
+              <span className="text-[var(--text-muted)] select-none w-8 text-right font-mono text-[11px]">
+                {i + 1}
+              </span>
               <pre className="font-mono whitespace-pre-wrap">{line}</pre>
             </div>
           );

@@ -219,7 +219,7 @@ describe('GitHubIssuesDrawer component', () => {
 });
 
 describe('Header component with GitHub integration', () => {
-  it('renders connected repository and github profile badge', () => {
+  it('renders connected repository and triggers issue drawer', () => {
     const handleOpenRepoModal = vi.fn();
     const handleOpenIssuesDrawer = vi.fn();
 
@@ -251,14 +251,13 @@ describe('Header component with GitHub integration', () => {
       />
     );
 
-    expect(screen.getByText(/@octocat/i)).toBeInTheDocument();
     expect(screen.getByText(/Harshid001\/Loom-Unified-Agentic-Coding-Harness/i)).toBeInTheDocument();
-    expect(screen.getByText(/GitHub Issues/i)).toBeInTheDocument();
+    expect(screen.getByText(/Issues/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText(/GitHub Issues/i));
+    fireEvent.click(screen.getByText(/Issues/i));
     expect(handleOpenIssuesDrawer).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByText(/@octocat/i));
+    fireEvent.click(screen.getByText(/Harshid001\/Loom-Unified-Agentic-Coding-Harness/i));
     expect(handleOpenRepoModal).toHaveBeenCalledTimes(1);
   });
 });

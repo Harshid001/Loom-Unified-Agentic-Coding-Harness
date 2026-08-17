@@ -5,13 +5,14 @@ import Link from 'next/link';
 import {
   Layers,
   Cpu,
-  Activity,
-  Settings,
   ChevronDown,
   Key,
   GitBranch,
   FolderGit2,
   ListTodo,
+  Settings as SettingsIcon,
+  Play,
+  Circle,
 } from 'lucide-react';
 import { Github } from './GithubIcon';
 import { ConnectedRepoState, GitHubUser } from '../hooks/useGitHub';
@@ -27,6 +28,7 @@ interface HeaderProps {
   connectedRepo?: ConnectedRepoState | null;
   githubUser?: GitHubUser | null;
   runCount: number;
+  isExecuting?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,141 +42,79 @@ export const Header: React.FC<HeaderProps> = ({
   connectedRepo,
   githubUser,
   runCount,
+  isExecuting = false,
 }) => {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
 
   return (
     <header
-      className="border-b border-gray-800 bg-[#111827] px-6 py-3.5 flex items-center justify-between shrink-0 gap-4 flex-wrap"
+      className="border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] px-6 py-3 flex items-center justify-between shrink-0 gap-4 flex-wrap z-30"
       role="banner"
     >
-      {/* Left Branding */}
-      <div className="flex items-center space-x-4">
+      {/* 1. LEFT ZONE: Brand & Harness Subtitle */}
+      <div className="flex items-center space-x-3.5">
         <div
-          className="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/30 shrink-0"
+          className="h-8 w-8 rounded-lg bg-[var(--brand)] flex items-center justify-center font-bold text-white shadow-sm shrink-0"
           aria-hidden="true"
         >
-          <Layers className="h-5 w-5" />
+          <Layers className="h-4 w-4" />
         </div>
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Loom
-            <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/30 font-medium">
-              Harness Core
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold tracking-tight text-[var(--text-primary)] font-mono uppercase">
+              LOOM
             </span>
-          </h1>
-          <p className="text-xs text-gray-400">Unified Agentic Coding Harness & Live Execution Dashboard</p>
+            <span className="text-[10px] bg-[var(--brand-soft)] text-[var(--brand-hover)] px-1.5 py-0.5 rounded border border-[var(--brand)]/30 font-mono">
+              HARNESS
+            </span>
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)] tracking-tight">
+            Unified Agentic Coding Harness
+          </p>
         </div>
       </div>
 
-      {/* Center / Right Action Controls */}
-      <div className="flex items-center space-x-3 flex-wrap">
-        {/* Connected Repository Pill */}
+      {/* 2. CENTER ZONE: Operational Metadata (Repo, Branch, Model) */}
+      <div className="flex items-center space-x-2 flex-wrap">
+        {/* Target Repository Pill */}
         {onOpenRepoModal && (
           <button
             onClick={onOpenRepoModal}
-            className="flex items-center gap-2 text-xs bg-gray-900/90 border border-gray-800 hover:border-indigo-500/50 px-3 py-1.5 rounded-lg transition text-gray-200 group"
-            title="Manage Connected Repository"
+            className="flex items-center gap-1.5 text-xs bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] px-3 py-1.5 rounded-lg transition text-[var(--text-primary)] group h-8"
+            title="Target Repository"
           >
-            <FolderGit2 className="h-3.5 w-3.5 text-indigo-400 group-hover:scale-110 transition shrink-0" />
-            <span className="font-mono text-xs max-w-[160px] truncate text-indigo-300">
-              {connectedRepo?.fullName || 'Connect Repo'}
+            <FolderGit2 className="h-3.5 w-3.5 text-[var(--text-secondary)] group-hover:text-[var(--brand)] transition shrink-0" />
+            <span className="font-mono text-xs max-w-[150px] truncate text-[var(--text-primary)]">
+              {connectedRepo?.fullName || 'Loom-Unified-Agentic'}
             </span>
-            {connectedRepo?.selectedBranch && (
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30 font-mono flex items-center gap-0.5">
-                <GitBranch className="h-2.5 w-2.5" />
-                {connectedRepo.selectedBranch}
-              </span>
-            )}
           </button>
         )}
 
-        {/* GitHub Issues Drawer Button */}
-        {connectedRepo && onOpenIssuesDrawer && (
-          <button
-            onClick={onOpenIssuesDrawer}
-            className="hidden sm:flex items-center gap-1.5 text-xs text-indigo-300 bg-indigo-950/40 border border-indigo-500/30 hover:border-indigo-500 px-3 py-1.5 rounded-lg transition font-medium"
-            title="Browse Open GitHub Issues"
-          >
-            <ListTodo className="h-3.5 w-3.5 text-indigo-400" />
-            <span>GitHub Issues</span>
-          </button>
-        )}
-
-        {/* GitHub Connection Badge */}
-        {onOpenRepoModal && (
-          <button
-            onClick={onOpenRepoModal}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition font-medium ${
-              githubUser
-                ? 'bg-gray-900 border-indigo-500/40 text-gray-200 hover:border-indigo-500'
-                : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-gray-700'
-            }`}
-            title={githubUser ? `Connected as @${githubUser.login}` : 'Connect GitHub Account'}
-          >
-            {githubUser?.avatar_url ? (
-              <img
-                src={githubUser.avatar_url}
-                alt={githubUser.login}
-                className="h-4 w-4 rounded-full border border-indigo-400"
-              />
-            ) : (
-              <Github size={14} className="text-indigo-400" />
-            )}
-            <span className="font-mono">
-              {githubUser ? `@${githubUser.login}` : 'GitHub'}
-            </span>
-            {githubUser && (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400" />
-            )}
-          </button>
-        )}
-
-        {/* Total Runs Badge */}
-        <div className="hidden lg:flex items-center gap-1.5 text-xs text-gray-400 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg">
-          <Activity className="h-3.5 w-3.5 text-emerald-400" />
-          <span className="font-mono">{runCount} runs</span>
+        {/* Branch Indicator */}
+        <div className="flex items-center gap-1 text-xs bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 py-1.5 rounded-lg text-[var(--text-secondary)] font-mono h-8">
+          <GitBranch className="h-3 w-3 text-[var(--success)]" />
+          <span>{connectedRepo?.selectedBranch || 'main'}</span>
         </div>
 
-        {/* Model Settings Link */}
-        <Link
-          href="/settings/models"
-          className="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg hover:border-indigo-500/50 hover:text-white transition font-medium"
-          title="Model Settings"
-        >
-          <Settings className="h-3.5 w-3.5 text-indigo-400" />
-          <span className="hidden sm:inline">Model Settings</span>
-        </Link>
-
-        {/* API Key Modal Button */}
-        {onOpenApiKeyModal && (
-          <button
-            onClick={onOpenApiKeyModal}
-            className="flex items-center gap-1.5 text-xs text-gray-300 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg hover:border-indigo-500/50 hover:text-white transition font-medium"
-            title="Manage API Keys"
-          >
-            <Key className="h-3.5 w-3.5 text-indigo-400" />
-            <span>API Key</span>
-          </button>
-        )}
-
-        {/* Model Dropdown */}
+        {/* Active Model Selector Pill */}
         <div className="relative">
           <button
             onClick={() => setShowModelDropdown(!showModelDropdown)}
-            className="flex items-center gap-2 text-xs text-gray-400 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg hover:border-gray-700 transition"
+            className="flex items-center gap-1.5 text-xs bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] px-3 py-1.5 rounded-lg text-[var(--text-primary)] font-mono transition h-8"
+            title="Active LLM"
           >
-            <Cpu className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="font-mono max-w-[130px] truncate">{modelName}</span>
-            <ChevronDown className="h-3 w-3" />
+            <Cpu className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+            <span className="max-w-[140px] truncate">{modelName}</span>
+            <ChevronDown className="h-3 w-3 text-[var(--text-muted)] ml-0.5" />
           </button>
+
           {showModelDropdown && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowModelDropdown(false)} />
-              <div className="absolute right-0 mt-1.5 w-64 bg-[#111827] border border-gray-800 rounded-xl shadow-2xl z-20 py-1.5 overflow-hidden">
-                <div className="px-3 py-1.5 text-[10px] text-gray-500 uppercase tracking-wider font-semibold flex items-center justify-between">
-                  <span>Select Model</span>
-                  <Link href="/settings/models" className="text-indigo-400 hover:underline text-[10px]">
+              <div className="fixed inset-0 z-30" onClick={() => setShowModelDropdown(false)} />
+              <div className="absolute left-0 mt-1.5 w-64 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl shadow-2xl z-40 py-1.5 overflow-hidden">
+                <div className="px-3 py-1.5 text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold flex items-center justify-between border-b border-[var(--border-subtle)] mb-1">
+                  <span>Select Active Model</span>
+                  <Link href="/settings/models" className="text-[var(--brand)] hover:underline text-[10px]">
                     Configure
                   </Link>
                 </div>
@@ -185,16 +125,16 @@ export const Header: React.FC<HeaderProps> = ({
                       onModelChange(m);
                       setShowModelDropdown(false);
                     }}
-                    className={`w-full text-left px-3 py-2 text-xs font-mono transition flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-1.5 text-xs font-mono transition flex items-center gap-2 ${
                       m === modelName
-                        ? 'bg-indigo-500/10 text-indigo-400 border-l-2 border-indigo-500'
-                        : 'text-gray-400 hover:bg-gray-800/50 hover:text-white border-l-2 border-transparent'
+                        ? 'bg-[var(--brand-soft)] text-[var(--brand-hover)] border-l-2 border-[var(--brand)]'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] border-l-2 border-transparent'
                     }`}
                   >
                     <Cpu className="h-3 w-3 opacity-60" />
                     <span className="truncate">{m}</span>
                     {m === modelName && (
-                      <span className="ml-auto text-[10px] bg-indigo-500/20 px-1.5 py-0.5 rounded shrink-0">
+                      <span className="ml-auto text-[9px] bg-[var(--brand-soft)] text-[var(--brand-hover)] px-1.5 py-0.2 rounded shrink-0">
                         active
                       </span>
                     )}
@@ -205,12 +145,59 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Live Box Trigger */}
+        {/* GitHub Issues Trigger */}
+        {connectedRepo && onOpenIssuesDrawer && (
+          <button
+            onClick={onOpenIssuesDrawer}
+            className="hidden sm:flex items-center gap-1.5 text-xs text-[var(--text-secondary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] px-3 py-1.5 rounded-lg transition font-medium h-8"
+            title="Browse Open GitHub Issues"
+          >
+            <ListTodo className="h-3.5 w-3.5 text-[var(--brand)]" />
+            <span>Issues</span>
+          </button>
+        )}
+      </div>
+
+      {/* 3. RIGHT ZONE: Execution State & Actions */}
+      <div className="flex items-center space-x-2.5 flex-wrap">
+        {/* System Execution State Indicator */}
+        <div className={`status-pill ${isExecuting ? 'status-pill-running' : 'status-pill-success'} h-8`}>
+          <Circle className={`h-2 w-2 fill-current ${isExecuting ? 'animate-ping' : ''}`} />
+          <span>{isExecuting ? 'EXECUTING' : 'SYSTEM READY'}</span>
+        </div>
+
+        {/* Total Runs Count */}
+        <div className="status-pill status-pill-idle h-8">
+          <span>{runCount} RUNS</span>
+        </div>
+
+        {/* Model Settings Link */}
+        <Link
+          href="/settings/models"
+          className="flex items-center justify-center h-8 w-8 text-[var(--text-secondary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)] rounded-lg transition"
+          title="Model Settings"
+        >
+          <SettingsIcon className="h-3.5 w-3.5" />
+        </Link>
+
+        {/* API Key Modal Button */}
+        {onOpenApiKeyModal && (
+          <button
+            onClick={onOpenApiKeyModal}
+            className="flex items-center justify-center h-8 w-8 text-[var(--text-secondary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)] rounded-lg transition"
+            title="API Keys"
+          >
+            <Key className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {/* Primary Action Button: Launch Live Box / New Run */}
         <button
           onClick={onOpenLiveBox}
-          className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white px-4 py-2 rounded-lg font-semibold transition shadow-lg shadow-cyan-600/20 shrink-0"
+          className="btn-primary h-8 px-3.5 gap-1.5 text-xs shrink-0"
         >
-          ⚡ Open Live Box
+          <Play className="h-3 w-3 fill-current" />
+          <span>Open Live Box</span>
         </button>
       </div>
     </header>
