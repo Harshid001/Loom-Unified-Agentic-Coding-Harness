@@ -10,9 +10,7 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
-  Tag,
   ArrowRight,
-  CheckCircle2,
 } from 'lucide-react';
 import { Github } from './GithubIcon';
 import { GitHubIssue, ConnectedRepoState } from '../hooks/useGitHub';
@@ -81,63 +79,65 @@ export const GitHubIssuesDrawer: React.FC<GitHubIssuesDrawerProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-end bg-black/70 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-end bg-black/80 backdrop-blur-sm animate-fadeIn"
       role="dialog"
       aria-modal="true"
       aria-labelledby="issues-drawer-title"
     >
       <div
-        className="w-full max-w-xl h-full bg-[#0F172A] border-l border-gray-800 shadow-2xl flex flex-col overflow-hidden animate-slideInRight"
+        className="w-full max-w-xl h-full bg-[var(--bg-surface)] border-l border-[var(--border-default)] shadow-2xl flex flex-col overflow-hidden animate-slideInRight"
         onClick={e => e.stopPropagation()}
       >
         {/* Drawer Header */}
-        <div className="p-6 border-b border-gray-800 bg-gradient-to-r from-gray-900 via-[#111827] to-gray-900 flex items-center justify-between shrink-0">
+        <div className="p-6 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Github className="h-5 w-5" />
+            <div className="h-9 w-9 rounded-xl bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center text-[var(--brand)]">
+              <Github className="h-4 w-4" />
             </div>
             <div>
-              <h2 id="issues-drawer-title" className="text-base font-bold text-white flex items-center gap-2">
-                GitHub Issues Explorer
-                <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/30 font-mono">
-                  {issues.length} open
+              <div className="flex items-center gap-2">
+                <h2 id="issues-drawer-title" className="text-sm font-bold text-[var(--text-primary)] uppercase font-mono tracking-tight">
+                  GitHub Issues Explorer
+                </h2>
+                <span className="status-pill status-pill-idle text-[9px] py-0 px-1.5 font-mono">
+                  {issues.length} OPEN
                 </span>
-              </h2>
-              <p className="text-xs text-gray-400 font-mono truncate max-w-xs">
+              </div>
+              <p className="text-xs text-[var(--text-muted)] font-mono truncate max-w-xs mt-0.5">
                 {connectedRepo?.fullName || 'Target Repository'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={onRefresh}
               disabled={isLoading}
-              className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 transition"
+              className="btn-secondary h-8 w-8 p-0 flex items-center justify-center"
               title="Refresh issues"
             >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 transition"
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition"
               aria-label="Close drawer"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
         {/* Search & Label Filters */}
-        <div className="p-4 border-b border-gray-800 bg-gray-900/40 space-y-3 shrink-0">
+        <div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] space-y-2.5 shrink-0">
           <div className="relative">
-            <Search className="h-4 w-4 text-gray-500 absolute left-3 top-2.5" />
+            <Search className="h-3.5 w-3.5 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search issues by title, body, or #number..."
-              className="w-full bg-gray-950 border border-gray-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full bg-[var(--bg-root)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none font-mono"
             />
           </div>
 
@@ -145,22 +145,22 @@ export const GitHubIssuesDrawer: React.FC<GitHubIssuesDrawerProps> = ({
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
               <button
                 onClick={() => setSelectedLabel(null)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium shrink-0 transition ${
+                className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold shrink-0 transition ${
                   selectedLabel === null
-                    ? 'bg-indigo-600 text-white font-semibold'
-                    : 'bg-gray-900 text-gray-400 hover:text-gray-200 border border-gray-800'
+                    ? 'bg-[var(--brand)] text-white'
+                    : 'bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)]'
                 }`}
               >
-                All Labels
+                All ({issues.length})
               </button>
               {allLabels.map(label => (
                 <button
                   key={label.name}
                   onClick={() => setSelectedLabel(selectedLabel === label.name ? null : label.name)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium shrink-0 transition flex items-center gap-1 border ${
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono shrink-0 transition flex items-center gap-1 border ${
                     selectedLabel === label.name
-                      ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500 font-semibold'
-                      : 'bg-gray-900/60 text-gray-400 hover:text-gray-200 border-gray-800'
+                      ? 'bg-[var(--brand-soft)] text-[var(--brand-hover)] border-[var(--brand)] font-semibold'
+                      : 'bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'
                   }`}
                 >
                   <span
@@ -168,7 +168,7 @@ export const GitHubIssuesDrawer: React.FC<GitHubIssuesDrawerProps> = ({
                     style={{ backgroundColor: `#${label.color}` }}
                   />
                   <span>{label.name}</span>
-                  <span className="text-[10px] text-gray-500">({label.count})</span>
+                  <span className="text-[9px] opacity-60">({label.count})</span>
                 </button>
               ))}
             </div>
@@ -178,52 +178,52 @@ export const GitHubIssuesDrawer: React.FC<GitHubIssuesDrawerProps> = ({
         {/* Issues List */}
         <div className="flex-1 p-4 overflow-y-auto space-y-3">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400 text-xs">
-              <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
+            <div className="flex flex-col items-center justify-center py-20 gap-2 text-[var(--text-muted)] text-xs font-mono">
+              <Loader2 className="h-5 w-5 animate-spin text-[var(--brand)]" />
               <span>Fetching live open issues from GitHub...</span>
             </div>
           ) : filteredIssues.length === 0 ? (
-            <div className="text-center py-16 text-gray-500 text-xs bg-gray-900/30 rounded-2xl border border-gray-800 p-6">
-              <AlertCircle className="h-8 w-8 text-gray-600 mx-auto mb-2" />
-              <p className="font-semibold text-gray-400">No open issues found</p>
-              <p className="text-gray-500 mt-1">Try adjusting your search query or label filters.</p>
+            <div className="text-center py-16 text-[var(--text-muted)] text-xs bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)] p-6">
+              <AlertCircle className="h-6 w-6 text-[var(--text-muted)] mx-auto mb-2" />
+              <p className="font-bold text-[var(--text-primary)] font-mono">No open issues found</p>
+              <p className="text-[var(--text-secondary)] mt-1">Try adjusting your search query or label filters.</p>
             </div>
           ) : (
             filteredIssues.map(issue => (
               <div
                 key={issue.id}
-                className="bg-gray-900/60 hover:bg-gray-900 border border-gray-800 hover:border-indigo-500/50 rounded-2xl p-4 transition shadow-sm hover:shadow-lg hover:shadow-indigo-500/5 flex flex-col justify-between gap-3 group"
+                className="bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] rounded-xl p-4 transition flex flex-col justify-between gap-3 group"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-emerald-400 font-mono text-xs font-semibold">
+                      <span className="text-[var(--success)] font-mono text-xs font-bold">
                         #{issue.number}
                       </span>
                       <a
                         href={issue.html_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-gray-500 hover:text-indigo-400 transition"
+                        className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition"
                         title="View on GitHub"
                       >
                         <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
                     {issue.comments > 0 && (
-                      <span className="flex items-center gap-1 text-[11px] text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full font-mono">
-                        <MessageSquare className="h-3 w-3" />
+                      <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] bg-[var(--bg-surface)] px-1.5 py-0.2 rounded font-mono border border-[var(--border-subtle)]">
+                        <MessageSquare className="h-2.5 w-2.5" />
                         {issue.comments}
                       </span>
                     )}
                   </div>
 
-                  <h3 className="text-xs font-bold text-white group-hover:text-indigo-300 transition mb-1 leading-snug">
+                  <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--brand-hover)] transition mb-1 leading-snug font-sans">
                     {issue.title}
                   </h3>
 
                   {issue.body && (
-                    <p className="text-[11px] text-gray-400 line-clamp-2 mb-2 font-normal leading-relaxed">
+                    <p className="text-[11px] text-[var(--text-secondary)] line-clamp-2 mb-2 font-normal leading-relaxed">
                       {issue.body}
                     </p>
                   )}
@@ -233,7 +233,7 @@ export const GitHubIssuesDrawer: React.FC<GitHubIssuesDrawerProps> = ({
                       {issue.labels.map(lbl => (
                         <span
                           key={lbl.id}
-                          className="text-[10px] px-2 py-0.5 rounded-md font-medium border"
+                          className="text-[9px] px-1.5 py-0.2 rounded font-mono font-medium border"
                           style={{
                             backgroundColor: `#${lbl.color}15`,
                             color: `#${lbl.color}`,
@@ -247,13 +247,13 @@ export const GitHubIssuesDrawer: React.FC<GitHubIssuesDrawerProps> = ({
                   )}
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-gray-800/60 text-[11px] text-gray-500">
-                  <span>Opened by @{issue.user.login}</span>
+                <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]">
+                  <span>@{issue.user.login}</span>
                   <button
                     onClick={() => handleSolve(issue)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-semibold transition shadow-md shadow-indigo-600/20"
+                    className="btn-primary h-7 px-3 text-xs gap-1.5"
                   >
-                    <Sparkles className="h-3.5 w-3.5" />
+                    <Sparkles className="h-3 w-3 fill-current" />
                     <span>Solve with Loom</span>
                     <ArrowRight className="h-3 w-3" />
                   </button>

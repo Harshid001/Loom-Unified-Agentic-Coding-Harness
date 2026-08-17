@@ -19,7 +19,6 @@ import {
   RefreshCw,
   AlertCircle,
   Code2,
-  Layers,
   ArrowRight,
 } from 'lucide-react';
 import { Github } from './GithubIcon';
@@ -27,7 +26,6 @@ import {
   useGitHub,
   POPULAR_STARTER_REPOS,
   GitHubRepo,
-  ConnectedRepoState,
 } from '../hooks/useGitHub';
 
 interface RepoConnectModalProps {
@@ -75,7 +73,6 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
     disconnect,
     loadUserRepos,
     connectRepository,
-    setSelectedBranch,
   } = githubState;
 
   // Filter user repos
@@ -125,7 +122,6 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
       return;
     }
 
-    // Extract owner/repo from URL
     clean = clean.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').trim();
     const parts = clean.split('/');
     if (parts.length < 2) {
@@ -229,53 +225,55 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn"
       role="dialog"
       aria-modal="true"
       aria-labelledby="repo-modal-title"
     >
       <div
-        className="relative w-full max-w-4xl bg-[#0F172A] border border-gray-800/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-4xl bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={e => e.stopPropagation()}
       >
-        {/* Modal Header */}
-        <div className="px-6 py-5 border-b border-gray-800/80 bg-gradient-to-r from-gray-900 via-[#111827] to-gray-900 flex items-center justify-between">
+        {/* 1. Modal Header */}
+        <div className="px-6 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-              <Github className="h-5 w-5" />
+            <div className="h-9 w-9 rounded-xl bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center text-[var(--brand)] shrink-0">
+              <Github className="h-4 w-4" />
             </div>
             <div>
-              <h2 id="repo-modal-title" className="text-lg font-bold text-white flex items-center gap-2">
-                Connect GitHub & Repositories
-                <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/30 uppercase tracking-wider font-semibold">
-                  Source Control
+              <div className="flex items-center gap-2">
+                <h2 id="repo-modal-title" className="text-sm font-bold text-[var(--text-primary)] uppercase font-mono tracking-tight">
+                  Connect GitHub & Repositories
+                </h2>
+                <span className="status-pill status-pill-idle text-[10px]">
+                  SOURCE CONTROL
                 </span>
-              </h2>
-              <p className="text-xs text-gray-400">
-                Seamlessly target repositories, browse issues, and synthesize automated pull requests.
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Target repositories, browse issues, and synthesize automated pull requests.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800/60 transition"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition"
             aria-label="Close modal"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Current Active Connection Status Banner */}
+        {/* 2. Currently Targeting Status Strip */}
         {connectedRepo && (
-          <div className="bg-indigo-950/30 border-b border-indigo-500/20 px-6 py-2.5 flex items-center justify-between text-xs flex-wrap gap-2">
-            <div className="flex items-center gap-2 text-gray-300">
-              <span className="text-gray-400">Currently Targeting:</span>
-              <span className="font-mono font-semibold text-indigo-300 flex items-center gap-1.5 bg-indigo-500/10 px-2.5 py-1 rounded-md border border-indigo-500/30">
-                <FolderGit2 className="h-3.5 w-3.5 text-indigo-400" />
+          <div className="bg-[var(--bg-elevated)] border-b border-[var(--border-subtle)] px-6 py-2.5 flex items-center justify-between text-xs flex-wrap gap-2">
+            <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+              <span className="text-[var(--text-muted)] font-mono text-[11px]">Currently Targeting:</span>
+              <span className="font-mono font-semibold text-[var(--text-primary)] flex items-center gap-1.5 bg-[var(--bg-surface)] px-2.5 py-1 rounded-md border border-[var(--border-subtle)]">
+                <FolderGit2 className="h-3.5 w-3.5 text-[var(--brand)]" />
                 {connectedRepo.fullName}
               </span>
-              <span className="text-gray-500">•</span>
-              <span className="font-mono text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+              <span className="text-[var(--text-muted)]">•</span>
+              <span className="font-mono text-[var(--success)] flex items-center gap-1 bg-[var(--success)]/10 px-2 py-0.5 rounded border border-[var(--success)]/30 text-[11px]">
                 <GitBranch className="h-3 w-3" />
                 {connectedRepo.selectedBranch}
               </span>
@@ -285,7 +283,7 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                 href={connectedRepo.htmlUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 hover:underline"
+                className="text-[var(--brand-hover)] hover:underline flex items-center gap-1 text-[11px] font-mono"
               >
                 <span>View on GitHub</span>
                 <ExternalLink className="h-3 w-3" />
@@ -294,21 +292,21 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
           </div>
         )}
 
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-gray-800 bg-gray-900/50 px-6 gap-2">
+        {/* 3. Navigation Tabs */}
+        <div className="flex border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] px-6 gap-2 overflow-x-auto">
           <button
             data-testid="tab-account"
             onClick={() => setActiveTab('account')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition ${
+            className={`flex items-center gap-2 py-2.5 px-3.5 text-xs font-semibold border-b-2 transition ${
               activeTab === 'account'
-                ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10 rounded-t-lg'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+                ? 'border-[var(--brand)] text-[var(--brand-hover)] bg-[var(--brand-soft)] rounded-t-lg'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <Github className="h-4 w-4" />
+            <Github className="h-3.5 w-3.5" />
             <span>My GitHub Account</span>
             {user && (
-              <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-500/30">
+              <span className="status-pill status-pill-verified text-[9px] py-0 px-1.5">
                 Connected
               </span>
             )}
@@ -317,67 +315,74 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
           <button
             data-testid="tab-url"
             onClick={() => setActiveTab('url')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition ${
+            className={`flex items-center gap-2 py-2.5 px-3.5 text-xs font-semibold border-b-2 transition ${
               activeTab === 'url'
-                ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10 rounded-t-lg'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+                ? 'border-[var(--brand)] text-[var(--brand-hover)] bg-[var(--brand-soft)] rounded-t-lg'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <ExternalLink className="h-4 w-4" />
+            <ExternalLink className="h-3.5 w-3.5" />
             <span>Direct GitHub URL</span>
           </button>
 
           <button
             data-testid="tab-starters"
             onClick={() => setActiveTab('starters')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition ${
+            className={`flex items-center gap-2 py-2.5 px-3.5 text-xs font-semibold border-b-2 transition ${
               activeTab === 'starters'
-                ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10 rounded-t-lg'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+                ? 'border-[var(--brand)] text-[var(--brand-hover)] bg-[var(--brand-soft)] rounded-t-lg'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <Sparkles className="h-4 w-4 text-amber-400" />
+            <Sparkles className="h-3.5 w-3.5 text-[var(--warning)]" />
             <span>Curated Starter Repos</span>
           </button>
 
           <button
             data-testid="tab-local"
             onClick={() => setActiveTab('local')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition ${
+            className={`flex items-center gap-2 py-2.5 px-3.5 text-xs font-semibold border-b-2 transition ${
               activeTab === 'local'
-                ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10 rounded-t-lg'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+                ? 'border-[var(--brand)] text-[var(--brand-hover)] bg-[var(--brand-soft)] rounded-t-lg'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <Code2 className="h-4 w-4 text-cyan-400" />
+            <Code2 className="h-3.5 w-3.5 text-[var(--cyan)]" />
             <span>Local Workspace</span>
           </button>
         </div>
 
-        {/* Tab Contents Area */}
+        {/* 4. Tab Contents Area */}
         <div className="flex-1 p-6 overflow-y-auto min-h-[360px]">
-          {/* 1. MY GITHUB ACCOUNT TAB */}
+          {/* TAB 1: MY GITHUB ACCOUNT */}
           {activeTab === 'account' && (
             <div>
               {!user ? (
-                <div className="max-w-xl mx-auto py-4">
-                  <div className="bg-gradient-to-br from-indigo-950/40 via-gray-900 to-gray-950 border border-indigo-500/20 rounded-2xl p-6 shadow-xl mb-6 text-center">
-                    <div className="h-12 w-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mx-auto mb-3 shadow-inner">
-                      <Key className="h-6 w-6" />
+                <div className="max-w-xl mx-auto py-2">
+                  <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-6 text-center space-y-4">
+                    <div className="h-11 w-11 rounded-xl bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center text-[var(--brand)] mx-auto">
+                      <Key className="h-5 w-5" />
                     </div>
-                    <h3 className="text-base font-bold text-white mb-1">
-                      Connect your GitHub Account
-                    </h3>
-                    <p className="text-xs text-gray-400 max-w-md mx-auto mb-5">
-                      Enter a GitHub Personal Access Token (Classic or Fine-Grained) with{' '}
-                      <code className="text-indigo-300 bg-indigo-950/60 px-1 py-0.5 rounded border border-indigo-800/60">repo</code>{' '}
-                      or <code className="text-indigo-300 bg-indigo-950/60 px-1 py-0.5 rounded border border-indigo-800/60">public_repo</code>{' '}
-                      permissions to access repositories and create pull requests.
-                    </p>
+                    <div>
+                      <h3 className="text-sm font-bold text-[var(--text-primary)] font-mono uppercase">
+                        Connect your GitHub Account
+                      </h3>
+                      <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto mt-1">
+                        Enter a GitHub Personal Access Token (Classic or Fine-Grained) with{' '}
+                        <code className="text-[var(--brand-hover)] bg-[var(--bg-root)] px-1 py-0.5 rounded border border-[var(--border-subtle)] font-mono">
+                          repo
+                        </code>{' '}
+                        or{' '}
+                        <code className="text-[var(--brand-hover)] bg-[var(--bg-root)] px-1 py-0.5 rounded border border-[var(--border-subtle)] font-mono">
+                          public_repo
+                        </code>{' '}
+                        permissions to access repositories and create pull requests.
+                      </p>
+                    </div>
 
-                    <form onSubmit={handleConnectToken} className="space-y-4 text-left">
+                    <form onSubmit={handleConnectToken} className="space-y-4 text-left pt-2">
                       <div>
-                        <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+                        <label className="block text-xs font-mono font-bold text-[var(--text-muted)] uppercase mb-1.5">
                           GitHub Personal Access Token (PAT)
                         </label>
                         <input
@@ -385,10 +390,10 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                           value={patToken}
                           onChange={e => setPatToken(e.target.value)}
                           placeholder="ghp_xxxxxxxxxxxxxxxxxxxx or github_pat_xxxx..."
-                          className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                          className="w-full bg-[var(--bg-root)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg px-3.5 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none font-mono"
                         />
                         {tokenInputError && (
-                          <div className="flex items-center gap-1.5 text-rose-400 text-xs mt-2">
+                          <div className="flex items-center gap-1.5 text-[var(--danger)] text-xs mt-2 font-mono">
                             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                             <span>{tokenInputError}</span>
                           </div>
@@ -400,7 +405,7 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                           href="https://github.com/settings/tokens/new?scopes=repo,read:user&description=Loom%20Agentic%20Coding%20Harness"
                           target="_blank"
                           rel="noreferrer"
-                          className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 hover:underline"
+                          className="btn-tertiary text-xs p-0 gap-1"
                         >
                           <span>Generate Token on GitHub</span>
                           <ExternalLink className="h-3 w-3" />
@@ -409,7 +414,7 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                         <button
                           type="submit"
                           disabled={isAuthenticating}
-                          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-semibold transition disabled:opacity-50 shadow-lg shadow-indigo-600/30"
+                          className="btn-primary h-8 px-4 text-xs gap-1.5"
                         >
                           {isAuthenticating ? (
                             <>
@@ -427,18 +432,18 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                     </form>
                   </div>
 
-                  <div className="text-center text-xs text-gray-500">
+                  <div className="text-center text-xs text-[var(--text-muted)] mt-4">
                     Prefer not to authenticate? You can use the{' '}
                     <button
                       onClick={() => setActiveTab('url')}
-                      className="text-indigo-400 hover:underline font-medium"
+                      className="text-[var(--brand-hover)] hover:underline font-mono"
                     >
                       Direct GitHub URL
                     </button>{' '}
                     or{' '}
                     <button
                       onClick={() => setActiveTab('starters')}
-                      className="text-indigo-400 hover:underline font-medium"
+                      className="text-[var(--brand-hover)] hover:underline font-mono"
                     >
                       Starter Repos
                     </button>{' '}
@@ -448,25 +453,25 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
               ) : (
                 <div className="space-y-4">
                   {/* Connected Profile Bar */}
-                  <div className="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+                  <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-3.5 flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-3">
                       {user.avatar_url ? (
                         <img
                           src={user.avatar_url}
                           alt={user.login}
-                          className="h-10 w-10 rounded-full border border-indigo-500/40 ring-2 ring-indigo-500/20"
+                          className="h-9 w-9 rounded-full border border-[var(--brand)]/40"
                         />
                       ) : (
-                        <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white">
+                        <div className="h-9 w-9 rounded-full bg-[var(--brand)] flex items-center justify-center font-bold text-white font-mono text-xs">
                           {user.login.slice(0, 2).toUpperCase()}
                         </div>
                       )}
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-bold text-white">{user.name || user.login}</h4>
-                          <span className="text-xs text-gray-400 font-mono">@{user.login}</span>
+                          <h4 className="text-xs font-bold text-[var(--text-primary)]">{user.name || user.login}</h4>
+                          <span className="text-[11px] text-[var(--text-muted)] font-mono">@{user.login}</span>
                         </div>
-                        <p className="text-xs text-gray-400 flex items-center gap-2">
+                        <p className="text-[11px] text-[var(--text-muted)] flex items-center gap-2 mt-0.5">
                           <span>{user.public_repos} public repos</span>
                           {user.total_private_repos !== undefined && (
                             <>
@@ -482,18 +487,18 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                       <button
                         onClick={() => loadUserRepos()}
                         disabled={isLoadingRepos}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs transition"
+                        className="btn-secondary h-7 px-2.5 text-xs gap-1.5"
                         title="Refresh repositories"
                       >
-                        <RefreshCw className={`h-3.5 w-3.5 ${isLoadingRepos ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`h-3 w-3 ${isLoadingRepos ? 'animate-spin' : ''}`} />
                         <span>Refresh</span>
                       </button>
 
                       <button
                         onClick={disconnect}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition"
+                        className="btn-secondary h-7 px-2.5 text-xs gap-1.5 text-[var(--danger)] hover:border-[var(--danger)]/50"
                       >
-                        <LogOut className="h-3.5 w-3.5" />
+                        <LogOut className="h-3 w-3" />
                         <span>Disconnect</span>
                       </button>
                     </div>
@@ -502,42 +507,42 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                   {/* Search and Filters */}
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-[240px] relative">
-                      <Search className="h-4 w-4 text-gray-500 absolute left-3 top-2.5" />
+                      <Search className="h-3.5 w-3.5 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         placeholder="Search your repositories by name or description..."
-                        className="w-full bg-gray-950 border border-gray-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full bg-[var(--bg-root)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none font-mono"
                       />
                     </div>
-                    <div className="flex items-center bg-gray-950 border border-gray-800 rounded-xl p-1 text-xs">
+                    <div className="flex items-center bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-0.5 text-xs font-mono">
                       <button
                         onClick={() => setVisibilityFilter('all')}
-                        className={`px-3 py-1 rounded-lg transition ${
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold transition ${
                           visibilityFilter === 'all'
-                            ? 'bg-indigo-600 text-white font-semibold'
-                            : 'text-gray-400 hover:text-white'
+                            ? 'bg-[var(--brand)] text-white'
+                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                         }`}
                       >
                         All ({userRepos.length})
                       </button>
                       <button
                         onClick={() => setVisibilityFilter('public')}
-                        className={`px-3 py-1 rounded-lg transition ${
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold transition ${
                           visibilityFilter === 'public'
-                            ? 'bg-indigo-600 text-white font-semibold'
-                            : 'text-gray-400 hover:text-white'
+                            ? 'bg-[var(--brand)] text-white'
+                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                         }`}
                       >
                         Public
                       </button>
                       <button
                         onClick={() => setVisibilityFilter('private')}
-                        className={`px-3 py-1 rounded-lg transition ${
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold transition ${
                           visibilityFilter === 'private'
-                            ? 'bg-indigo-600 text-white font-semibold'
-                            : 'text-gray-400 hover:text-white'
+                            ? 'bg-[var(--brand)] text-white'
+                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                         }`}
                       >
                         Private
@@ -545,14 +550,14 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Repositories List */}
+                  {/* Repositories List Grid */}
                   {isLoadingRepos ? (
-                    <div className="flex items-center justify-center py-12 gap-2 text-gray-400 text-xs">
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
-                      <span>Loading your GitHub repositories...</span>
+                    <div className="flex items-center justify-center py-12 gap-2 text-[var(--text-muted)] text-xs font-mono">
+                      <Loader2 className="h-4 w-4 animate-spin text-[var(--brand)]" />
+                      <span>Loading GitHub repositories...</span>
                     </div>
                   ) : filteredRepos.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500 text-xs bg-gray-900/40 rounded-xl border border-gray-800/60">
+                    <div className="text-center py-12 text-[var(--text-muted)] text-xs bg-[var(--bg-elevated)] rounded-xl border border-[var(--border-subtle)]">
                       No repositories found matching your query.
                     </div>
                   ) : (
@@ -564,59 +569,59 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                             key={repo.id}
                             className={`p-3.5 rounded-xl border transition flex flex-col justify-between ${
                               isSelected
-                                ? 'bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/40'
-                                : 'bg-gray-900/60 border-gray-800 hover:border-gray-700 hover:bg-gray-900'
+                                ? 'bg-[var(--brand-soft)] border-[var(--brand)]'
+                                : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] hover:border-[var(--border-default)]'
                             }`}
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2 mb-1.5">
-                                <div className="flex items-center gap-1.5 font-semibold text-xs text-white truncate">
+                                <div className="flex items-center gap-1.5 font-bold text-xs text-[var(--text-primary)] truncate font-mono">
                                   {repo.private ? (
-                                    <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                                    <Lock className="h-3 w-3 text-[var(--warning)] shrink-0" />
                                   ) : (
-                                    <Globe className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                    <Globe className="h-3 w-3 text-[var(--text-muted)] shrink-0" />
                                   )}
                                   <span className="truncate">{repo.full_name}</span>
                                 </div>
-                                <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded font-mono shrink-0">
+                                <span className="text-[10px] bg-[var(--bg-surface)] text-[var(--text-muted)] px-1.5 py-0.2 rounded font-mono shrink-0 border border-[var(--border-subtle)]">
                                   {repo.default_branch}
                                 </span>
                               </div>
 
-                              <p className="text-[11px] text-gray-400 line-clamp-2 mb-3 min-h-[30px]">
+                              <p className="text-[11px] text-[var(--text-secondary)] line-clamp-2 mb-3 min-h-[30px]">
                                 {repo.description || 'No description provided.'}
                               </p>
                             </div>
 
-                            <div className="flex items-center justify-between pt-2 border-t border-gray-800/60 text-[11px] text-gray-400">
-                              <div className="flex items-center gap-3">
+                            <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)]">
+                              <div className="flex items-center gap-3 font-mono text-[10px]">
                                 {repo.language && (
-                                  <span className="flex items-center gap-1 text-indigo-300">
-                                    <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                                  <span className="flex items-center gap-1 text-[var(--brand-hover)]">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--brand)]" />
                                     {repo.language}
                                   </span>
                                 )}
                                 <span className="flex items-center gap-1">
-                                  <Star className="h-3 w-3 text-amber-400" />
+                                  <Star className="h-3 w-3 text-[var(--warning)]" />
                                   {repo.stargazers_count}
                                 </span>
                                 <span className="flex items-center gap-1">
-                                  <GitFork className="h-3 w-3 text-gray-400" />
+                                  <GitFork className="h-3 w-3 text-[var(--text-muted)]" />
                                   {repo.forks_count}
                                 </span>
                               </div>
 
                               <button
                                 onClick={() => handleSelectUserRepo(repo)}
-                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
                                   isSelected
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                                    ? 'bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/30'
+                                    : 'btn-primary h-7 px-3 text-xs'
                                 }`}
                               >
                                 {isSelected ? (
                                   <>
-                                    <Check className="h-3 w-3" />
+                                    <Check className="h-3 w-3 stroke-[3]" />
                                     <span>Active</span>
                                   </>
                                 ) : (
@@ -634,35 +639,37 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
             </div>
           )}
 
-          {/* 2. DIRECT GITHUB URL TAB */}
+          {/* TAB 2: DIRECT GITHUB URL */}
           {activeTab === 'url' && (
-            <div className="max-w-2xl mx-auto py-2 space-y-5">
-              <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
-                <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
-                  <ExternalLink className="h-4 w-4 text-indigo-400" />
-                  Connect by GitHub URL or Specifier
-                </h3>
-                <p className="text-xs text-gray-400 mb-4">
+            <div className="max-w-2xl mx-auto py-2 space-y-4">
+              <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 text-[var(--brand)]" />
+                  <h3 className="text-xs font-bold text-[var(--text-primary)] font-mono uppercase">
+                    Connect by GitHub URL or Slug
+                  </h3>
+                </div>
+                <p className="text-xs text-[var(--text-secondary)]">
                   Enter any public or private repository URL (e.g.{' '}
-                  <code className="text-indigo-300 bg-indigo-950/60 px-1 py-0.5 rounded">
+                  <code className="text-[var(--brand-hover)] bg-[var(--bg-root)] px-1 py-0.5 rounded border border-[var(--border-subtle)] font-mono">
                     https://github.com/fastapi/fastapi
                   </code>{' '}
-                  or <code className="text-indigo-300 bg-indigo-950/60 px-1 py-0.5 rounded">owner/repo</code>).
+                  or <code className="text-[var(--brand-hover)] bg-[var(--bg-root)] px-1 py-0.5 rounded border border-[var(--border-subtle)] font-mono">owner/repo</code>).
                 </p>
 
-                <form onSubmit={handleValidateDirectUrl} className="space-y-4">
+                <form onSubmit={handleValidateDirectUrl} className="space-y-3 pt-1">
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={directUrl}
                       onChange={e => setDirectUrl(e.target.value)}
                       placeholder="https://github.com/owner/repo or owner/repo"
-                      className="flex-1 bg-gray-950 border border-gray-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                      className="flex-1 bg-[var(--bg-root)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none font-mono"
                     />
                     <button
                       type="submit"
                       disabled={isValidatingUrl}
-                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                      className="btn-primary h-9 px-4 text-xs gap-1.5 shrink-0"
                     >
                       {isValidatingUrl ? (
                         <>
@@ -676,7 +683,7 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                   </div>
 
                   {urlError && (
-                    <div className="flex items-center gap-1.5 text-rose-400 text-xs">
+                    <div className="flex items-center gap-1.5 text-[var(--danger)] text-xs font-mono">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                       <span>{urlError}</span>
                     </div>
@@ -686,26 +693,26 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
 
               {/* Inspected Repo Preview Card */}
               {validatedRepoData && (
-                <div className="bg-gradient-to-br from-indigo-950/50 via-gray-900 to-gray-900 border border-indigo-500/40 rounded-2xl p-5 shadow-xl animate-fadeIn space-y-4">
+                <div className="bg-[var(--bg-elevated)] border border-[var(--brand)]/40 rounded-xl p-5 shadow-xl space-y-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300">
-                        <FolderGit2 className="h-5 w-5" />
+                      <div className="h-9 w-9 rounded-xl bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center text-[var(--brand)]">
+                        <FolderGit2 className="h-4 w-4" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-[var(--text-primary)] font-mono flex items-center gap-2">
                           {validatedRepoData.full_name}
                           {validatedRepoData.private ? (
-                            <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30">
+                            <span className="status-pill status-pill-blocked text-[9px] py-0">
                               Private
                             </span>
                           ) : (
-                            <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30">
+                            <span className="status-pill status-pill-verified text-[9px] py-0">
                               Public
                             </span>
                           )}
                         </h4>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                           {validatedRepoData.description || 'No description available.'}
                         </p>
                       </div>
@@ -715,29 +722,29 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                       href={validatedRepoData.html_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-800 transition"
+                      className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition"
                       title="Open in GitHub"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </a>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-xs bg-gray-950/60 p-3 rounded-xl border border-gray-800/80">
+                  <div className="grid grid-cols-3 gap-3 text-xs font-mono bg-[var(--bg-root)] p-3 rounded-lg border border-[var(--border-subtle)]">
                     <div>
-                      <span className="text-gray-500 block text-[10px] uppercase">Language</span>
-                      <span className="font-semibold text-indigo-300">
+                      <span className="text-[var(--text-muted)] block text-[10px] uppercase">Language</span>
+                      <span className="font-semibold text-[var(--brand-hover)]">
                         {validatedRepoData.language || 'Multiple'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-[10px] uppercase">Stars</span>
-                      <span className="font-semibold text-amber-400">
+                      <span className="text-[var(--text-muted)] block text-[10px] uppercase">Stars</span>
+                      <span className="font-semibold text-[var(--warning)]">
                         ★ {validatedRepoData.stargazers_count?.toLocaleString() || 0}
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-[10px] uppercase">Default Branch</span>
-                      <span className="font-mono text-emerald-400 font-semibold">
+                      <span className="text-[var(--text-muted)] block text-[10px] uppercase">Default Branch</span>
+                      <span className="text-[var(--success)] font-semibold">
                         {validatedRepoData.default_branch || 'main'}
                       </span>
                     </div>
@@ -745,21 +752,21 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
 
                   <div className="flex items-center justify-between pt-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">Target Branch:</span>
+                      <span className="text-xs text-[var(--text-muted)] font-mono">Target Branch:</span>
                       <input
                         type="text"
                         value={urlBranch}
                         onChange={e => setUrlBranch(e.target.value)}
                         placeholder="main"
-                        className="bg-gray-950 border border-gray-800 rounded-lg px-2.5 py-1 text-xs text-white font-mono w-28 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1 text-xs text-[var(--text-primary)] font-mono w-28 focus:outline-none focus:border-[var(--brand)]"
                       />
                     </div>
 
                     <button
                       onClick={handleSelectDirectRepo}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-semibold transition shadow-lg shadow-emerald-600/30"
+                      className="btn-primary h-8 px-4 text-xs gap-1.5"
                     >
-                      <Check className="h-4 w-4" />
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
                       <span>Set as Active Repository</span>
                     </button>
                   </div>
@@ -768,22 +775,22 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
             </div>
           )}
 
-          {/* 3. CURATED STARTER REPOSITORIES TAB */}
+          {/* TAB 3: CURATED STARTER REPOSITORIES */}
           {activeTab === 'starters' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <Sparkles className="h-4 w-4 text-amber-400" />
+                  <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase font-mono flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-[var(--warning)]" />
                     Curated Template & Benchmark Repositories
                   </h3>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
                     Connect immediately with popular repositories configured for agentic debugging and verification.
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {POPULAR_STARTER_REPOS.map(starter => {
                   const isSelected = connectedRepo?.fullName === starter.fullName;
                   return (
@@ -791,53 +798,53 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                       key={starter.fullName}
                       className={`p-4 rounded-xl border transition flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/40'
-                          : 'bg-gray-900/60 border-gray-800 hover:border-gray-700 hover:bg-gray-900'
+                          ? 'bg-[var(--brand-soft)] border-[var(--brand)]'
+                          : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)]'
                       }`}
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div>
-                            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-2 py-0.5 rounded-full border border-indigo-500/30">
+                            <span className="text-[10px] bg-[var(--brand-soft)] text-[var(--brand-hover)] font-semibold px-2 py-0.5 rounded border border-[var(--brand)]/30 font-mono">
                               {starter.category}
                             </span>
-                            <h4 className="text-sm font-bold text-white mt-1.5 flex items-center gap-1.5">
-                              <FolderGit2 className="h-4 w-4 text-indigo-400 shrink-0" />
+                            <h4 className="text-xs font-bold text-[var(--text-primary)] mt-1.5 flex items-center gap-1.5 font-mono">
+                              <FolderGit2 className="h-3.5 w-3.5 text-[var(--brand)] shrink-0" />
                               <span className="truncate">{starter.fullName}</span>
                             </h4>
                           </div>
-                          <span className="text-xs font-mono text-amber-400 flex items-center gap-1">
-                            <Star className="h-3 w-3 fill-amber-400" />
+                          <span className="text-xs font-mono text-[var(--warning)] flex items-center gap-1">
+                            <Star className="h-3 w-3 fill-[var(--warning)]" />
                             {starter.stars}
                           </span>
                         </div>
 
-                        <p className="text-xs text-gray-400 line-clamp-2 mb-4">
+                        <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-3">
                           {starter.description}
                         </p>
                       </div>
 
-                      <div className="flex items-center justify-between pt-2 border-t border-gray-800/80 text-xs">
-                        <div className="flex items-center gap-2 text-gray-400 font-mono text-[11px]">
-                          <span className="flex items-center gap-1 text-indigo-300">
-                            <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                      <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)] text-xs">
+                        <div className="flex items-center gap-2 text-[var(--text-muted)] font-mono text-[10px]">
+                          <span className="flex items-center gap-1 text-[var(--brand-hover)]">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--brand)]" />
                             {starter.language}
                           </span>
                           <span>•</span>
-                          <span className="text-gray-500">branch: {starter.defaultBranch}</span>
+                          <span>branch: {starter.defaultBranch}</span>
                         </div>
 
                         <button
                           onClick={() => handleSelectStarter(starter)}
-                          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
                             isSelected
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                              ? 'bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/30'
+                              : 'btn-primary h-7 px-3 text-xs'
                           }`}
                         >
                           {isSelected ? (
                             <>
-                              <Check className="h-3.5 w-3.5" />
+                              <Check className="h-3 w-3 stroke-[3]" />
                               <span>Active</span>
                             </>
                           ) : (
@@ -855,25 +862,27 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
             </div>
           )}
 
-          {/* 4. LOCAL WORKSPACE TAB */}
+          {/* TAB 4: LOCAL WORKSPACE */}
           {activeTab === 'local' && (
-            <div className="max-w-xl mx-auto py-4 space-y-5">
-              <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-xl bg-cyan-600/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                    <Code2 className="h-5 w-5" />
+            <div className="max-w-xl mx-auto py-2 space-y-4">
+              <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-[var(--cyan)]/10 border border-[var(--cyan)]/30 flex items-center justify-center text-[var(--cyan)]">
+                    <Code2 className="h-4 w-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Local Workspace Directory</h3>
-                    <p className="text-xs text-gray-400">
+                    <h3 className="text-xs font-bold text-[var(--text-primary)] font-mono uppercase">
+                      Local Workspace Directory
+                    </h3>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
                       Target local code repository on your filesystem with sandbox isolation.
                     </p>
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 pt-1">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+                    <label className="block text-xs font-mono font-bold text-[var(--text-muted)] uppercase mb-1.5">
                       Filesystem Path
                     </label>
                     <input
@@ -881,15 +890,15 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                       value={localPath}
                       onChange={e => setLocalPath(e.target.value)}
                       placeholder="."
-                      className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
+                      className="w-full bg-[var(--bg-root)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none font-mono"
                     />
-                    <span className="text-[11px] text-gray-500 mt-1 block">
+                    <span className="text-[11px] text-[var(--text-muted)] mt-1 block">
                       Use &quot;.&quot; for current workspace root or provide an absolute path.
                     </span>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+                    <label className="block text-xs font-mono font-bold text-[var(--text-muted)] uppercase mb-1.5">
                       Sandbox Isolation Tier
                     </label>
                     <div className="grid grid-cols-2 gap-3">
@@ -898,15 +907,15 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                         onClick={() => setSandboxTier('A')}
                         className={`p-3 rounded-xl border text-left transition ${
                           sandboxTier === 'A'
-                            ? 'bg-cyan-950/40 border-cyan-500/60 text-white ring-1 ring-cyan-500/40'
-                            : 'bg-gray-950 border-gray-800 text-gray-400 hover:border-gray-700'
+                            ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--text-primary)] ring-1 ring-[var(--brand)]/30'
+                            : 'bg-[var(--bg-root)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-default)]'
                         }`}
                       >
-                        <div className="font-semibold text-xs text-cyan-300 flex items-center justify-between mb-1">
+                        <div className="font-semibold text-xs text-[var(--brand-hover)] flex items-center justify-between mb-1 font-mono">
                           <span>Tier A: Git Worktree</span>
-                          {sandboxTier === 'A' && <Check className="h-3 w-3" />}
+                          {sandboxTier === 'A' && <Check className="h-3 w-3 stroke-[3]" />}
                         </div>
-                        <p className="text-[10px] text-gray-400">
+                        <p className="text-[10px] text-[var(--text-secondary)]">
                           Lightweight atomic worktree isolation with snapshot rollback.
                         </p>
                       </button>
@@ -916,15 +925,15 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                         onClick={() => setSandboxTier('B')}
                         className={`p-3 rounded-xl border text-left transition ${
                           sandboxTier === 'B'
-                            ? 'bg-cyan-950/40 border-cyan-500/60 text-white ring-1 ring-cyan-500/40'
-                            : 'bg-gray-950 border-gray-800 text-gray-400 hover:border-gray-700'
+                            ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--text-primary)] ring-1 ring-[var(--brand)]/30'
+                            : 'bg-[var(--bg-root)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-default)]'
                         }`}
                       >
-                        <div className="font-semibold text-xs text-cyan-300 flex items-center justify-between mb-1">
+                        <div className="font-semibold text-xs text-[var(--cyan)] flex items-center justify-between mb-1 font-mono">
                           <span>Tier B: MicroVM / Container</span>
-                          {sandboxTier === 'B' && <Check className="h-3 w-3" />}
+                          {sandboxTier === 'B' && <Check className="h-3 w-3 stroke-[3]" />}
                         </div>
-                        <p className="text-[10px] text-gray-400">
+                        <p className="text-[10px] text-[var(--text-secondary)]">
                           Full kernel boundary egress enforcement & native dep isolation.
                         </p>
                       </button>
@@ -935,9 +944,9 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                     <button
                       type="button"
                       onClick={handleConnectLocal}
-                      className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold transition shadow-lg shadow-cyan-600/20 flex items-center gap-2"
+                      className="btn-primary h-8 px-4 text-xs gap-2"
                     >
-                      <Check className="h-4 w-4" />
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
                       <span>Connect Local Repository</span>
                     </button>
                   </div>
