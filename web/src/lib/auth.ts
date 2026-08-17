@@ -140,4 +140,28 @@ export async function isDashboardTokenValidAsync(token: string): Promise<boolean
   return false;
 }
 
+export function signOAuthState(): string {
+  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
+  const payload = Buffer.from(JSON.stringify({ t: Date.now(), n: crypto.randomBytes(16).toString('hex') })).toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+export function verifyOAuthState(state: string | null | undefined): boolean {
+  if (!state || typeof state !== 'string') return false;
+  const parts = state.split('.');
+  if (parts.length !== 2) return false;
+  const [payload, sig] = parts;
+  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.DASHBOARD_SESSION_SECRET?.trim() || 'loom_oauth_state_fallback_secret_2026';
+  const expectedSig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  if (sig !== expectedSig) return false;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const ageMs = Date.now() - Number(data.t);
+    return ageMs >= 0 && ageMs < 15 * 60 * 1000; // 15 minutes validity
+  } catch {
+    return false;
+  }
+}
+
 export { SESSION_TTL_SECONDS };

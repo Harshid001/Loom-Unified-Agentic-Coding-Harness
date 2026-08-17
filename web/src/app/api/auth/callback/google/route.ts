@@ -3,8 +3,8 @@ import {
   DASHBOARD_SESSION_COOKIE,
   SESSION_TTL_SECONDS,
   createDashboardSession,
+  verifyOAuthState,
 } from '@/lib/auth';
-import { verifyOAuthState } from '../route';
 
 function getAppOrigin(req: NextRequest): string {
   const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
