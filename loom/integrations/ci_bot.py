@@ -179,6 +179,71 @@ class CIBot:
             "run_id": data.run_id,
         }
 
+    def preview_pr(
+        self,
+        data: PullRequestTemplateData,
+        template: PullRequestTemplate = PullRequestTemplate.STANDARD,
+    ) -> Dict[str, Any]:
+        """Generate a PR preview payload without making outbound GitHub API calls."""
+        res = self.prepare_pr(data, template)
+        res["action"] = "preview"
+        return res
+
+    async def create_pr(
+        self,
+        data: PullRequestTemplateData,
+        template: PullRequestTemplate = PullRequestTemplate.STANDARD,
+        repo_path: Optional[str] = None,
+        base_branch: str = "main",
+    ) -> Dict[str, Any]:
+        """Create a real remote PR on GitHub using GitHubAPIClient."""
+        from loom.integrations.github_client import GitHubAPIClient
+
+        if not self.config.enabled:
+            return {"action": "skipped", "reason": "bot_disabled"}
+        current_count = self._event_counter.get("pr.opened", 0)
+        if current_count >= self.config.max_open_prs:
+            return {"action": "skipped", "reason": "max_open_prs_exceeded", "limit": self.config.max_open_prs}
+
+        body = self._build_pr_body(template, data)
+        api = self._api
+        if api is None:
+            api = GitHubAPIClient(
+                token_ref=self.config.install_token_ref,
+                base_url=self.config.api_base_url or "https://api.github.com",
+            )
+
+        if repo_path:
+            commit_msg = self.build_commit_message(data.run_id, data.issue_title, data.confidence_score)
+            api.commit_and_push_patch(repo_path, data.branch_name, commit_msg)
+
+        pr_data = await api.create_pull_request(
+            repo=self.config.repo_full_name,
+            title=f"[Loom] Fix: {data.issue_title}",
+            body=body,
+            head=data.branch_name,
+            base=base_branch,
+            draft=self.config.draft_pr_by_default,
+            labels=["loom:automated", "loom:needs-review"],
+        )
+
+        self._track_event(CIBotEvent.PR_OPENED)
+        pr_number = pr_data.get("number")
+        pr_url = pr_data.get("html_url") or f"https://github.com/{self.config.repo_full_name}/pull/{pr_number}"
+
+        return {
+            "action": "created",
+            "provider": self.config.provider.value,
+            "repo": self.config.repo_full_name,
+            "branch": data.branch_name,
+            "base_branch": base_branch,
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "draft": self.config.draft_pr_by_default,
+            "run_id": data.run_id,
+            "evidence_bundle_url": data.evidence_bundle_url,
+        }
+
     def _compute_false_trigger_rate(self) -> float:
         if self._total_triggers == 0:
             return 0.0
@@ -230,15 +295,47 @@ class CIBot:
 class GitHubCIBot:
     """Compatibility adapter around the current provider-neutral CIBot."""
 
-    def __init__(self, config: Optional[CIBotConfig] = None):
-        self._bot = config and CIBot(config) or CIBot(
+    def __init__(self, config: Optional[CIBotConfig] = None, api_client: Optional[Any] = None):
+        self._bot = config and CIBot(config, api_client=api_client) or CIBot(
             CIBotConfig(
                 provider=CIBotProvider.GITHUB,
                 org_id="default",
                 repo_full_name="",
                 api_base_url="",
-            )
+            ),
+            api_client=api_client,
         )
+
+    def preview_pr(
+        self,
+        *,
+        run_id: str,
+        issue_title: str,
+        issue_number: int,
+        patch_diff: str,
+        confidence_score: float,
+        verification_passed: bool,
+        cost_usd: float = 0.0,
+        files_touched: int = 0,
+        model_used: str = "unknown",
+        template: str = "standard",
+    ) -> Dict[str, Any]:
+        try:
+            template_value = PullRequestTemplate(template)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported PR template: {template}") from exc
+        data = self._bot.generate_pr_template_data(
+            run_id=run_id,
+            issue_title=issue_title,
+            issue_number=issue_number,
+            patch_diff=patch_diff,
+            confidence_score=confidence_score,
+            verification_passed=verification_passed,
+            cost_usd=cost_usd,
+            files_touched=files_touched,
+            model_used=model_used,
+        )
+        return self._bot.preview_pr(data, template_value)
 
     def prepare_pr(
         self,
@@ -270,3 +367,44 @@ class GitHubCIBot:
             model_used=model_used,
         )
         return self._bot.prepare_pr(data, template_value)
+
+    async def create_pr(
+        self,
+        *,
+        run_id: str,
+        issue_title: str,
+        issue_number: int,
+        patch_diff: str,
+        confidence_score: float,
+        verification_passed: bool,
+        repo_full_name: str = "",
+        repo_path: Optional[str] = None,
+        base_branch: str = "main",
+        cost_usd: float = 0.0,
+        files_touched: int = 0,
+        model_used: str = "unknown",
+        template: str = "standard",
+    ) -> Dict[str, Any]:
+        try:
+            template_value = PullRequestTemplate(template)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported PR template: {template}") from exc
+        if repo_full_name:
+            self._bot.config.repo_full_name = repo_full_name
+        data = self._bot.generate_pr_template_data(
+            run_id=run_id,
+            issue_title=issue_title,
+            issue_number=issue_number,
+            patch_diff=patch_diff,
+            confidence_score=confidence_score,
+            verification_passed=verification_passed,
+            cost_usd=cost_usd,
+            files_touched=files_touched,
+            model_used=model_used,
+        )
+        return await self._bot.create_pr(
+            data,
+            template=template_value,
+            repo_path=repo_path,
+            base_branch=base_branch,
+        )

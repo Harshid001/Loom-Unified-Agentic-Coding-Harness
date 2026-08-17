@@ -67,6 +67,8 @@ resolution, Docker/Firecracker enclaves, SSO/SCIM, CI bot, billing cutover).
 | §3.7 Evidence bundle actor attribution (human vs agent) | ✅ | `compute_merge_decision()` returns `actor` (`agent`/`human`/`none`); `EvidenceBundle.merge_decision` included in the tamper-evident payload hash and exported at run completion |
 | §4.2 SSO/SCIM + 5-min deprovisioning SLA | ✅ | `loom/scim/provisioning.py` SCIM 2.0 provisioning / deprovisioning with token revocation within 5-min SLA (`tests/test_scim_provisioning.py`) |
 | §6 SLA monitoring / status page | ✅ | `SystemStatusMonitor` (`loom/telemetry/status.py`) with component probes & 30-day uptime/latency SLA metric computation; `GET /api/v1/system/status` and `GET /status` endpoints (`tests/test_system_status.py`) |
+| PRD-024 Patch approval execution gate | ✅ | `task_graph.py` — `is_approval_required()` predicate halts at `PENDING_APPROVAL` after patcher on high-risk diffs or org policy, preventing verifier/sandbox execution until `approve_patch` resumes (`tests/test_patch_approval_gate.py`) |
+| PRD-025 Remote repository write path (Commit, Push, Real PR) | ✅ | `github_client.py` — `GitHubAPIClient` with vault token resolution, branch creation, commit/push, and GitHub PR creation; `server.py` `/create-pr` & `/preview-pr` endpoints (`tests/test_github_client.py`) |
 
 ---
 

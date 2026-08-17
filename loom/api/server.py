@@ -29,6 +29,8 @@ import hashlib
 import json
 import logging
 import os
+import shutil
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -207,6 +209,22 @@ class PreparePRRequest(BaseModel):
     run_id: str
     issue_title: str
     issue_number: int
+    patch_diff: str = ""
+    confidence_score: float = 0.0
+    verification_passed: bool = False
+    cost_usd: float = 0.0
+    files_touched: int = 0
+    model_used: str = "unknown"
+    template: str = "standard"
+
+
+class CreatePRRequest(BaseModel):
+    run_id: str
+    issue_title: str
+    issue_number: int
+    repo_full_name: str = ""
+    repo_path: Optional[str] = None
+    base_branch: str = "main"
     patch_diff: str = ""
     confidence_score: float = 0.0
     verification_passed: bool = False
@@ -453,6 +471,67 @@ def list_runs(
     return runs[offset : offset + limit]
 
 
+def is_git_url(repo_target: str) -> bool:
+    target = repo_target.strip().lower()
+    return (
+        target.startswith("https://github.com/")
+        or target.startswith("http://github.com/")
+        or target.startswith("git@github.com:")
+        or target.startswith("github.com/")
+        or target.startswith("https://gitlab.com/")
+        or target.startswith("git@gitlab.com:")
+        or (target.endswith(".git") and ("://" in target or target.startswith("git@")))
+    )
+
+
+def clone_remote_repo(url: str, run_id: str, token: Optional[str] = None) -> Path:
+    workspace_dir = Path.home() / ".loom" / "workspaces" / run_id
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    clean_url = url.strip()
+    if clean_url.startswith("github.com/"):
+        clean_url = f"https://{clean_url}"
+
+    clone_url = clean_url
+    if token and clean_url.startswith("https://"):
+        without_scheme = clean_url[len("https://") :]
+        clone_url = f"https://x-access-token:{token}@{without_scheme}"
+
+    try:
+        res = subprocess.run(
+            ["git", "clone", "--depth", "1", clone_url, str(workspace_dir)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if res.returncode != 0:
+            err = res.stderr or res.stdout
+            if token:
+                err = err.replace(token, "[REDACTED]")
+            if "Authentication failed" in err or "could not read Username" in err:
+                raise HTTPException(status_code=401, detail=f"Authentication failed cloning remote repo: {err}")
+            elif "not found" in err.lower() or "repository not found" in err.lower():
+                raise HTTPException(status_code=404, detail=f"Remote repository not found: {err}")
+            raise HTTPException(status_code=400, detail=f"Failed to clone remote repository: {err}")
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="Timeout expired while cloning remote repository") from exc
+    except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=400, detail=f"Error cloning repository: {exc}") from exc
+
+    return workspace_dir
+
+
+def cleanup_run_workspace(run_id: str) -> None:
+    workspace_dir = Path.home() / ".loom" / "workspaces" / run_id
+    if workspace_dir.exists():
+        try:
+            shutil.rmtree(workspace_dir, ignore_errors=True)
+        except Exception as exc:
+            logger.warning("Failed to clean up workspace %s: %s", workspace_dir, exc)
+
+
 @router_runs.post("/api/v1/run")
 @router_runs.post("/api/run")
 async def create_run(
@@ -503,32 +582,44 @@ async def create_run(
     if not ok:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=reason)
 
-    raw_path = Path(req.repo_path or ".").resolve()
-    if not raw_path.exists() or not raw_path.is_dir():
-        raise HTTPException(
-            status_code=400, detail=f"Target repo_path does not exist or is not a directory: {req.repo_path}"
-        )
-
-    allowed_roots = os.getenv("ALLOWED_REPO_ROOTS")
-    if allowed_roots:
-        roots = [Path(r.strip()).resolve() for r in allowed_roots.split(",") if r.strip()]
-        if not any(r in raw_path.parents or r == raw_path for r in roots):
-            raise HTTPException(status_code=403, detail="repo_path is not within allowed repository roots")
-    elif not is_dev_mode():
-        raise HTTPException(
-            status_code=403,
-            detail="ALLOWED_REPO_ROOTS environment variable must be configured in production mode to restrict repository access.",
-        )
-
     prune_active_runs()
 
-    repo_path = str(raw_path)
+    req_repo = (req.repo_path or ".").strip()
+    is_remote = is_git_url(req_repo)
     run_id = f"run_{uuid.uuid4().hex}"
+
+    if is_remote:
+        from loom.integrations.github_client import resolve_vault_token
+
+        token = resolve_vault_token(f"vault:{org_id}")
+        raw_path = clone_remote_repo(req_repo, run_id, token=token)
+        repo_path = str(raw_path)
+    else:
+        raw_path = Path(req_repo).resolve()
+        if not raw_path.exists() or not raw_path.is_dir():
+            raise HTTPException(
+                status_code=400, detail=f"Target repo_path does not exist or is not a directory: {req.repo_path}"
+            )
+
+        allowed_roots = os.getenv("ALLOWED_REPO_ROOTS")
+        if allowed_roots:
+            roots = [Path(r.strip()).resolve() for r in allowed_roots.split(",") if r.strip()]
+            if not any(r in raw_path.parents or r == raw_path for r in roots):
+                raise HTTPException(status_code=403, detail="repo_path is not within allowed repository roots")
+        elif not is_dev_mode():
+            raise HTTPException(
+                status_code=403,
+                detail="ALLOWED_REPO_ROOTS environment variable must be configured in production mode to restrict repository access.",
+            )
+        repo_path = str(raw_path)
 
     if idempotency_key and coordinator.enabled:
         await coordinator.reserve_idempotency_key(org_id, idempotency_key, run_id)
 
     state = OrchestratorState(run_id=run_id, repo_path=repo_path, issue_description=req.issue)
+    if is_remote:
+        state.shared_data["remote_clone"] = True
+        state.shared_data["remote_url"] = req_repo
     state.shared_data["org_id"] = org_id
     state.shared_data["org_tier"] = org.tier.value if hasattr(org, "tier") and hasattr(org.tier, "value") else str(getattr(org, "tier", "solo"))
     state.shared_data["sandbox_tier"] = sandbox_tier
@@ -599,7 +690,8 @@ async def create_run(
     )
 
     if req.async_mode:
-        asyncio.create_task(task_graph.run())
+        task = asyncio.create_task(task_graph.run(), name=f"run_{run_id}")
+        run_entry["task"] = task
         return {"run_id": run_id, "status": "RUNNING", "stream_url": f"/api/v1/stream/{run_id}"}
 
     final_state = await task_graph.run()
@@ -722,8 +814,18 @@ async def control_run(
             return {"success": success, "snapshot_id": snapshot_id, "status": "rolled_back"}
         raise HTTPException(status_code=400, detail="No snapshot ID available for rollback")
     elif action == "approve_patch":
+        from loom.orchestrator.task_graph import RunStatus
+
         graph.state.shared_data["patch_approved"] = True
+        graph.run_status = RunStatus.VERIFYING
         graph.resume()
+        task = run_entry.get("task")
+        if task is None or task.done():
+            resumption_task = asyncio.create_task(
+                graph.run(resume_from="verifier"),
+                name=f"run_{req.run_id}",
+            )
+            run_entry["task"] = resumption_task
     else:
         raise HTTPException(status_code=400, detail=f"Unknown control action: {req.action}")
 
@@ -1064,13 +1166,15 @@ async def notify_slack(req: SlackNotifyRequest, _auth: AuthDep = None) -> dict:
     return {"success": delivered, "run_id": req.run_id or "", "title": req.title}
 
 
+@router_integrations.post("/api/v1/integrations/github/preview-pr")
+@router_integrations.post("/api/integrations/github/preview-pr")
 @router_integrations.post("/api/v1/integrations/github/prepare-pr")
 @router_integrations.post("/api/integrations/github/prepare-pr")
 async def prepare_github_pr(req: PreparePRRequest, _auth: AuthDep = None) -> dict:
     from loom.integrations.ci_bot import GitHubCIBot
 
     bot = GitHubCIBot()
-    return bot.prepare_pr(
+    return bot.preview_pr(
         run_id=req.run_id,
         issue_title=req.issue_title,
         issue_number=req.issue_number,
@@ -1082,6 +1186,58 @@ async def prepare_github_pr(req: PreparePRRequest, _auth: AuthDep = None) -> dic
         model_used=req.model_used,
         template=req.template,
     )
+
+
+@router_integrations.post("/api/v1/integrations/github/create-pr")
+@router_integrations.post("/api/integrations/github/create-pr")
+async def create_github_pr(req: CreatePRRequest, _auth: AuthDep = None) -> dict:
+    from loom.integrations.ci_bot import GitHubCIBot
+    from loom.integrations.github_client import (
+        GitHubAPIError,
+        GitHubAuthError,
+        GitHubBranchExistsError,
+        GitHubPROpenError,
+        GitHubPushError,
+    )
+
+    bot = GitHubCIBot()
+    try:
+        return await bot.create_pr(
+            run_id=req.run_id,
+            issue_title=req.issue_title,
+            issue_number=req.issue_number,
+            patch_diff=req.patch_diff,
+            confidence_score=req.confidence_score,
+            verification_passed=req.verification_passed,
+            repo_full_name=req.repo_full_name,
+            repo_path=req.repo_path,
+            base_branch=req.base_branch,
+            cost_usd=req.cost_usd,
+            files_touched=req.files_touched,
+            model_used=req.model_used,
+            template=req.template,
+        )
+    except GitHubAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error_code": exc.error_code, "message": str(exc)},
+        ) from exc
+    except (GitHubBranchExistsError, GitHubPROpenError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": exc.error_code, "message": str(exc)},
+        ) from exc
+    except GitHubPushError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error_code": exc.error_code, "message": str(exc)},
+        ) from exc
+    except GitHubAPIError as exc:
+        code = exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR
+        raise HTTPException(
+            status_code=code,
+            detail={"error_code": exc.error_code, "message": str(exc)},
+        ) from exc
 
 
 @router_integrations.get("/api/v1/integrations/scm/status")

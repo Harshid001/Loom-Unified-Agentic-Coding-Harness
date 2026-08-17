@@ -5,6 +5,7 @@ from loom.runtime.bootstrap import validate_production_environment
 
 def _set_required(monkeypatch, tmp_path):
     monkeypatch.setenv("LOOM_ENV", "production")
+    monkeypatch.delenv("DEV_MODE", raising=False)
     monkeypatch.setenv("API_KEY", "api")
     monkeypatch.setenv("DASHBOARD_AUTH_TOKEN", "dashboard")
     monkeypatch.setenv("ALLOWED_REPO_ROOTS", str(tmp_path))
@@ -20,6 +21,7 @@ def _set_required(monkeypatch, tmp_path):
 
 def test_production_bootstrap_requires_security_configuration(tmp_path, monkeypatch):
     monkeypatch.setenv("LOOM_ENV", "production")
+    monkeypatch.delenv("DEV_MODE", raising=False)
     for name in (
         "API_KEY",
         "DASHBOARD_AUTH_TOKEN",

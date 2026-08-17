@@ -28,11 +28,13 @@ from loom.memory.store import TieredMemoryStore
 from loom.orchestrator.agents import (
     OnboardingAgent,
     PatcherAgent,
+    PlannerAgent,
     ReproductionAgent,
     ReviewerAgent,
     VerifierAgent,
 )
 from loom.orchestrator.state import NodeStatus, OrchestratorState
+from loom.orchestrator.task_graph import TaskGraph
 from loom.repo_intel.mapper import RepoMapper
 from loom.sandbox.local_process import LocalProcessSandbox
 from loom.telemetry.ablation import AblationHarness
@@ -132,14 +134,12 @@ async def _execute_task_graph(
     streaming: Optional[StreamingOutput] = None,
     parallel: bool = False,
     resume_from: Optional[str] = None,
+    fast: bool = False,
 ) -> OrchestratorState:
-    node_sequence = [
-        ("onboarding", OnboardingAgent),
-        ("reproduction", ReproductionAgent),
-        ("patcher", PatcherAgent),
-        ("verifier", VerifierAgent),
-        ("reviewer", ReviewerAgent),
-    ]
+    node_sequence = list(TaskGraph.NODE_SEQUENCE)
+    if fast:
+        console.print("[yellow]Fast mode enabled (--fast / --no-plan): skipping planner agent.[/yellow]")
+        node_sequence = [item for item in node_sequence if item[0] != "planner"]
 
     if resume_from:
         skip = True
@@ -155,7 +155,10 @@ async def _execute_task_graph(
     if parallel:
         parallel_groups: list[list[tuple[str, Any]]] = [
             [("onboarding", OnboardingAgent)],
-            [("reproduction", ReproductionAgent), ("patcher", PatcherAgent)],
+            [("reproduction", ReproductionAgent), ("planner", PlannerAgent)]
+            if not fast
+            else [("reproduction", ReproductionAgent)],
+            [("patcher", PatcherAgent)],
             [("verifier", VerifierAgent), ("reviewer", ReviewerAgent)],
         ]
         all_completed: list[str] = []
@@ -490,9 +493,10 @@ def run(
     human: bool = typer.Option(False, "--human/--no-human", help="Enable human-in-the-loop approval"),
     stream: bool = typer.Option(True, "--stream/--no-stream", help="Enable real-time streaming output"),
     parallel: bool = typer.Option(False, "--parallel", help="Enable parallel agent execution where possible"),
+    fast: bool = typer.Option(False, "--fast", "--no-plan", help="Skip planning agent for faster execution"),
     resume: Optional[str] = typer.Option(None, "--resume", help="Resume a failed run by run ID"),
 ):
-    """Execute the task graph through onboarding, reproduction, patching, verification, and reviewer report."""
+    """Execute the task graph through onboarding, reproduction, planning, patching, verification, and reviewer report."""
     _apply_api_key_if_provided(api_key, model, api_base)
 
     if resume and RecoveryManager.can_resume(resume):
@@ -521,6 +525,7 @@ def run(
                             streaming,
                             parallel,
                             resume_point,
+                            fast,
                         )
                     )
             else:
@@ -535,6 +540,7 @@ def run(
                         streaming,
                         parallel,
                         resume_point,
+                        fast,
                     )
                 )
             _print_run_summary(final_state, resume)
@@ -574,12 +580,14 @@ def run(
         with Live(streaming.render_context(), console=console, refresh_per_second=10):
             final_state = asyncio.run(
                 _execute_task_graph(
-                    state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel
+                    state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel, fast=fast
                 )
             )
     else:
         final_state = asyncio.run(
-            _execute_task_graph(state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel)
+            _execute_task_graph(
+                state, router, advanced_router, tracer, cost_tracker, human_loop, streaming, parallel, fast=fast
+            )
         )
 
     _print_run_summary(final_state, run_id)

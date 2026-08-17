@@ -28,6 +28,10 @@ PRD-012: use trusted-proxy-aware, credential-aware rate limiting and protect das
 
 PRD-013: perform SSRF validation inside the Slack/webhook handlers themselves.
 
+PRD-024: enforce patch approval execution gate — halt at `PENDING_APPROVAL` after patcher on high-risk patches or org policy, preventing sandbox/verification invocation until `approve_patch` is triggered.
+
+PRD-025: real remote repository write path — authenticated branch creation, commit/push, and GitHub PR creation via `GitHubAPIClient` and `create-pr` endpoint.
+
 ## Phase 2 — High-priority hardening
 
 PRD-014 target-org authorization; PRD-015 fail-fast record persistence and atomic checkpoints; PRD-016 sandbox egress/symlink/TLS controls; PRD-017 dashboard headers/CSRF/session hardening; PRD-019 webhook secret encryption/event filters/SCIM hardening; PRD-020 database foreign keys/pagination/pool health; PRD-022 backup alerting/checkpoint coverage/retry DLQ/webhook auth.

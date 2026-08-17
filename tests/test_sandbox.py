@@ -6,7 +6,8 @@ from loom.sandbox.firecracker_sandbox import FirecrackerSandbox
 from loom.sandbox.local_process import LocalProcessSandbox
 
 
-def test_local_sandbox(tmp_path):
+def test_local_sandbox(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALLOWED_REPO_ROOTS", str(tmp_path))
     sandbox = LocalProcessSandbox(str(tmp_path))
     result = sandbox.run_command("python -c \"print('hello')\"")
     assert result.exit_code == 0

@@ -43,6 +43,7 @@ class RunStatus(str, Enum):
     EVIDENCE_REVIEW = "evidence_review"
     CONFLICT_RESOLUTION = "conflict_resolution"
     SECURITY_HOLD = "security_hold"
+    PENDING_APPROVAL = "pending_approval"
     MERGED = "merged"
     FAILED = "failed"
     ROLLED_BACK = "rolled_back"
@@ -261,6 +262,31 @@ class TaskGraph:
             return result
 
         return list(self.NODE_SEQUENCE)
+
+    def is_approval_required(self) -> bool:
+        """Predicate checking if human approval is required before verification/merge."""
+        if bool(self.state.shared_data.get("require_patch_approval")) or bool(
+            self.state.shared_data.get("require_human_approval")
+        ):
+            return True
+        org_policy = self.state.shared_data.get("org_policy")
+        if isinstance(org_policy, dict) and bool(org_policy.get("require_patch_approval")):
+            return True
+
+        diff = self.state.patch_diff or ""
+        touched = [line[4:].replace("\t", " ") for line in diff.splitlines() if line.startswith("+++ ")]
+        touched = [t.split(" ")[0] for t in touched if "/dev/null" not in t]
+        diff_lines = len(diff.splitlines())
+        prior_conf = self.state.shared_data.get("prior_confidence")
+        try:
+            if hasattr(self.router, "classify_patch_risk") and self.router.classify_patch_risk(
+                diff_lines, touched, prior_confidence=prior_conf
+            ):
+                return True
+        except Exception as err:
+            logger.debug("classify_patch_risk check failed in is_approval_required: %s", err)
+
+        return False
 
     def resolve_model(self, node_name: str) -> str:
         if node_name in self.advanced_model_map:
@@ -553,6 +579,26 @@ class TaskGraph:
                     )
                     break
 
+                if self.is_approval_required() and not self.state.shared_data.get("patch_approved"):
+                    self.run_status = RunStatus.PENDING_APPROVAL
+                    self.is_paused = True
+                    self.state.shared_data["approval_required"] = True
+                    self._fire_webhook(
+                        WebhookEventType.RUN_PENDING_APPROVAL,
+                        {
+                            "status": RunStatus.PENDING_APPROVAL.value,
+                            "reason": "patch_approval_required",
+                            "run_id": self.state.run_id,
+                        },
+                    )
+                    self.emit_log(
+                        "patcher",
+                        "warning",
+                        f"Patch approval required for run {self.state.run_id} — execution halted pending human approval",
+                    )
+                    self.state.save_checkpoint()
+                    break
+
             if success and node_name == "verifier":
                 self._record_verification_stages()
 
@@ -580,6 +626,10 @@ class TaskGraph:
             if self.step_mode:
                 self.is_paused = True
                 self.step_mode = False
+
+        if self.run_status == RunStatus.PENDING_APPROVAL:
+            self.state.save_checkpoint()
+            return self.state
 
         confidence = float(self.state.shared_data.get("confidence_score", 0.0))
         try:

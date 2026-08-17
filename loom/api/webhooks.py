@@ -22,6 +22,7 @@ class WebhookEventType(str, Enum):
     RUN_COMPLETED = "run.completed"
     RUN_FAILED = "run.failed"
     RUN_SECURITY_HOLD = "run.security_hold"
+    RUN_PENDING_APPROVAL = "run.pending_approval"
     RUN_ROLLED_BACK = "run.rolled_back"
     PATCH_PROPOSED = "patch.proposed"
     PATCH_AUTO_MERGED = "patch.auto_merged"
