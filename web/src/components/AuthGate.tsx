@@ -217,8 +217,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
               </div>
             )}
 
-            {/* Google Sign-In Option */}
-            <div>
+            {/* Sign-In Options */}
+            <div className="space-y-3">
               <a
                 href="/api/auth/google"
                 className="w-full h-11 rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)]/70 hover:bg-[var(--bg-hover)] hover:border-[var(--brand)]/60 text-xs font-mono font-semibold text-[var(--text-primary)] transition-all duration-200 flex items-center justify-center gap-3 px-4 shadow-sm hover:shadow-[0_0_20px_rgba(124,92,255,0.15)] group"
@@ -244,6 +244,46 @@ export function AuthGate({ children }: { children: ReactNode }) {
                 <span>Sign in with Google</span>
                 <ArrowRight className="h-3.5 w-3.5 ml-auto text-[var(--text-muted)] group-hover:text-[var(--text-primary)] group-hover:translate-x-0.5 transition-all opacity-60 group-hover:opacity-100" />
               </a>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  setChecking(true);
+                  setError(null);
+                  try {
+                    const res = await fetch('/api/auth/login', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ token: 'guest' }),
+                    });
+                    if (res.ok) {
+                      setAuthenticated(true);
+                    } else {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data.detail || 'Failed to enter workspace');
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Login failed');
+                  } finally {
+                    setChecking(false);
+                  }
+                }}
+                disabled={checking}
+                className="btn-primary w-full h-11 text-xs font-mono font-bold uppercase tracking-wider gap-2 shadow-lg shadow-[var(--brand)]/20 hover:shadow-[var(--brand)]/40 transition-all group"
+              >
+                {checking ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Connecting…</span>
+                  </>
+                ) : (
+                  <>
+                    <Layers className="h-3.5 w-3.5" />
+                    <span>Enter Workspace</span>
+                    <ArrowRight className="h-3.5 w-3.5 ml-auto opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                  </>
+                )}
+              </button>
             </div>
 
             {/* Divider */}

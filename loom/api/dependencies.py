@@ -84,7 +84,7 @@ async def verify_api_key(
             )
             return x_api_key
 
-    if not required_key and is_dev_mode():
+    if is_dev_mode():
         set_principal(get_service_principal())
         return x_api_key or "dev_key"
 
