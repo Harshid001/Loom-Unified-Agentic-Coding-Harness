@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 
 const AVAILABLE_MODELS = [
+  'auto',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-sonnet-20241022',
   'gpt-4o',

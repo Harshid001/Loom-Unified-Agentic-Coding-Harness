@@ -297,3 +297,33 @@ class TestCostEstimation:
         cost = router.estimate_cost("mock", 1000, 500)
         expected = (1000 * 0.001 / 1e6) + (500 * 0.002 / 1e6)
         assert abs(cost - expected) < 1e-10
+
+
+class TestExplicitModelVsAutoRouting:
+    def test_explicit_model_selection_used_across_all_nodes(self):
+        router = ModelRouter(default_model="gpt-4o", mock_mode=False)
+        for node in ["onboarding", "reproduction", "planner", "patcher", "verifier", "reviewer"]:
+            assert router.resolve_model(node) == "gpt-4o"
+
+    def test_set_model_updates_explicit_execution(self):
+        router = ModelRouter(default_model="gpt-4o", mock_mode=False)
+        router.set_model("gemini-1.5-pro")
+        assert router.default_model == "gemini-1.5-pro"
+        assert "gemini-1.5-pro" in router._eligible_models
+        for node in ["onboarding", "reproduction", "planner", "patcher", "verifier", "reviewer"]:
+            assert router.resolve_model(node) == "gemini-1.5-pro"
+
+    def test_auto_routing_mode_performs_dynamic_scoring(self):
+        router = ModelRouter(default_model="auto", mock_mode=False)
+        assert router.auto_route is True
+        for node in ["onboarding", "reproduction", "planner", "patcher", "verifier", "reviewer"]:
+            selected = router.resolve_model(node)
+            assert selected in router._eligible_models
+            assert selected != "auto"
+
+    def test_auto_route_flag_overrides_explicit_default(self):
+        router = ModelRouter(default_model="gpt-4o", auto_route=True, mock_mode=False)
+        assert router.auto_route is True
+        selected = router.resolve_model("patcher")
+        assert selected in router._eligible_models
+

@@ -121,9 +121,11 @@ class ModelRouter:
         weights: Optional[Dict[str, float]] = None,
         sensitive_globs: Optional[List[str]] = None,
         policy: Optional[PatchApprovalPolicy] = None,
+        auto_route: Optional[bool] = None,
     ):
         self.default_model = default_model
         self.mock_mode = mock_mode
+        self.auto_route = (default_model.lower() == "auto") if auto_route is None else bool(auto_route)
         self.weights = weights or dict(DEFAULT_WEIGHTS)
         self.sensitive_globs = sensitive_globs or list(DEFAULT_SENSITIVE_GLOBS)
         self.policy = policy or PatchApprovalPolicy(
@@ -131,13 +133,14 @@ class ModelRouter:
         )
         self.adapter = LiteLLMAdapter(mock_mode=mock_mode)
 
-
         self._eligible_models: List[str] = [
             "claude-3-5-sonnet-20241022",
             "gpt-4o",
             "gpt-4o-mini",
             "deepseek-v3",
         ]
+        if default_model not in self._eligible_models and default_model not in ("auto", "mock"):
+            self._eligible_models.append(default_model)
         self._events: Deque[RouterEvent] = deque(maxlen=self.EVENTS_WINDOW_SIZE)
         self._model_quota_headroom: Dict[str, int] = {}
 
@@ -154,10 +157,17 @@ class ModelRouter:
             "active_model": self.default_model,
             "eligible_models": list(self._eligible_models),
             "node_model_map": dict(self.node_model_map),
+            "auto_route": self.auto_route,
         }
 
     def set_model(self, new_model: str, shared_data: Optional[Dict[str, Any]] = None) -> None:
         self.default_model = new_model
+        if new_model.lower() == "auto":
+            self.auto_route = True
+        else:
+            self.auto_route = False
+            if new_model not in self._eligible_models and new_model != "mock":
+                self._eligible_models.append(new_model)
         for key in self.node_model_map:
             self.node_model_map[key] = new_model
         if shared_data is not None:
@@ -299,11 +309,33 @@ class ModelRouter:
             cascade = [self.default_model]
         return cascade[:3]
 
+    def _normalize_task_type(self, task_node_name: str) -> Optional[TaskType]:
+        if task_node_name in TaskType._value2member_map_:
+            return TaskType(task_node_name)
+        mapping = {
+            "onboarding": TaskType.ONBOARDING,
+            "reproduction": TaskType.REPRODUCTION,
+            "reproduce": TaskType.REPRODUCTION,
+            "planning": TaskType.PLANNING,
+            "planner": TaskType.PLANNING,
+            "patching": TaskType.PATCHING,
+            "patcher": TaskType.PATCHING,
+            "verifying": TaskType.VERIFYING,
+            "verifier": TaskType.VERIFYING,
+            "reviewing": TaskType.REVIEWING,
+            "reviewer": TaskType.REVIEWING,
+        }
+        return mapping.get(task_node_name.lower())
+
     def resolve_model(self, task_node_name: str) -> str:
         if self.mock_mode:
             return "mock"
 
-        task_type = TaskType(task_node_name) if task_node_name in TaskType._value2member_map_ else None
+        # Explicit model configured (fixed / forced user selection)
+        if not self.auto_route and self.default_model != "auto":
+            return self.node_model_map.get(task_node_name, self.default_model)
+
+        task_type = self._normalize_task_type(task_node_name)
         if task_type is None:
             return self.node_model_map.get(task_node_name, self.default_model)
 
