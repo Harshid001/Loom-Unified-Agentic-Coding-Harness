@@ -35,6 +35,9 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -491,7 +494,7 @@ def list_runs(
 
 def is_git_url(repo_target: str) -> bool:
     target = repo_target.strip().lower()
-    return (
+    if (
         target.startswith("https://github.com/")
         or target.startswith("http://github.com/")
         or target.startswith("git@github.com:")
@@ -499,7 +502,12 @@ def is_git_url(repo_target: str) -> bool:
         or target.startswith("https://gitlab.com/")
         or target.startswith("git@gitlab.com:")
         or (target.endswith(".git") and ("://" in target or target.startswith("git@")))
-    )
+    ):
+        return True
+    parts = repo_target.strip().split("/")
+    if len(parts) == 2 and parts[0] and parts[1] and not Path(repo_target).exists():
+        return True
+    return False
 
 
 def clone_remote_repo(url: str, run_id: str, token: Optional[str] = None) -> Path:
@@ -509,6 +517,8 @@ def clone_remote_repo(url: str, run_id: str, token: Optional[str] = None) -> Pat
     clean_url = url.strip()
     if clean_url.startswith("github.com/"):
         clean_url = f"https://{clean_url}"
+    elif "/" in clean_url and not clean_url.startswith("http://") and not clean_url.startswith("https://") and not clean_url.startswith("git@"):
+        clean_url = f"https://github.com/{clean_url}"
 
     clone_url = clean_url
     if token and clean_url.startswith("https://"):
@@ -606,8 +616,13 @@ async def create_run(
     if is_remote:
         from loom.integrations.github_client import resolve_vault_token
 
-        token = resolve_vault_token(f"vault:{org_id}")
-        raw_path = clone_remote_repo(req_repo, run_id, token=token)
+        token = None
+        try:
+            token = resolve_vault_token(f"vault:{org_id}", allow_ambient_fallback=True)
+        except Exception:
+            token = os.getenv("GITHUB_TOKEN", os.getenv("GH_TOKEN", None))
+
+        raw_path = clone_remote_repo(req_repo, run_id, token=token or None)
         repo_path = str(raw_path)
     else:
         raw_path = Path(req_repo).resolve()

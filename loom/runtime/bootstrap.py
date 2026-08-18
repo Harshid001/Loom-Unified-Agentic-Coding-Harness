@@ -3,6 +3,9 @@
 # ruff: noqa: I001
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 PRODUCTION_REQUIRED = (
