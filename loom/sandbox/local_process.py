@@ -35,6 +35,7 @@ class LocalProcessSandbox(BaseSandbox):
         allowed_roots = os.getenv("ALLOWED_REPO_ROOTS")
         if allowed_roots:
             roots = [Path(r.strip()).resolve() for r in allowed_roots.split(",") if r.strip()]
+            roots.append((Path.home() / ".loom").resolve())
             if roots and not any(exec_cwd == r or exec_cwd.is_relative_to(r) for r in roots):
                 return CommandResult(
                     command=str(cmd),
