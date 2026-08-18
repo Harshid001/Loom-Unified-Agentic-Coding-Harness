@@ -27,7 +27,7 @@ describe('Active Model Propagation & Display across Components', () => {
         onRollback={vi.fn()}
         isLoadingDetails={false}
         activeModel="deepseek-v3"
-        connectedRepo={{ fullName: 'test/repo', name: 'repo', selectedBranch: 'main', isConnected: true }}
+        connectedRepo={{ fullName: 'test/repo', name: 'repo', owner: 'test', defaultBranch: 'main', selectedBranch: 'main', htmlUrl: 'https://github.com/test/repo', isPrivate: false }}
       />
     );
 
