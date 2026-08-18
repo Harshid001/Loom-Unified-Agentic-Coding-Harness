@@ -13,15 +13,19 @@ const DEFAULT_MODELS: Record<string, string[]> = {
   gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'],
 };
 
-function validateKeyFormat(provider: string, key: string): boolean {
+function validateKeyFormat(provider: string, key: string): { valid: boolean; reason?: string } {
   const p = provider.toLowerCase();
   const k = key.trim();
-  if (k.length < 8) return false;
-  if (p === 'anthropic') return k.startsWith('sk-ant-') || k.length >= 20;
-  if (p === 'openai') return k.startsWith('sk-') || k.length >= 20;
-  if (p === 'deepseek') return k.startsWith('sk-') || k.length >= 20;
-  if (p === 'gemini') return k.startsWith('AIzaSy') || k.length >= 20;
-  return true;
+  if (k.length < 8) return { valid: false, reason: 'API key is too short' };
+  if (p === 'gemini') {
+    if (k.startsWith('AQ.')) {
+      return {
+        valid: false,
+        reason: 'Invalid Gemini API key. Google AI Studio keys start with "AIzaSy...". Keys starting with "AQ." are Vertex AI tokens and are rejected by Google Generative AI endpoints.',
+      };
+    }
+  }
+  return { valid: true };
 }
 
 export async function POST(req: NextRequest) {
@@ -40,26 +44,7 @@ export async function POST(req: NextRequest) {
   const provider = String(body.provider || '').toLowerCase();
   const apiKeyProvided = String(body.api_key || '').trim();
 
-  // 1. Try forwarding to real backend if available
-  try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (apiKey) headers['X-API-Key'] = apiKey;
-
-    const res = await fetch(`${backendUrl}/api/v1/models/detect`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return NextResponse.json(data, { status: 200 });
-    }
-  } catch {
-    // Backend offline or unreachable, fall through to direct validation
-  }
-
-  // 2. Direct validation fallback for dashboard
+  // 1. Validate key format
   if (!apiKeyProvided) {
     return NextResponse.json(
       { valid: false, detail: 'API key must not be empty', models: [] },
@@ -67,9 +52,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (!validateKeyFormat(provider, apiKeyProvided)) {
+  const check = validateKeyFormat(provider, apiKeyProvided);
+  if (!check.valid) {
     return NextResponse.json(
-      { valid: false, detail: `Invalid API key format for ${provider}`, models: [] },
+      { valid: false, detail: check.reason || `Invalid API key for ${provider}`, models: [] },
       { status: 400 },
     );
   }
