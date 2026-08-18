@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateRequestAuth, validateSameOrigin } from '@/lib/auth';
-import { createRunRecord, globalRunsStore } from '@/lib/runs_store';
-import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
   if (!validateSameOrigin(req)) {
@@ -16,7 +14,7 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.API_KEY || process.env.LOOM_API_KEY || '';
   const body = await req.json().catch(() => ({}));
 
-  // 1. Try real Python backend if reachable
+  // Proxy directly to real Loom Python backend
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (apiKey) headers['X-API-Key'] = apiKey;
@@ -27,27 +25,24 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify(body),
     });
 
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      const data = await res.json();
-      return NextResponse.json(data, { status: 200 });
+      return NextResponse.json(data, { status: res.status });
     }
-  } catch {
-    // Backend offline / unreachable, fall through to standalone executor
+
+    return NextResponse.json(
+      { detail: data.detail || `Loom backend error (${res.status})` },
+      { status: res.status }
+    );
+  } catch (err: any) {
+    // Standalone mode explicitly rejects execution rather than fabricating fake verification
+    return NextResponse.json(
+      {
+        detail: `Loom backend is unreachable at ${backendUrl}. Pipeline DAG execution, AST parsing, and gVisor sandbox verification require a running Loom harness backend. Start the backend with: uvicorn loom.api.server:app --port 8000`,
+        backend_url: backendUrl,
+        code: 'BACKEND_UNREACHABLE',
+      },
+      { status: 503 }
+    );
   }
-
-  // 2. Standalone serverless execution generator
-  const runId = `run_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
-  const issue = body.issue || 'Target task';
-  const model = body.model || 'gemini-1.5-pro';
-
-  const newRun = createRunRecord(runId, issue, model);
-  globalRunsStore.set(runId, newRun);
-
-  return NextResponse.json({
-    run_id: runId,
-    status: 'starting',
-    issue,
-    model,
-    message: 'Pipeline execution started',
-  }, { status: 200 });
 }

@@ -103,12 +103,12 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       id: 'reviewer',
       number: '05',
       name: 'REVIEW',
-      role: 'Evidence Bundle Seal',
+      role: 'Proof & Fix Synthesis',
       status: displayData ? (displayData.nodes?.[4]?.status === 'completed' ? 'VERIFIED' : displayData.nodes?.[4]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
       duration: displayData?.nodes?.[4]?.duration || '--',
       cost: displayData?.nodes?.[4]?.cost || '--',
       model: 'Proof Layer Auditor',
-      summary: 'Constructs SHA-256 hash chains across all artifacts and seals execution proof.',
+      summary: 'Synthesizes plain-language resolution brief, constructs SHA-256 hash chains across artifacts, and seals execution proof.',
     },
   ];
 
@@ -317,6 +317,50 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                     {displayData.status}
                   </p>
                   <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Tied to {repoName}</p>
+                </div>
+              </div>
+
+              {/* Resolution Summary Brief (Plain-Language Explanation) */}
+              <div className="loom-card-active space-y-3 p-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30 uppercase">
+                      Plain-Language Brief
+                    </span>
+                    <h4 className="text-xs font-bold text-[var(--text-primary)] font-mono uppercase">
+                      Resolution Summary & Verification Proof
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-mono text-[var(--text-muted)]">Synthesized by Reviewer Agent</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg space-y-1">
+                    <p className="text-[10px] font-bold font-mono text-[var(--danger)] uppercase">1. Root Cause Diagnosis</p>
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                      {displayData?.checkpoint?.resolution_summary?.root_cause ||
+                        displayData?.resolution_summary?.root_cause ||
+                        (displayData?.issue ? `Reproduced issue condition in ${repoName}: ${displayData.issue}` : 'Pending root cause analysis from reproduction stage.')}
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg space-y-1">
+                    <p className="text-[10px] font-bold font-mono text-[var(--brand-hover)] uppercase">2. Surgical Modification</p>
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                      {displayData?.checkpoint?.resolution_summary?.surgical_change ||
+                        displayData?.resolution_summary?.surgical_change ||
+                        (displayData?.patchDiff ? 'Applied minimal AST-guided patch to target source files.' : 'Pending patch synthesis from patcher agent.')}
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg space-y-1">
+                    <p className="text-[10px] font-bold font-mono text-[var(--success)] uppercase">3. Verification Outcome</p>
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                      {displayData?.checkpoint?.resolution_summary?.verification_proof ||
+                        displayData?.resolution_summary?.verification_proof ||
+                        (displayData?.status === 'VERIFIED SUCCESS' ? 'Deterministic reproduction test passed in isolated gVisor sandbox with 0 regressions.' : 'Sandbox test verification in progress or pending.')}
+                    </p>
+                  </div>
                 </div>
               </div>
 

@@ -74,7 +74,7 @@ export interface ConnectedRepoState {
   stars?: number;
 }
 
-const STORAGE_KEY_TOKEN = 'loom_github_token';
+// Security: GitHub PATs are held strictly in ephemeral in-memory state and are never persisted to localStorage.
 const STORAGE_KEY_REPO = 'loom_connected_repo';
 const STORAGE_KEY_USER = 'loom_github_user';
 
@@ -163,14 +163,14 @@ export function useGitHub() {
   const [isLoadingBranches, setIsLoadingBranches] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize from LocalStorage
+  // Initialize and proactively purge any legacy tokens from localStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     try {
-      const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
-      if (savedToken) {
-        setToken(savedToken);
+      // Proactive cleanup: purge any legacy unencrypted PAT from localStorage
+      if (localStorage.getItem('loom_github_token')) {
+        localStorage.removeItem('loom_github_token');
       }
 
       const savedUserStr = localStorage.getItem(STORAGE_KEY_USER);
@@ -200,14 +200,15 @@ export function useGitHub() {
     }
   }, []);
 
-  // Fetch user profile with token
+  // Fetch user profile with token (stored strictly in ephemeral React state)
   const authenticate = useCallback(async (authToken: string) => {
     setIsLoadingUser(true);
     setError(null);
     try {
+      const cleanToken = authToken.trim();
       const res = await fetch('/api/github?action=user', {
         headers: {
-          Authorization: `Bearer ${authToken.trim()}`,
+          Authorization: `Bearer ${cleanToken}`,
         },
       });
 
@@ -217,16 +218,15 @@ export function useGitHub() {
       }
 
       const userData: GitHubUser = await res.json();
-      setToken(authToken.trim());
+      setToken(cleanToken);
       setUser(userData);
 
       if (typeof window !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY_TOKEN, authToken.trim());
         localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(userData));
       }
 
       // Load repos immediately after auth
-      loadUserRepos(authToken.trim());
+      loadUserRepos(cleanToken);
       return userData;
     } catch (err: any) {
       setError(err.message || 'Failed to authenticate with GitHub');
@@ -242,7 +242,7 @@ export function useGitHub() {
     setUser(null);
     setUserRepos([]);
     if (typeof window !== 'undefined') {
-      localStorage.removeItem(STORAGE_KEY_TOKEN);
+      localStorage.removeItem('loom_github_token');
       localStorage.removeItem(STORAGE_KEY_USER);
     }
   }, []);

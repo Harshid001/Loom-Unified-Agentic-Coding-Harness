@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { screen, fireEvent } from '@testing-library/dom';
 import { DiffTab } from '../src/components/DiffTab';
 import { DagTab } from '../src/components/DagTab';
@@ -61,7 +61,7 @@ describe('EvidenceView component', () => {
     expect(screen.getAllByText(/Harshid001\/Loom-Harness/i).length).toBeGreaterThan(0);
   });
 
-  it('renders cryptographic proof layer and SHA-256 artifacts for active run', () => {
+  it('renders cryptographic proof layer and SHA-256 artifacts for active run', async () => {
     const mockDisplay = {
       id: 'run_101',
       status: 'VERIFIED SUCCESS',
@@ -71,7 +71,9 @@ describe('EvidenceView component', () => {
     };
     render(<EvidenceView displayData={mockDisplay} runId="run_101" integrityValid={true} />);
     expect(screen.getByText(/SHA-256 Hash Chain Audit Bundle/i)).toBeInTheDocument();
-    expect(screen.getByText(/INTEGRITY VALID/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/INTEGRITY VALID/i)).toBeInTheDocument();
+    });
     expect(screen.getByText(/Verification Proof Checklist/i)).toBeInTheDocument();
     expect(screen.getByText(/Chained Artifact Manifest/i)).toBeInTheDocument();
   });

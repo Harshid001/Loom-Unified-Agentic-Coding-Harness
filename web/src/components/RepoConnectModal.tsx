@@ -420,7 +420,6 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                           <span>Generate Token on GitHub</span>
                           <ExternalLink className="h-3 w-3" />
                         </a>
-
                         <button
                           type="submit"
                           disabled={isAuthenticating}
@@ -438,6 +437,11 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                             </>
                           )}
                         </button>
+                      </div>
+
+                      <div className="pt-2 border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)] flex items-start gap-2">
+                        <Lock className="h-3.5 w-3.5 text-[var(--success)] shrink-0 mt-0.5" />
+                        <span>Security: Personal Access Tokens are held strictly in ephemeral session memory and are never persisted to localStorage or browser storage.</span>
                       </div>
                     </form>
                   </div>

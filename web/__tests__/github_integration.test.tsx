@@ -1,11 +1,43 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, renderHook, act } from '@testing-library/react';
 import { screen, fireEvent } from '@testing-library/dom';
 import { RepoConnectModal } from '../src/components/RepoConnectModal';
 import { GitHubIssuesDrawer } from '../src/components/GitHubIssuesDrawer';
 import { Header } from '../src/components/Header';
-import { POPULAR_STARTER_REPOS } from '../src/hooks/useGitHub';
+import { useGitHub, POPULAR_STARTER_REPOS } from '../src/hooks/useGitHub';
+
+describe('useGitHub credential security', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('purges any legacy plaintext token from localStorage on initialization', () => {
+    localStorage.setItem('loom_github_token', 'ghp_secret_legacy_token');
+    expect(localStorage.getItem('loom_github_token')).toBe('ghp_secret_legacy_token');
+
+    const { result } = renderHook(() => useGitHub());
+
+    expect(localStorage.getItem('loom_github_token')).toBeNull();
+  });
+
+  it('does not persist PAT to localStorage upon authentication', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ login: 'testuser', avatar_url: '', html_url: '', public_repos: 1 }),
+    });
+
+    const { result } = renderHook(() => useGitHub());
+
+    await act(async () => {
+      await result.current.authenticate('ghp_new_ephemeral_token');
+    });
+
+    expect(result.current.token).toBe('ghp_new_ephemeral_token');
+    expect(localStorage.getItem('loom_github_token')).toBeNull();
+  });
+});
 
 describe('RepoConnectModal component', () => {
   const mockGithubState: any = {

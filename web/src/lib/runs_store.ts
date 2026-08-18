@@ -1,3 +1,9 @@
+export interface ResolutionSummary {
+  root_cause?: string;
+  surgical_change?: string;
+  verification_proof?: string;
+}
+
 export interface RunRecord {
   id: string;
   issue: string;
@@ -13,6 +19,7 @@ export interface RunRecord {
     patch_diff: string;
     reproduction_test: string;
     snapshot_id: string;
+    resolution_summary?: ResolutionSummary;
     shared_data: {
       total_duration_ms: number;
       model: string;
@@ -38,75 +45,50 @@ export interface RunRecord {
   }>;
 }
 
-const DEFAULT_ABLATIONS = [
-  { name: 'Full Loom Harness (Tier A-C)', memory: true, context: true, multiAgent: true, passRate: '94.8%', cost: '$0.0043' },
-  { name: 'No 7-Tier Memory Store', memory: false, context: true, multiAgent: true, passRate: '78.2%', cost: '$0.0071' },
-  { name: 'No Context Ranking (TF-IDF/AST)', memory: true, context: false, multiAgent: true, passRate: '69.4%', cost: '$0.0098' },
-  { name: 'Single Agent Baseline (No DAG)', memory: false, context: false, multiAgent: false, passRate: '51.3%', cost: '$0.0124' },
-];
-
 export const globalRunsStore: Map<string, RunRecord> = new Map();
 
-function generateDynamicDiff(issue: string): string {
-  const sanitized = issue.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 28) || 'component';
-  const cleanDesc = issue.replace(/[\r\n\t]/g, ' ').slice(0, 70);
-  return `--- a/loom/core/${sanitized}.py
-+++ b/loom/core/${sanitized}.py
-@@ -14,6 +14,10 @@ def process_event(event: EventContext) -> EventResult:
-     if not event.is_valid():
-+        # Fix: ${cleanDesc}
-+        event.sanitize()
-+        logger.info("Event sanitized according to policy")
-         return EventResult.handled(event)
-`;
-}
-
-function generateDynamicTest(issue: string): string {
-  const funcName = issue.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'target_issue';
-  const cleanDesc = issue.replace(/[\r\n\t]/g, ' ').slice(0, 80);
-  return `def test_${funcName}_reproduction():
-    """Verify resolution for: ${cleanDesc}"""
-    event = EventContext(raw_input="test_reproduction_input")
-    result = process_event(event)
-    assert result.is_valid()
-    assert not result.has_errors()`;
-}
-
-export function createRunRecord(id: string, issue: string, model: string): RunRecord {
-  const cleanIssue = issue.trim() || 'Autonomous coding task';
-  const patchDiff = generateDynamicDiff(cleanIssue);
-  const reproTest = generateDynamicTest(cleanIssue);
-
+/**
+ * Creates an honest blocked run record when the Loom backend is unreachable.
+ * Standalone mode CANNOT produce a VERIFIED SUCCESS state or fabricate synthetic diffs/hashes.
+ */
+export function createBlockedRunRecord(id: string, issue: string, model: string, backendUrl: string): RunRecord {
+  const cleanIssue = issue.trim() || 'Target coding task';
   return {
     id,
     issue: cleanIssue,
-    status: 'VERIFIED SUCCESS',
-    cost: 0.0038,
+    status: 'BLOCKED (Backend Offline)',
+    cost: 0,
     created_at: Math.floor(Date.now() / 1000),
     checkpoint: {
       run_id: id,
       issue_description: cleanIssue,
-      verification_passed: true,
-      duration_seconds: 4.8,
+      verification_passed: false,
+      duration_seconds: 0,
       created_at: new Date().toISOString(),
-      patch_diff: patchDiff,
-      reproduction_test: reproTest,
-      snapshot_id: `snap_${id.replace(/^run_/, '')}`,
+      patch_diff: '',
+      reproduction_test: '',
+      snapshot_id: '',
+      resolution_summary: {
+        root_cause: `Loom harness backend is unreachable at ${backendUrl}. Execution cannot proceed without a live backend orchestrator.`,
+        surgical_change: 'No code changes applied.',
+        verification_proof: 'Sandbox verification not executed. Standalone mode does not fabricate mock verification results.',
+      },
       shared_data: {
-        total_duration_ms: 4800,
+        total_duration_ms: 0,
         model,
         cost_report: {
-          total_cost_usd: 0.0038,
+          total_cost_usd: 0,
         },
-        ablations: DEFAULT_ABLATIONS,
       },
     },
     trace_events: [
-      { node_name: 'onboarding', event_type: 'Repo Mapper AST Analysis', status: 'completed', duration: 0.8, cost: 0.0003 },
-      { node_name: 'reproduction', event_type: 'Reproduction Test Synthesis', status: 'completed', duration: 1.1, cost: 0.0005 },
-      { node_name: 'patcher', event_type: `Patcher Agent (${model})`, status: 'completed', duration: 1.4, cost: 0.0025 },
-      { node_name: 'verifier', event_type: 'Verification Runner Sandbox', status: 'completed', duration: 0.9, cost: 0.0002 },
-      { node_name: 'reviewer', event_type: 'Evidence Reviewer & Hash Chain', status: 'completed', duration: 0.6, cost: 0.0003 },
+      {
+        node_name: 'system',
+        event_type: `Backend Connection (${backendUrl})`,
+        status: 'failed',
+        duration: 0,
+        cost: 0,
+      },
     ],
   };
 }
