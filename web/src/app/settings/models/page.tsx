@@ -20,6 +20,7 @@ import {
   Server,
   ExternalLink,
   Zap,
+  Trash2,
 } from 'lucide-react';
 
 type ProviderKey = 'anthropic' | 'openai' | 'deepseek' | 'gemini' | 'openrouter';
@@ -233,6 +234,35 @@ function ModelSettingsContent() {
     }
   };
 
+  const handleClearAllKeys = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('loom_provider_anthropic_key');
+      localStorage.removeItem('loom_provider_openai_key');
+      localStorage.removeItem('loom_provider_deepseek_key');
+      localStorage.removeItem('loom_provider_gemini_key');
+      localStorage.removeItem('loom_provider_openrouter_key');
+      localStorage.removeItem('loom_provider_deepseek_base_url');
+    }
+    setApiKeys({
+      anthropic: '',
+      openai: '',
+      deepseek: '',
+      gemini: '',
+      openrouter: '',
+    });
+    setProviderConfigured({
+      anthropic: false,
+      openai: false,
+      deepseek: false,
+      gemini: false,
+      openrouter: false,
+    });
+    setFeedback({
+      type: 'info',
+      message: 'All stored API keys have been wiped from browser memory.',
+    });
+  };
+
   useEffect(() => {
     fetchConfig();
   }, []);
@@ -395,6 +425,16 @@ function ModelSettingsContent() {
             <Sparkles className="h-3 w-3 fill-current" />
             <span>ACTIVE: {activeModel}</span>
           </div>
+
+          <button
+            onClick={handleClearAllKeys}
+            className="btn-secondary h-8 px-2.5 text-xs text-[var(--danger)] hover:border-[var(--danger)]/50 gap-1.5 font-mono"
+            title="Clear all stored provider API keys"
+            aria-label="Clear all stored provider API keys"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Clear Stored Keys</span>
+          </button>
 
           <button
             onClick={fetchConfig}
