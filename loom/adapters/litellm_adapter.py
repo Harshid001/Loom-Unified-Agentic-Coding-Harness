@@ -33,6 +33,10 @@ MODEL_COSTS = {
 
 
 def _production() -> bool:
+    if os.getenv("DEV_MODE", "false").lower() == "true":
+        return False
+    if os.getenv("ALLOW_MOCK_EXECUTION", "false").lower() == "true":
+        return False
     return os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
 
 
