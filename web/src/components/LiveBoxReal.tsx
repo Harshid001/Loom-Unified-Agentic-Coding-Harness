@@ -57,6 +57,7 @@ export function LiveBoxReal({
   onOpenApiKeyModal,
 }: LiveBoxProps) {
   const [currentModel, setCurrentModel] = useState<string>(model);
+  const [isMock, setIsMock] = useState<boolean>(Boolean(mockMode));
   const [steps, setSteps] = useState<StepState[]>(initialSteps);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
@@ -184,6 +185,8 @@ export function LiveBoxReal({
         providerKey = localStorage.getItem('loom_provider_openai_key') || '';
       } else if (m.includes('deepseek')) {
         providerKey = localStorage.getItem('loom_provider_deepseek_key') || '';
+      } else if (m.includes('openrouter') || m.includes('llama')) {
+        providerKey = localStorage.getItem('loom_provider_openrouter_key') || '';
       }
     }
 
@@ -207,7 +210,7 @@ export function LiveBoxReal({
           issue,
           model: targetModel,
           repo_path: repoPath,
-          mock: mockMode,
+          mock: isMock,
           api_key: loomApiKey || undefined,
           provider_key: providerKey || undefined,
         }),
@@ -356,6 +359,21 @@ export function LiveBoxReal({
                       {currentModel}
                     </span>
                   )}
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] pt-1.5 border-t border-[var(--border-subtle)]">
+                  <span>Execution Mode:</span>
+                  <button
+                    type="button"
+                    onClick={() => !isRunning && setIsMock(!isMock)}
+                    disabled={isRunning}
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition flex items-center gap-1 cursor-pointer ${
+                      isMock
+                        ? 'bg-[var(--cyan)]/15 text-[var(--cyan)] border border-[var(--cyan)]/40 hover:bg-[var(--cyan)]/25'
+                        : 'bg-[var(--bg-root)] text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <span>{isMock ? '⚡ Mock Mode (Simulated)' : '🌐 Real Frontier LLM'}</span>
+                  </button>
                 </div>
               </div>
 
