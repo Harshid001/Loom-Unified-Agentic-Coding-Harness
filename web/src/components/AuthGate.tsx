@@ -104,6 +104,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
         throw new Error(body.detail || 'Authentication failed. Please verify your token.');
       }
 
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('loom_auth_token', token.trim());
+        localStorage.setItem('loom_api_key', token.trim());
+      }
       setAuthenticated(true);
       setToken('');
     } catch (err) {

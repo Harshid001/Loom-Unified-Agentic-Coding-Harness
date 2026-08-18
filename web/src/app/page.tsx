@@ -12,6 +12,7 @@ import { AblationsTab } from '../components/AblationsTab';
 import { EvidenceView } from '../components/EvidenceView';
 import { LiveBoxReal } from '../components/LiveBoxReal';
 import { AuthGate } from '../components/AuthGate';
+import { ApiKeyModal } from '../components/ApiKeyModal';
 import { RepoConnectModal } from '../components/RepoConnectModal';
 import { GitHubIssuesDrawer } from '../components/GitHubIssuesDrawer';
 import { NewRunModal } from '../components/NewRunModal';
@@ -48,6 +49,7 @@ function LoomControlPlane() {
   const [isLiveBoxOpen, setIsLiveBoxOpen] = useState(false);
   const [isNewRunModalOpen, setIsNewRunModalOpen] = useState(false);
   const [isRepoModalOpen, setIsRepoModalOpen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isIssuesDrawerOpen, setIsIssuesDrawerOpen] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>(AVAILABLE_MODELS);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
@@ -230,6 +232,7 @@ function LoomControlPlane() {
         availableModels={availableModels}
         onModelChange={handleModelChange}
         onOpenLiveBox={() => setIsNewRunModalOpen(true)}
+        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
         onOpenRepoModal={() => setIsRepoModalOpen(true)}
         onOpenIssuesDrawer={() => setIsIssuesDrawerOpen(true)}
         connectedRepo={connectedRepo}
@@ -258,6 +261,7 @@ function LoomControlPlane() {
           setSelectedRun={setSelectedRun}
           isLoadingRuns={isLoadingRuns}
           onOpenRepoModal={() => setIsRepoModalOpen(true)}
+          onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
           connectedRepoName={connectedRepo?.fullName || 'No Repository Connected'}
         />
 
@@ -512,6 +516,13 @@ function LoomControlPlane() {
         hasGitHubToken={Boolean(githubToken)}
         availableModels={availableModels}
         onModelChange={handleModelChange}
+        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
+      />
+
+      {/* API Key Modal */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
       />
 
       {/* Repository Connection Modal */}

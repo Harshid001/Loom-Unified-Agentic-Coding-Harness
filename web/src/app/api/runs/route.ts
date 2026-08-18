@@ -9,7 +9,13 @@ export async function GET(req: NextRequest) {
   }
 
   const backendUrl = process.env.LOOM_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-  const apiKey = process.env.API_KEY || process.env.LOOM_API_KEY || '';
+  const apiKey = (
+    req.headers.get('x-api-key') ||
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() ||
+    process.env.API_KEY ||
+    process.env.LOOM_API_KEY ||
+    ''
+  );
 
   try {
     const headers: Record<string, string> = {};

@@ -11,8 +11,16 @@ export async function POST(req: NextRequest) {
   }
 
   const backendUrl = process.env.LOOM_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-  const apiKey = process.env.API_KEY || process.env.LOOM_API_KEY || '';
   const body = await req.json().catch(() => ({}));
+  const apiKey = (
+    body.api_key ||
+    body.loom_api_key ||
+    req.headers.get('x-api-key') ||
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() ||
+    process.env.API_KEY ||
+    process.env.LOOM_API_KEY ||
+    ''
+  );
 
   // Proxy directly to real Loom Python backend
   try {
@@ -30,8 +38,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(data, { status: res.status });
     }
 
+    const detailMsg = data.detail || `Loom backend error (${res.status})`;
     return NextResponse.json(
-      { detail: data.detail || `Loom backend error (${res.status})` },
+      { detail: detailMsg, code: data.code || `BACKEND_ERROR_${res.status}` },
       { status: res.status }
     );
   } catch (err: any) {

@@ -16,6 +16,7 @@ interface LiveBoxProps {
   hasGitHubToken?: boolean;
   availableModels?: string[];
   onModelChange?: (model: string) => void;
+  onOpenApiKeyModal?: () => void;
 }
 
 interface StepState {
@@ -53,6 +54,7 @@ export function LiveBoxReal({
   hasGitHubToken,
   availableModels,
   onModelChange,
+  onOpenApiKeyModal,
 }: LiveBoxProps) {
   const [currentModel, setCurrentModel] = useState<string>(model);
   const [steps, setSteps] = useState<StepState[]>(initialSteps);
@@ -96,10 +98,14 @@ export function LiveBoxReal({
 
   const sendControl = useCallback(async (action: string, payload?: Record<string, any>) => {
     if (!runId) return;
+    const loomApiKey = typeof window !== 'undefined' ? (localStorage.getItem('loom_api_key') || localStorage.getItem('loom_auth_token') || '') : '';
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (loomApiKey) headers["X-API-Key"] = loomApiKey;
+
     const response = await fetch("/api/run/control", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_id: runId, action, ...(payload || {}) }),
+      headers,
+      body: JSON.stringify({ run_id: runId, action, ...(payload || {}), api_key: loomApiKey || undefined }),
     });
     if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail || `Control action failed: ${action}`);
   }, [runId]);
@@ -114,7 +120,11 @@ export function LiveBoxReal({
 
   const startStream = useCallback((id: string) => {
     eventSourceRef.current?.close();
-    const source = new EventSource(`/api/stream/${encodeURIComponent(id)}`);
+    const loomApiKey = typeof window !== 'undefined' ? (localStorage.getItem('loom_api_key') || localStorage.getItem('loom_auth_token') || '') : '';
+    const streamUrl = loomApiKey
+      ? `/api/stream/${encodeURIComponent(id)}?api_key=${encodeURIComponent(loomApiKey)}`
+      : `/api/stream/${encodeURIComponent(id)}`;
+    const source = new EventSource(streamUrl);
     eventSourceRef.current = source;
 
     source.onmessage = event => {
@@ -162,6 +172,21 @@ export function LiveBoxReal({
       return;
     }
     const targetModel = currentModel || model;
+    const loomApiKey = typeof window !== 'undefined' ? (localStorage.getItem('loom_api_key') || localStorage.getItem('loom_auth_token') || '') : '';
+    let providerKey = '';
+    if (typeof window !== 'undefined') {
+      const m = targetModel.toLowerCase();
+      if (m.includes('gemini') || m.includes('google')) {
+        providerKey = localStorage.getItem('loom_provider_gemini_key') || '';
+      } else if (m.includes('claude') || m.includes('anthropic')) {
+        providerKey = localStorage.getItem('loom_provider_anthropic_key') || '';
+      } else if (m.includes('gpt') || m.includes('o1') || m.includes('o3') || m.includes('openai')) {
+        providerKey = localStorage.getItem('loom_provider_openai_key') || '';
+      } else if (m.includes('deepseek')) {
+        providerKey = localStorage.getItem('loom_provider_deepseek_key') || '';
+      }
+    }
+
     setError(null);
     setIsRunning(true);
     setStatus("running");
@@ -172,10 +197,20 @@ export function LiveBoxReal({
     setSteps(initialSteps.map(step => ({ ...step, status: "pending" })));
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (loomApiKey) headers["X-API-Key"] = loomApiKey;
+
       const response = await fetch("/api/run", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issue, model: targetModel, repo_path: repoPath, mock: mockMode }),
+        headers,
+        body: JSON.stringify({
+          issue,
+          model: targetModel,
+          repo_path: repoPath,
+          mock: mockMode,
+          api_key: loomApiKey || undefined,
+          provider_key: providerKey || undefined,
+        }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -422,8 +457,35 @@ export function LiveBoxReal({
                 </div>
               )}
 
-              {mockMode && <p className="rounded-lg border border-[var(--warning)]/30 bg-[var(--warning)]/10 p-2 text-[11px] text-[var(--warning)] font-mono">Mock mode enabled. Production runtime guards reject mock execution.</p>}
-              {error && <p role="alert" className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2 text-[11px] text-[var(--danger)] font-mono">{error}</p>}
+              {error && (
+                <div role="alert" className="rounded-lg border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)] font-mono space-y-2">
+                  <div className="flex items-start gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span className="leading-tight text-[11px]">{error}</span>
+                  </div>
+                  {(error.toLowerCase().includes('auth') || error.includes('401') || error.toLowerCase().includes('key') || error.toLowerCase().includes('backend')) && (
+                    <div className="flex items-center gap-2 pt-1 border-t border-[var(--danger)]/20 flex-wrap">
+                      {onOpenApiKeyModal && (
+                        <button
+                          type="button"
+                          onClick={onOpenApiKeyModal}
+                          className="btn-secondary h-6 px-2 text-[10px] gap-1 font-mono text-[var(--text-primary)]"
+                        >
+                          <Key className="h-2.5 w-2.5 text-[var(--brand)]" />
+                          <span>Set Loom API Key</span>
+                        </button>
+                      )}
+                      <a
+                        href="/settings/models"
+                        className="btn-secondary h-6 px-2 text-[10px] gap-1 font-mono text-[var(--text-primary)]"
+                      >
+                        <Sparkles className="h-2.5 w-2.5 text-[var(--cyan)]" />
+                        <span>Model Settings</span>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 

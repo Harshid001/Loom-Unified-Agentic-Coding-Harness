@@ -138,9 +138,23 @@ function ModelSettingsContent() {
       if (savedProvider && PROVIDERS[savedProvider]) {
         setSelectedProvider(savedProvider);
       }
+      const savedAnthropic = localStorage.getItem('loom_provider_anthropic_key') || '';
+      const savedOpenai = localStorage.getItem('loom_provider_openai_key') || '';
+      const savedDeepseek = localStorage.getItem('loom_provider_deepseek_key') || '';
+      const savedGemini = localStorage.getItem('loom_provider_gemini_key') || '';
+      setApiKeys({
+        anthropic: savedAnthropic,
+        openai: savedOpenai,
+        deepseek: savedDeepseek,
+        gemini: savedGemini,
+      });
     }
     try {
-      const res = await fetch('/api/settings/model');
+      const loomApiKey = typeof window !== 'undefined' ? (localStorage.getItem('loom_api_key') || localStorage.getItem('loom_auth_token') || '') : '';
+      const headers: Record<string, string> = {};
+      if (loomApiKey) headers['X-API-Key'] = loomApiKey;
+
+      const res = await fetch('/api/settings/model', { headers });
       if (res.ok) {
         const data: ModelConfig = await res.json();
         if (data.active_model) {
@@ -203,10 +217,18 @@ function ModelSettingsContent() {
     setIsDetecting(true);
     setFeedback(null);
 
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`loom_provider_${selectedProvider}_key`, key);
+    }
+
     try {
+      const loomApiKey = typeof window !== 'undefined' ? (localStorage.getItem('loom_api_key') || localStorage.getItem('loom_auth_token') || '') : '';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (loomApiKey) headers['X-API-Key'] = loomApiKey;
+
       const res = await fetch('/api/models/detect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           provider: selectedProvider,
           api_key: key,
@@ -253,14 +275,24 @@ function ModelSettingsContent() {
     setIsSaving(true);
     setFeedback(null);
 
+    const key = apiKeys[selectedProvider]?.trim();
+    if (typeof window !== 'undefined' && key) {
+      localStorage.setItem(`loom_provider_${selectedProvider}_key`, key);
+    }
+
     try {
+      const loomApiKey = typeof window !== 'undefined' ? (localStorage.getItem('loom_api_key') || localStorage.getItem('loom_auth_token') || '') : '';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (loomApiKey) headers['X-API-Key'] = loomApiKey;
+
       const res = await fetch('/api/settings/model', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           model: selectedModel,
           provider: selectedProvider,
-          api_key: apiKeys[selectedProvider]?.trim() || undefined,
+          api_key: key || undefined,
+          loom_api_key: loomApiKey || undefined,
         }),
       });
 

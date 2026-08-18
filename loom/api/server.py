@@ -182,6 +182,8 @@ class RunRequest(BaseModel):
     async_mode: bool = False
     sandbox_tier: Optional[str] = None
     idempotency_key: Optional[str] = None
+    api_key: Optional[str] = None
+    provider_key: Optional[str] = None
 
 
 
@@ -645,6 +647,19 @@ async def create_run(
     active_configured_model = get_current_active_model()
     target_model = req.model.strip() if (req.model and req.model.strip() and req.model.strip().lower() != "auto") else active_configured_model
     state.shared_data["model"] = target_model
+
+    if req.provider_key and req.provider_key.strip():
+        from loom.adapters.router import set_runtime_api_key
+        p_key = req.provider_key.strip()
+        m_lower = target_model.lower()
+        if "gemini" in m_lower or "google" in m_lower:
+            set_runtime_api_key("gemini", p_key)
+        elif "claude" in m_lower or "anthropic" in m_lower:
+            set_runtime_api_key("anthropic", p_key)
+        elif "gpt" in m_lower or "o1" in m_lower or "o3" in m_lower or "openai" in m_lower:
+            set_runtime_api_key("openai", p_key)
+        elif "deepseek" in m_lower:
+            set_runtime_api_key("deepseek", p_key)
 
     sensitive_globs = getattr(org, "sensitive_path_globs", None)
     router = ModelRouter(

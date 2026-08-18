@@ -107,7 +107,7 @@ export function validateRequestAuth(req: NextRequest): { isAuthorized: boolean; 
   }
 
   // 2. Check Bearer / custom header tokens (used for API / CLI callers)
-  const authHeader = req.headers.get('Authorization') || req.headers.get('x-dashboard-auth');
+  const authHeader = req.headers.get('Authorization') || req.headers.get('x-dashboard-auth') || req.headers.get('x-api-key');
   const headerToken = authHeader?.replace(/^Bearer\s+/i, '').trim();
   const authToken = configuredToken();
 

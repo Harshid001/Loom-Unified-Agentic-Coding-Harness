@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateRequestAuth, validateSameOrigin } from '@/lib/auth';
 
-export async function POST(req: NextRequest) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   if (!validateSameOrigin(req)) {
     return NextResponse.json({ detail: 'Invalid request origin' }, { status: 403 });
   }
@@ -10,11 +13,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ detail: auth.reason || 'Unauthorized' }, { status: 401 });
   }
 
+  const { id: tokenId } = await params;
   const backendUrl = process.env.LOOM_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-  const body = await req.json().catch(() => ({}));
   const apiKey = (
-    body.api_key ||
-    body.loom_api_key ||
     req.headers.get('x-api-key') ||
     req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() ||
     process.env.API_KEY ||
@@ -23,26 +24,21 @@ export async function POST(req: NextRequest) {
   );
 
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {};
     if (apiKey) headers['X-API-Key'] = apiKey;
 
-    const res = await fetch(`${backendUrl}/api/v1/run/control`, {
-      method: 'POST',
+    const res = await fetch(`${backendUrl}/api/v1/auth/tokens/${encodeURIComponent(tokenId)}`, {
+      method: 'DELETE',
       headers,
-      body: JSON.stringify(body),
     });
 
     if (res.ok) {
-      const data = await res.json();
-      return NextResponse.json(data, { status: 200 });
+      const data = await res.json().catch(() => ({ status: 'revoked' }));
+      return NextResponse.json(data);
     }
   } catch {
-    // Fall through to standalone handler
+    // Standalone fallback
   }
 
-  return NextResponse.json({
-    status: body.action || 'updated',
-    run_id: body.run_id,
-    detail: `Control action '${body.action}' applied`,
-  });
+  return NextResponse.json({ status: 'revoked', token_id: tokenId });
 }
