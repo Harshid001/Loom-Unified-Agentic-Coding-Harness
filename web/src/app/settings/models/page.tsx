@@ -70,11 +70,21 @@ const PROVIDERS: Record<ProviderKey, ProviderMeta> = {
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
-    badge: 'Gemini 1.5/2.0',
+    badge: 'Gemini 3 / 2.5',
     placeholder: 'AIzaSy...',
     docUrl: 'https://aistudio.google.com/app/apikey',
-    description: 'Ultra-long context window models with 1M+ token capacity and fast multimodal generation.',
-    defaultModels: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'],
+    description: 'Next-generation Gemini 3 and 2.5 frontier models with superior search, grounding, and reasoning capabilities.',
+    defaultModels: [
+      'gemini-3-flash-preview',
+      'gemini-3-pro-preview',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+    ],
   },
 };
 
