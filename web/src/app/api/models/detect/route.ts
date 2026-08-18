@@ -24,17 +24,8 @@ const DEFAULT_MODELS: Record<string, string[]> = {
 };
 
 function validateKeyFormat(provider: string, key: string): { valid: boolean; reason?: string } {
-  const p = provider.toLowerCase();
   const k = key.trim();
   if (k.length < 8) return { valid: false, reason: 'API key is too short' };
-  if (p === 'gemini') {
-    if (k.startsWith('AQ.')) {
-      return {
-        valid: false,
-        reason: 'Invalid Gemini API key. Google AI Studio keys start with "AIzaSy...". Keys starting with "AQ." are Vertex AI tokens and are rejected by Google Generative AI endpoints.',
-      };
-    }
-  }
   return { valid: true };
 }
 
