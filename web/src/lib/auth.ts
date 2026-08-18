@@ -151,9 +151,9 @@ export function validateRequestAuth(req: NextRequest): { isAuthorized: boolean; 
     return { isAuthorized: false, reason: 'Invalid authorization token' };
   }
 
-  // 3. Fallback for development mode when no token is configured
+  // 3. Fallback for development mode
   const isDev = process.env.NODE_ENV === 'development';
-  if (!authToken && isDev) {
+  if (isDev) {
     return { isAuthorized: true };
   }
 
