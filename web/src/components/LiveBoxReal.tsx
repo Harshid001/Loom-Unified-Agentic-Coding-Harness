@@ -185,9 +185,16 @@ export function LiveBoxReal({
       setRunId(data.run_id);
       startStream(data.run_id);
     } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to start run";
       setIsRunning(false);
       setStatus("failed");
-      setError(err instanceof Error ? err.message : "Failed to start run");
+      setError(errMsg);
+      addLog({
+        timestamp: new Date().toISOString(),
+        level: "error",
+        agent: "orchestrator",
+        message: errMsg,
+      });
     }
   };
 
@@ -280,7 +287,7 @@ export function LiveBoxReal({
 
         <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 p-5 lg:grid-cols-3">
           {/* Left Panel: Run Metadata & Control */}
-          <section className="min-h-0 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 lg:col-span-1 flex flex-col justify-between">
+          <section className="min-h-0 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 lg:col-span-1 flex flex-col justify-between overflow-y-auto">
             <div className="space-y-3">
               <div className="flex items-center justify-between font-mono text-xs">
                 <span className="text-[var(--text-muted)] font-bold uppercase">RUN ID</span>
