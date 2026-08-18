@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import Image from 'next/image';
 import {
   X,
   GitBranch,
@@ -470,10 +471,13 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
                   <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-3.5 flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-3">
                       {user.avatar_url ? (
-                        <img
+                        <Image
                           src={user.avatar_url}
                           alt={user.login}
+                          width={36}
+                          height={36}
                           className="h-9 w-9 rounded-full border border-[var(--brand)]/40"
+                          unoptimized
                         />
                       ) : (
                         <div className="h-9 w-9 rounded-full bg-[var(--brand)] flex items-center justify-center font-bold text-white font-mono text-xs">

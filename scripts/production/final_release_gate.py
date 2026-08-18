@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any, Callable
 
 
 TIMEOUT = int(os.getenv("LOOM_GATE_TIMEOUT_SECONDS", "900"))
@@ -80,7 +81,7 @@ def _check_pip_audit(repo_root: Path) -> tuple[bool, str]:
 
 
 def run_all_gates(repo_root: Path) -> dict:
-    gates: list[tuple[str, callable]] = [
+    gates: list[tuple[str, Callable[[], tuple[bool, Any]]]] = [
         ("Gate 0: Release Baseline", lambda: _run([sys.executable, "scripts/production/capture_baseline.py"], repo_root)),
         ("Gate 1: Explicit Auth Architecture", lambda: _run([sys.executable, "-c", "from loom.api.app import create_app; import loom.api.__init__ as m; assert '_ServerFinder' not in open(m.__file__, encoding='utf-8').read(); create_app(docs_url=None, redoc_url=None)"], repo_root)),
         ("Gate 2: Authorization Matrix Tests", lambda: _run([sys.executable, "-m", "pytest", "tests/security/test_authorization_matrix.py", "-q"], repo_root)),

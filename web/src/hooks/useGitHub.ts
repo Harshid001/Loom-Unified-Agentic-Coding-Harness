@@ -200,6 +200,30 @@ export function useGitHub() {
     }
   }, []);
 
+  // Load User Repositories
+  const loadUserRepos = useCallback(async (authToken?: string) => {
+    const activeToken = authToken || token;
+    setIsLoadingRepos(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (activeToken) {
+        headers.Authorization = `Bearer ${activeToken}`;
+      }
+
+      const res = await fetch('/api/github?action=repos', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setUserRepos(data);
+        }
+      }
+    } catch {
+      // Ignore network errors on background repo refresh
+    } finally {
+      setIsLoadingRepos(false);
+    }
+  }, [token]);
+
   // Fetch user profile with token (stored strictly in ephemeral React state)
   const authenticate = useCallback(async (authToken: string) => {
     setIsLoadingUser(true);
@@ -234,7 +258,7 @@ export function useGitHub() {
     } finally {
       setIsLoadingUser(false);
     }
-  }, []);
+  }, [loadUserRepos]);
 
   // Disconnect GitHub
   const disconnect = useCallback(() => {
@@ -246,30 +270,6 @@ export function useGitHub() {
       localStorage.removeItem(STORAGE_KEY_USER);
     }
   }, []);
-
-  // Load User Repositories
-  const loadUserRepos = useCallback(async (authToken?: string) => {
-    const activeToken = authToken || token;
-    setIsLoadingRepos(true);
-    try {
-      const headers: Record<string, string> = {};
-      if (activeToken) {
-        headers.Authorization = `Bearer ${activeToken}`;
-      }
-
-      const res = await fetch('/api/github?action=repos', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setUserRepos(data);
-        }
-      }
-    } catch {
-      // Ignore network errors on background repo refresh
-    } finally {
-      setIsLoadingRepos(false);
-    }
-  }, [token]);
 
   // Load Branches for a repository
   const loadBranches = useCallback(async (repoFullName: string) => {

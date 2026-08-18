@@ -515,6 +515,7 @@ class RunRecordStore:
         return result
 
     def _insert(self, table: str, columns: List[str], model: Any):
+        self._validate_table_and_columns(table, columns)
         placeholders = ", ".join([f":{c}" for c in columns])
         col_list = ", ".join(columns)
         run_id = getattr(model, "run_id", None) or (model.get("run_id") if isinstance(model, dict) else None)
@@ -601,7 +602,19 @@ class RunRecordStore:
             model_cls=VerificationResultRecord,
         )
 
+    def _validate_table_and_columns(self, table: str, columns: List[str]) -> None:
+        """Enforce strict whitelist validation for dynamic SQL table and column identifiers (PRD-005)."""
+        if table not in _COLUMN_LISTS:
+            raise ValueError(f"Unauthorized table name in query: '{table}'")
+        allowed_cols = set(_COLUMN_LISTS[table])
+        for col in columns:
+            if col not in allowed_cols:
+                raise ValueError(f"Unauthorized column name in query for table '{table}': '{col}'")
+
     def _select(self, table: str, columns: List[str], clause: str, params: tuple, model_cls: Any) -> List[Any]:
+        self._validate_table_and_columns(table, columns)
+        # Note: 'clause' contains only parameterized placeholders and hardcoded SQL keywords (WHERE/ORDER BY/LIMIT)
+        # generated internally by repository methods, never from untrusted user input.
         col_list = ", ".join(columns)
         if self.is_postgres:
             from sqlalchemy import text

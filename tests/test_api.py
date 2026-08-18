@@ -29,7 +29,9 @@ def setup_api_key_env(monkeypatch, tmp_path):
     monkeypatch.setenv("ALLOWED_REPO_ROOTS", f"{tmp_path},{Path('.').resolve()}")
     monkeypatch.setenv("RATE_LIMIT_ALLOW_LOCAL_FALLBACK", "true")
     from loom.api.dependencies import get_entitlements
+    from loom.api.server import coordinator
     from loom.auth.context import clear_principal
+    from loom.infra.run_state import reset_run_store
 
     clear_principal()
     reset_entitlements()
@@ -42,8 +44,12 @@ def setup_api_key_env(monkeypatch, tmp_path):
     get_run_record_store(str(tmp_path / "records.db"))
     reset_scim_provisioner()
     get_scim_provisioner(str(tmp_path / "scim"))
+    coordinator.reset()
+    reset_run_store()
     yield
     clear_principal()
+    coordinator.reset()
+    reset_run_store()
 
 
 def test_liveness_health():

@@ -78,15 +78,28 @@ class RedisRunStore(RunStore):
     def __init__(self, redis_url: str) -> None:
         self._redis_url = redis_url
         self._client: Any = None
+        self._loop: Any = None
         self._pubsub_client: Any = None
 
     async def _get_client(self) -> Any:
-        if self._client is None:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if (
+            self._client is None
+            or (self._loop is not None and self._loop.is_closed())
+            or (current_loop is not None and self._loop is not None and self._loop is not current_loop)
+        ):
             try:
                 from redis.asyncio import from_url
                 self._client = from_url(self._redis_url, decode_responses=True)
+                self._loop = current_loop
             except ImportError as exc:
                 raise RuntimeError("redis[asyncio] is required for RedisRunStore") from exc
+        elif self._loop is None and current_loop is not None:
+            self._loop = current_loop
         return self._client
 
     async def set_run(self, run_id: str, metadata: dict[str, Any]) -> None:
@@ -254,9 +267,9 @@ def reset_run_store() -> None:
         # Best-effort sync close
         import asyncio as _aio
         try:
-            loop = _aio.get_event_loop()
+            loop = _aio.get_running_loop()
             if not loop.is_closed():
-                loop.run_until_complete(_store.close())
+                loop.create_task(_store.close())
         except Exception:
             pass
     _store = None

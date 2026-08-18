@@ -15,7 +15,7 @@ def _graph(run_id: str) -> TaskGraph:
         TelemetryTracer(run_id=run_id),
         CostTracker(run_id=run_id),
     )
-    graph.get_sequence = lambda resume_from=None: []
+    graph.get_sequence = lambda resume_from=None, parallel_groups=None: []  # type: ignore[method-assign, assignment]
     return graph
 
 

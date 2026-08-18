@@ -7,6 +7,7 @@ and cross-replica control commands in production.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -44,10 +45,16 @@ class RedisCoordinator:
     def __init__(self, url: Optional[str] = None):
         self.url = url or os.getenv("REDIS_URL")
         self._client: Optional[Redis] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     @property
     def enabled(self) -> bool:
         return bool(self.url)
+
+    def reset(self) -> None:
+        """Reset the cached client and event loop binding."""
+        self._client = None
+        self._loop = None
 
     @property
     def client(self) -> Redis:
@@ -55,8 +62,22 @@ class RedisCoordinator:
             raise DistributedInfraError("redis package is not installed")
         if not self.url:
             raise DistributedInfraError("REDIS_URL is not configured")
-        if self._client is None:
+
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if (
+            self._client is None
+            or (self._loop is not None and self._loop.is_closed())
+            or (current_loop is not None and self._loop is not None and self._loop is not current_loop)
+        ):
             self._client = Redis.from_url(self.url, decode_responses=True)
+            self._loop = current_loop
+        elif self._loop is None and current_loop is not None:
+            self._loop = current_loop
+
         return self._client
 
     async def ping(self) -> bool:
@@ -66,8 +87,12 @@ class RedisCoordinator:
 
     async def close(self) -> None:
         if self._client is not None:
-            await self._client.aclose()
+            try:
+                await self._client.aclose()
+            except Exception:
+                pass
             self._client = None
+            self._loop = None
 
     async def reserve_idempotency_key(self, org_id: str, idempotency_key: str, run_id: str) -> bool:
         """Atomically reserve an API idempotency key for a run."""

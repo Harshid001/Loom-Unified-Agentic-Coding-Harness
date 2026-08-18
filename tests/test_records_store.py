@@ -156,3 +156,19 @@ async def test_task_graph_writes_records(tmp_path, monkeypatch):
 
     verifications = records_store.get_verifications(run_id)
     assert {v.stage for v in verifications} == {"build", "test", "repro", "sast", "lint"}
+
+
+def test_validate_table_and_columns_rejects_unauthorized(store):
+    with pytest.raises(ValueError, match="Unauthorized table name"):
+        store._select("unauthorized_table", ["run_id"], "1=1", (), RunRecord)
+
+    with pytest.raises(ValueError, match="Unauthorized column name"):
+        store._select("runs", ["run_id", "malicious_col; DROP TABLE runs;--"], "1=1", (), RunRecord)
+
+    with pytest.raises(ValueError, match="Unauthorized table name"):
+        store._insert("injected_table; DROP TABLE runs;--", ["id", "run_id"], {"id": "1", "run_id": "r1"})
+
+    with pytest.raises(ValueError, match="Unauthorized column name"):
+        store._insert("patches", ["id", "unauthorized_column"], {"id": "1", "unauthorized_column": "x"})
+
+

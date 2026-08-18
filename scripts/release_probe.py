@@ -28,10 +28,12 @@ def main() -> int:
         "liveness": f"{args.base_url.rstrip('/')}/healthz",
         "readiness": f"{args.base_url.rstrip('/')}/api/v1/health/readiness",
     }
-    evidence: dict[str, object] = {
+    from typing import Any
+    checks: dict[str, Any] = {}
+    evidence: dict[str, Any] = {
         "timestamp": time.time(),
         "base_url": args.base_url,
-        "checks": {},
+        "checks": checks,
     }
     failed = False
 

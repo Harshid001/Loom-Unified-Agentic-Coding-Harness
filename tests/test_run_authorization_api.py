@@ -98,7 +98,8 @@ def setup_api_env(monkeypatch, tmp_path):
     }
     (evidence_dir / "evidence_run_own_123.json").write_text(json.dumps(evidence_data), encoding="utf-8")
 
-    from loom.api.server import ACTIVE_RUNS
+    from loom.api.server import ACTIVE_RUNS, coordinator
+    from loom.infra.run_state import reset_run_store
     active_state = OrchestratorState(run_id="run_own_123", repo_path=str(repo_dir), issue_description="own")
     active_state.shared_data["org_id"] = _default_org.id
     ACTIVE_RUNS["run_own_123"] = {
@@ -106,8 +107,12 @@ def setup_api_env(monkeypatch, tmp_path):
         "queues": [],
         "state": active_state,
     }
+    coordinator.reset()
+    reset_run_store()
     yield
     clear_principal()
+    coordinator.reset()
+    reset_run_store()
 
 
 def test_deterministic_route_action_mapping():

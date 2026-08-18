@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -120,22 +120,23 @@ def create_backup(backup_dir: Path) -> Path:
     evidence_path = Path(os.getenv("LOOM_EVIDENCE_DIR") or (loom_home / "evidence"))
     checkpoints_path = Path(os.getenv("LOOM_CHECKPOINT_DIR") or (loom_home / "checkpoints"))
 
-    manifest = {
+    items: list[str] = []
+    manifest: dict[str, Any] = {
         "timestamp": timestamp,
         "backup_version": "3.0",
         "encrypted": bool(os.getenv("LOOM_BACKUP_ENCRYPTION_KEY")),
-        "items": [],
+        "items": items,
     }
     if records_db.exists():
         _sqlite_consistent_copy(records_db, target_dir / "records.db")
-        manifest["items"].append("records.db")
+        items.append("records.db")
     if memory_db.exists():
         _sqlite_consistent_copy(memory_db, target_dir / "memory.db")
-        manifest["items"].append("memory.db")
+        items.append("memory.db")
     for source_path, archive_name in ((evidence_path, "evidence"), (checkpoints_path, "checkpoints")):
         if source_path.exists() and source_path.is_dir():
             shutil.copytree(source_path, target_dir / archive_name, dirs_exist_ok=True, symlinks=False)
-            manifest["items"].append(archive_name)
+            items.append(archive_name)
 
     if os.getenv("DATABASE_URL", "").startswith(("postgresql://", "postgres://")):
         dump_path = target_dir / "postgres.dump"
@@ -148,7 +149,7 @@ def create_backup(backup_dir: Path) -> Path:
         )
         if result.returncode != 0:
             raise RuntimeError("pg_dump failed")
-        manifest["items"].append("postgres.dump")
+        items.append("postgres.dump")
 
     (target_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     plain_archive = backup_dir / f"loom_backup_{timestamp}.tar.gz"
