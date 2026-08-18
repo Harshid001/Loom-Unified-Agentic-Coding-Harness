@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitPullRequest, ExternalLink, Check, Loader2, AlertCircle, X, Terminal, Sparkles, Play, Pause, RotateCcw } from "lucide-react";
+import { GitPullRequest, ExternalLink, Check, Loader2, AlertCircle, X, Terminal, Sparkles, Play, Pause, RotateCcw, Key } from "lucide-react";
 import { Github } from "./GithubIcon";
 
 interface LiveBoxProps {
