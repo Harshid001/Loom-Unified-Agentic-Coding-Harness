@@ -43,7 +43,9 @@ class LiteLLMAdapter(BaseModelAdapter):
                 messages.insert(0, {"role": "system", "content": request.system_prompt})
 
             target_model = request.model
-            if "deepseek" in target_model.lower() and not target_model.lower().startswith("deepseek/"):
+            if "gemini" in target_model.lower() and not target_model.lower().startswith("gemini/"):
+                target_model = f"gemini/{target_model}"
+            elif "deepseek" in target_model.lower() and not target_model.lower().startswith("deepseek/"):
                 if target_model.lower() in [
                     "deepseek",
                     "deepseek v4 pro",
@@ -63,6 +65,24 @@ class LiteLLMAdapter(BaseModelAdapter):
             }
             if api_base:
                 kwargs["api_base"] = api_base
+
+            # Inject explicit API key if available in environment
+            if target_model.startswith("gemini/"):
+                gem_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+                if gem_key:
+                    kwargs["api_key"] = gem_key
+            elif target_model.startswith("anthropic/") or "claude" in target_model.lower():
+                ant_key = os.getenv("ANTHROPIC_API_KEY")
+                if ant_key:
+                    kwargs["api_key"] = ant_key
+            elif target_model.startswith("deepseek/"):
+                ds_key = os.getenv("DEEPSEEK_API_KEY")
+                if ds_key:
+                    kwargs["api_key"] = ds_key
+            elif "gpt" in target_model.lower() or "o1" in target_model.lower() or "o3" in target_model.lower():
+                oa_key = os.getenv("OPENAI_API_KEY")
+                if oa_key:
+                    kwargs["api_key"] = oa_key
 
             if request.max_tokens:
                 kwargs["max_tokens"] = request.max_tokens
