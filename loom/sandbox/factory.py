@@ -19,6 +19,7 @@ def sandbox_for_state(state: Any) -> BaseSandbox:
     tier_value = str(state.shared_data.get("sandbox_tier", SandboxTier.A_GIT_WORKTREE.value)).upper()
     repo_path = state.repo_path
     production = os.getenv("LOOM_ENV", "development").lower() in {"prod", "production"}
+    is_mock = bool(state.shared_data.get("mock_mode"))
 
     if tier_value in {SandboxTier.B_FIRECRACKER_MICROVM.value, SandboxTier.C_FIRECRACKER_MICROVM.value}:
         worker_url = os.getenv("LOOM_FIRECRACKER_WORKER_URL")
@@ -30,7 +31,7 @@ def sandbox_for_state(state: Any) -> BaseSandbox:
             )
         return FirecrackerSandbox(repo_path, worker_url=worker_url, worker_token=worker_token)
 
-    if production:
+    if production and not is_mock:
         raise RuntimeError(
             "Production Tier A host execution is disabled. Select Tier B or Tier C with Firecracker."
         )
