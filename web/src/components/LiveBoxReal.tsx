@@ -140,7 +140,15 @@ export function LiveBoxReal({
             message: data.message || "",
           });
         } else if (message.type === "step_progress") {
-          setSteps(prev => prev.map(step => step.name === message.step_name ? { ...step, ...data } : step));
+          setSteps(prev => {
+            const next = prev.map(step => step.name === message.step_name ? { ...step, ...data } : step);
+            if (next.every(s => s.status === "completed")) {
+              setIsRunning(false);
+              setStatus("completed");
+              onRunComplete(id, true);
+            }
+            return next;
+          });
         } else if (message.type === "patch_generated") {
           setPatchDiff(data.diff || "");
         } else if (message.type === "run_completed") {
