@@ -13,6 +13,8 @@ import {
   Settings as SettingsIcon,
   Play,
   Circle,
+  LogOut,
+  Loader2,
 } from 'lucide-react';
 import { Github } from './GithubIcon';
 import { ConnectedRepoState, GitHubUser } from '../hooks/useGitHub';
@@ -45,6 +47,25 @@ export const Header: React.FC<HeaderProps> = ({
   isExecuting = false,
 }) => {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('loom_auth_token');
+        sessionStorage.clear();
+      }
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Fall through to reload
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.location.reload();
+      }
+    }
+  };
 
   return (
     <header
@@ -199,6 +220,22 @@ export const Header: React.FC<HeaderProps> = ({
             <Key className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         )}
+
+        {/* Logout Button */}
+        <button
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          aria-label="Log out of Loom Dashboard"
+          className="flex items-center gap-1.5 h-8 px-2.5 text-xs text-[var(--text-secondary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--danger)]/50 hover:bg-[var(--danger)]/10 hover:text-[var(--danger)] rounded-lg transition font-mono group"
+          title="Sign out of Dashboard"
+        >
+          {isLoggingOut ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--danger)]" aria-hidden="true" />
+          ) : (
+            <LogOut className="h-3.5 w-3.5 text-[var(--text-muted)] group-hover:text-[var(--danger)] transition shrink-0" aria-hidden="true" />
+          )}
+          <span className="hidden sm:inline">Logout</span>
+        </button>
 
         {/* Primary Action Button: Launch Live Box / New Run */}
         <button

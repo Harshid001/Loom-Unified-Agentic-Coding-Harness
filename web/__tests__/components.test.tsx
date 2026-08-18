@@ -6,6 +6,7 @@ import { DiffTab } from '../src/components/DiffTab';
 import { DagTab } from '../src/components/DagTab';
 import { AblationsTab } from '../src/components/AblationsTab';
 import { EvidenceView } from '../src/components/EvidenceView';
+import { Header } from '../src/components/Header';
 
 describe('DiffTab component', () => {
   it('renders placeholder when no displayData is provided', () => {
@@ -97,6 +98,25 @@ describe('AblationsTab component', () => {
     render(<AblationsTab displayData={customData} />);
     expect(screen.getByText(/Custom Harness Tier/i)).toBeInTheDocument();
     expect(screen.getByText(/98.5%/i)).toBeInTheDocument();
+  });
+});
+
+describe('Header component', () => {
+  it('renders brand, active model, and responsive logout button', () => {
+    render(
+      <Header
+        modelName="claude-3-7-sonnet"
+        availableModels={['claude-3-7-sonnet', 'gpt-4o']}
+        onModelChange={vi.fn()}
+        onOpenLiveBox={vi.fn()}
+        runCount={5}
+      />
+    );
+
+    expect(screen.getByText('LOOM')).toBeInTheDocument();
+    expect(screen.getByText('claude-3-7-sonnet')).toBeInTheDocument();
+    expect(screen.getByText('Logout')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Log out of Loom Dashboard/i })).toBeInTheDocument();
   });
 });
 
