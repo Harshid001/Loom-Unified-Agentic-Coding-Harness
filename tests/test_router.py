@@ -307,11 +307,11 @@ class TestExplicitModelVsAutoRouting:
 
     def test_set_model_updates_explicit_execution(self):
         router = ModelRouter(default_model="gpt-4o", mock_mode=False)
-        router.set_model("gemini-3-flash-preview")
-        assert router.default_model == "gemini-3-flash-preview"
-        assert "gemini-3-flash-preview" in router._eligible_models
+        router.set_model("gemini-1.5-pro")
+        assert router.default_model == "gemini-1.5-pro"
+        assert "gemini-1.5-pro" in router._eligible_models
         for node in ["onboarding", "reproduction", "planner", "patcher", "verifier", "reviewer"]:
-            assert router.resolve_model(node) == "gemini-3-flash-preview"
+            assert router.resolve_model(node) == "gemini-1.5-pro"
 
     def test_auto_routing_mode_performs_dynamic_scoring(self):
         router = ModelRouter(default_model="auto", mock_mode=False)

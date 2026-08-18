@@ -9,18 +9,8 @@ const DEFAULT_MODELS: Record<string, string[]> = {
     'claude-3-opus-20240229',
   ],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'],
-  deepseek: ['deepseek-v4-pro', 'deepseek-v4', 'deepseek-chat', 'deepseek-reasoner', 'deepseek-v3'],
-  gemini: [
-    'gemini-3-flash-preview',
-    'gemini-3-pro-preview',
-    'gemini-3.7-flash',
-    'gemini-3.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-2.5-pro',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-  ],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v3'],
+  gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'],
 };
 
 function validateKeyFormat(provider: string, key: string): { valid: boolean; reason?: string } {
