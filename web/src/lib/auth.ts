@@ -89,6 +89,35 @@ export function validateDashboardSession(value: string): boolean {
 export function validateSameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get('origin');
   if (!origin) return true;
+
+  try {
+    const originUrl = new URL(origin);
+    const hostHeader = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
+    const cleanHost = (hostHeader || '').split(':')[0].toLowerCase();
+    const originHost = originUrl.hostname.toLowerCase();
+
+    // Direct match with request host or URL host
+    if (originUrl.host === hostHeader || originUrl.host === req.nextUrl.host) return true;
+    if (originHost === cleanHost || originHost === req.nextUrl.hostname.toLowerCase()) return true;
+
+    // Loopback / localhost development match
+    const isLocalOrigin = originHost === 'localhost' || originHost === '127.0.0.1';
+    const isLocalReq = cleanHost === 'localhost' || cleanHost === '127.0.0.1' || req.nextUrl.hostname === 'localhost' || req.nextUrl.hostname === '127.0.0.1';
+    if (isLocalOrigin && isLocalReq) return true;
+
+    // Vercel deployment match
+    if (originHost.endsWith('.vercel.app') && (cleanHost.endsWith('.vercel.app') || !cleanHost)) return true;
+
+    // Configured app origin match
+    const configured = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
+    if (configured) {
+      const confUrl = new URL(configured);
+      if (originUrl.host === confUrl.host) return true;
+    }
+  } catch {
+    // Fallback comparison below
+  }
+
   const appOrigin = getAppOrigin(req);
   if (origin === appOrigin) return true;
   const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/+$/, '');
