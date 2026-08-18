@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect } from 'react';
-import { Loader2, Play, GitBranch, FolderGit2, ListTodo, X } from 'lucide-react';
+import { Loader2, Play, GitBranch, FolderGit2, ListTodo, X, Cpu } from 'lucide-react';
 
 interface NewRunModalProps {
   isOpen: boolean;
@@ -12,6 +12,9 @@ interface NewRunModalProps {
   onSubmit: () => void;
   repoName?: string;
   branchName?: string;
+  activeModel?: string;
+  availableModels?: string[];
+  onModelChange?: (model: string) => void;
   onOpenIssuesDrawer?: () => void;
 }
 
@@ -24,6 +27,9 @@ export const NewRunModal: React.FC<NewRunModalProps> = ({
   onSubmit,
   repoName = 'Select Repository',
   branchName = 'main',
+  activeModel = 'claude-3-7-sonnet',
+  availableModels,
+  onModelChange,
   onOpenIssuesDrawer,
 }) => {
   useEffect(() => {
@@ -68,15 +74,19 @@ export const NewRunModal: React.FC<NewRunModalProps> = ({
           </button>
         </div>
 
-        {/* Target Repo & Branch Pills */}
-        <div className="flex items-center gap-2 text-xs font-mono text-[var(--text-secondary)]">
+        {/* Target Repo, Branch & Active Model Pills */}
+        <div className="flex items-center gap-2 text-xs font-mono text-[var(--text-secondary)] flex-wrap">
           <div className="flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 py-1 rounded-lg">
             <FolderGit2 className="h-3.5 w-3.5 text-[var(--brand)]" />
             <span>{repoName}</span>
           </div>
-          <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2 py-1 rounded-lg text-[var(--success)]">
+          <div className="flex items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 py-1 rounded-lg text-[var(--success)]">
             <GitBranch className="h-3 w-3" />
             <span>{branchName}</span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 py-1 rounded-lg text-[var(--cyan)]" title="Target Active Model">
+            <Cpu className="h-3.5 w-3.5 text-[var(--cyan)]" />
+            <span className="font-bold">{activeModel}</span>
           </div>
         </div>
 

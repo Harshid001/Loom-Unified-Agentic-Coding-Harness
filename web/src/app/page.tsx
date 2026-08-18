@@ -85,22 +85,45 @@ function LoomControlPlane() {
     fetchRuns,
   } = useRuns();
 
-  // Synchronize model settings with backend
+  // Synchronize model settings with localStorage, events, and backend
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('loom_active_model');
-      if (saved) setSelectedModel(saved);
-    }
+    const syncActiveModel = () => {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('loom_active_model');
+        if (saved) setSelectedModel(saved);
+      }
+    };
+
+    syncActiveModel();
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'loom_active_model' && e.newValue) {
+        setSelectedModel(e.newValue);
+      }
+    };
+
+    const handleCustomModelChange = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) {
+        setSelectedModel(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('loom_active_model_changed', handleCustomModelChange);
 
     fetch('/api/settings/model')
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
         if (data) {
-          if (data.active_model) {
+          const localSaved = typeof window !== 'undefined' ? localStorage.getItem('loom_active_model') : null;
+          if (data.active_model && !localSaved) {
             setSelectedModel(data.active_model);
             if (typeof window !== 'undefined') {
               localStorage.setItem('loom_active_model', data.active_model);
             }
+          } else if (localSaved) {
+            setSelectedModel(localSaved);
           }
           if (Array.isArray(data.available_models) && data.available_models.length > 0) {
             setAvailableModels(Array.from(new Set([...data.available_models, ...AVAILABLE_MODELS])));
@@ -108,12 +131,18 @@ function LoomControlPlane() {
         }
       })
       .catch(() => {});
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('loom_active_model_changed', handleCustomModelChange);
+    };
   }, []);
 
   const handleModelChange = useCallback((model: string) => {
     setSelectedModel(model);
     if (typeof window !== 'undefined') {
       localStorage.setItem('loom_active_model', model);
+      window.dispatchEvent(new CustomEvent('loom_active_model_changed', { detail: model }));
     }
     fetch('/api/settings/model', {
       method: 'PUT',
@@ -317,7 +346,7 @@ function LoomControlPlane() {
 
           {/* View: DAG Execution */}
           {activeTab === 'dag' && (
-            <DagTab displayData={displayData} onOpenLiveBox={() => setIsNewRunModalOpen(true)} />
+            <DagTab displayData={displayData} activeModel={selectedModel} onOpenLiveBox={() => setIsNewRunModalOpen(true)} />
           )}
 
           {/* View: Agents Architecture */}
@@ -464,6 +493,9 @@ function LoomControlPlane() {
         }}
         repoName={connectedRepo?.fullName || 'No Repository Connected'}
         branchName={connectedRepo?.selectedBranch || 'main'}
+        activeModel={selectedModel}
+        availableModels={availableModels}
+        onModelChange={handleModelChange}
         onOpenIssuesDrawer={() => setIsIssuesDrawerOpen(true)}
       />
 
@@ -478,6 +510,8 @@ function LoomControlPlane() {
         onRunComplete={handleRunComplete}
         onCreatePR={createPullRequest}
         hasGitHubToken={Boolean(githubToken)}
+        availableModels={availableModels}
+        onModelChange={handleModelChange}
       />
 
       {/* Repository Connection Modal */}

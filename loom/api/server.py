@@ -640,9 +640,15 @@ async def create_run(
     if getattr(org, "require_patch_approval", False):
         state.shared_data["require_patch_approval"] = True
 
+    from loom.api.routes.settings import get_current_active_model
+
+    active_configured_model = get_current_active_model()
+    target_model = req.model.strip() if (req.model and req.model.strip() and req.model.strip().lower() != "auto") else active_configured_model
+    state.shared_data["model"] = target_model
+
     sensitive_globs = getattr(org, "sensitive_path_globs", None)
     router = ModelRouter(
-        default_model=req.model,
+        default_model=target_model,
         mock_mode=req.mock,
         sensitive_globs=list(sensitive_globs) if sensitive_globs else None,
     )

@@ -47,25 +47,26 @@ export async function GET(req: NextRequest) {
     // Backend offline
   }
 
-  return NextResponse.json({
-    active_model: currentActiveModel,
-    available_models: [
-      'claude-3-5-sonnet-20241022',
-      'claude-3-7-sonnet-20250219',
-      'gpt-4o',
-      'gpt-4o-mini',
-      'deepseek-v3',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash',
-    ],
-    providers: {
-      anthropic: { configured: Boolean(process.env.ANTHROPIC_API_KEY), models: DEFAULT_MODELS.anthropic },
-      openai: { configured: Boolean(process.env.OPENAI_API_KEY), models: DEFAULT_MODELS.openai },
-      deepseek: { configured: Boolean(process.env.DEEPSEEK_API_KEY), models: DEFAULT_MODELS.deepseek },
-      gemini: { configured: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_CLIENT_SECRET), models: DEFAULT_MODELS.gemini },
-    },
-  });
+    const fallbackAvailable = Array.from(
+      new Set([
+        currentActiveModel,
+        ...DEFAULT_MODELS.anthropic,
+        ...DEFAULT_MODELS.openai,
+        ...DEFAULT_MODELS.deepseek,
+        ...DEFAULT_MODELS.gemini,
+      ])
+    );
+
+    return NextResponse.json({
+      active_model: currentActiveModel,
+      available_models: fallbackAvailable,
+      providers: {
+        anthropic: { configured: Boolean(process.env.ANTHROPIC_API_KEY), models: DEFAULT_MODELS.anthropic },
+        openai: { configured: Boolean(process.env.OPENAI_API_KEY), models: DEFAULT_MODELS.openai },
+        deepseek: { configured: Boolean(process.env.DEEPSEEK_API_KEY), models: DEFAULT_MODELS.deepseek },
+        gemini: { configured: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_CLIENT_SECRET), models: DEFAULT_MODELS.gemini },
+      },
+    });
 }
 
 export async function PUT(req: NextRequest) {

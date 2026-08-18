@@ -170,7 +170,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       </div>
 
       {/* 2. REAL-TIME USER REPOSITORY STATE STRIP */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 font-mono">
         <div className="loom-card p-3 flex items-center justify-between">
           <div className="min-w-0">
             <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">CONNECTED REPO</p>
@@ -187,6 +187,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <p className="text-xs font-bold text-[var(--cyan)] mt-0.5 font-mono">{branchName}</p>
           </div>
           <div className="h-2 w-2 rounded-full bg-[var(--cyan)]" />
+        </div>
+
+        <div className="loom-card p-3 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">ACTIVE MODEL</p>
+            <p className="text-xs font-bold text-[var(--cyan)] mt-0.5 truncate font-mono" title={activeModel}>
+              {activeModel}
+            </p>
+          </div>
+          <div className="h-2 w-2 rounded-full bg-[var(--cyan)] shrink-0" />
         </div>
 
         <div className="loom-card p-3 flex items-center justify-between">
@@ -389,6 +399,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                     </div>
 
                     <div className="flex items-center gap-3 font-mono text-[10px]">
+                      <span className="text-[var(--cyan)] bg-[var(--bg-surface)] px-1.5 py-0.5 rounded border border-[var(--border-subtle)] hidden sm:inline truncate max-w-[130px]" title={stage.model}>
+                        {stage.model}
+                      </span>
                       <span className="text-[var(--text-secondary)]">{stage.duration}</span>
                       <span className="text-[var(--text-muted)]">{stage.cost}</span>
                       <span className={`${stage.status === 'SUCCEEDED' || stage.status === 'VERIFIED' ? 'text-[var(--success)]' : 'text-[var(--text-muted)]'} font-bold`}>

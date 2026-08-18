@@ -128,6 +128,17 @@ function ModelSettingsContent() {
   // Fetch initial config from backend
   const fetchConfig = async () => {
     setIsLoadingConfig(true);
+    if (typeof window !== 'undefined') {
+      const savedModel = localStorage.getItem('loom_active_model');
+      if (savedModel) {
+        setActiveModel(savedModel);
+        setSelectedModel(savedModel);
+      }
+      const savedProvider = localStorage.getItem('loom_active_provider') as ProviderKey | null;
+      if (savedProvider && PROVIDERS[savedProvider]) {
+        setSelectedProvider(savedProvider);
+      }
+    }
     try {
       const res = await fetch('/api/settings/model');
       if (res.ok) {
@@ -135,6 +146,9 @@ function ModelSettingsContent() {
         if (data.active_model) {
           setActiveModel(data.active_model);
           setSelectedModel(data.active_model);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('loom_active_model', data.active_model);
+          }
         }
         if (data.providers) {
           const updatedConfigured: Record<ProviderKey, boolean> = {
@@ -256,6 +270,7 @@ function ModelSettingsContent() {
         if (typeof window !== 'undefined') {
           localStorage.setItem('loom_active_model', selectedModel);
           localStorage.setItem('loom_active_provider', selectedProvider);
+          window.dispatchEvent(new CustomEvent('loom_active_model_changed', { detail: selectedModel }));
         }
         setFeedback({
           type: 'success',

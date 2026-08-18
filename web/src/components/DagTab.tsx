@@ -7,9 +7,10 @@ import { ExecutionGraph, ExecutionStage } from './ExecutionGraph';
 interface DagTabProps {
   displayData: any;
   onOpenLiveBox?: () => void;
+  activeModel?: string;
 }
 
-export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) => {
+export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox, activeModel = 'claude-3-7-sonnet' }) => {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
   const stages: ExecutionStage[] = [
@@ -32,7 +33,7 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
       status: displayData ? (displayData.nodes?.[1]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[1]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
       duration: displayData?.nodes?.[1]?.duration || '--',
       cost: displayData?.nodes?.[1]?.cost || '--',
-      model: displayData?.model || 'Active Model',
+      model: activeModel || displayData?.model || 'claude-3-7-sonnet',
       summary: 'Synthesizes deterministic failing test suite validating the target bug (Red phase).',
     },
     {
@@ -43,7 +44,7 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
       status: displayData ? (displayData.nodes?.[2]?.status === 'completed' ? 'SUCCEEDED' : displayData.nodes?.[2]?.status === 'running' ? 'RUNNING' : 'QUEUED') : 'IDLE',
       duration: displayData?.nodes?.[2]?.duration || '--',
       cost: displayData?.nodes?.[2]?.cost || '--',
-      model: displayData?.model || 'Active Model',
+      model: activeModel || displayData?.model || 'claude-3-7-sonnet',
       summary: 'Generates unified code patch modifying only relevant AST subtrees.',
     },
     {
