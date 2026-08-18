@@ -138,15 +138,18 @@ class RunRecordStore:
         else:
             self.is_postgres = False
 
-        if not db_path:
-            db_path = os.getenv("LOOM_RECORDS_DB")
-        if not db_path:
-            db_dir = Path.home() / ".loom"
-            db_dir.mkdir(parents=True, exist_ok=True)
-            db_path = str(db_dir / "records.db")
+        if not self.is_postgres:
+            if not db_path:
+                db_path = os.getenv("LOOM_RECORDS_DB")
+            if not db_path:
+                db_dir = Path.home() / ".loom"
+                db_dir.mkdir(parents=True, exist_ok=True)
+                db_path = str(db_dir / "records.db")
+            else:
+                Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            self.db_path = db_path
         else:
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.db_path = db_path
+            self.db_path = str(self.db_url)
         self._init_db()
 
     def _get_pg_engine(self):

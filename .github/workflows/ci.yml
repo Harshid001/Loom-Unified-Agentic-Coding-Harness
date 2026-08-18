@@ -87,12 +87,15 @@ jobs:
         run: mypy loom/ --ignore-missing-imports
       - name: Run Security Regression Tests
         env:
-          POSTGRES_URL: postgresql://loom:ci-postgres-password@localhost:5432/loom
           REDIS_URL: redis://localhost:6379/0
         run: python -m pytest tests/test_security_bootstrap.py tests/test_auth_identity_binding.py tests/test_verification_state.py tests/test_usage_ledger_restart.py tests/test_command_policy.py tests/test_sandbox_security.py tests/test_production_hardening.py tests/test_webhook_secret_encryption.py tests/test_db_migrations.py tests/test_api_tokens.py tests/test_job_queue_leases.py --timeout=60 --timeout_method=thread
-      - name: Run Full Test Suite with Coverage
+      - name: Run Postgres Integration Tests
         env:
           POSTGRES_URL: postgresql://loom:ci-postgres-password@localhost:5432/loom
+          REDIS_URL: redis://localhost:6379/0
+        run: python -m pytest tests/integration/test_postgres_production.py tests/test_api_tokens_postgres.py --timeout=60 --timeout_method=thread
+      - name: Run Full Test Suite with Coverage
+        env:
           REDIS_URL: redis://localhost:6379/0
         run: python -m pytest --timeout=60 --timeout_method=thread
 
