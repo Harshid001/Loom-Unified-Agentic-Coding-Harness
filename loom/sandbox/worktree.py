@@ -64,6 +64,13 @@ def _copy_tree_no_links(source: Path, destination: Path) -> None:
             shutil.copy2(item, dest)
 
 
+def _snapshot_sort_key(p: Path) -> tuple[int, float]:
+    parts = p.name.split("_", 2)
+    if len(parts) >= 2 and parts[1].isdigit():
+        return (int(parts[1]), p.stat().st_mtime)
+    return (0, p.stat().st_mtime)
+
+
 @dataclass(frozen=True)
 class WorktreeHandle:
     snapshot_id: str
@@ -105,8 +112,8 @@ class WorktreeManager:
             entries: List[Path] = [
                 d for d in snapshots_root.iterdir() if d.is_dir() and d.name.startswith("snap_")
             ]
-            # Sort by directory modification time (oldest first)
-            entries.sort(key=lambda p: p.stat().st_mtime)
+            # Sort by snapshot timestamp key (oldest first)
+            entries.sort(key=_snapshot_sort_key)
 
             for entry in list(entries):
                 st_mtime = entry.stat().st_mtime
@@ -144,7 +151,7 @@ class WorktreeManager:
         self.prune_snapshots(max_retained=self.max_retained_snapshots - 1)
 
         safe_label = _safe_snapshot_label(label)
-        snapshot_id = f"snap_{int(time.time())}_{safe_label}"
+        snapshot_id = f"snap_{time.time_ns()}_{safe_label}"
         snapshot_dir = (self.repo_path / ".loom_snapshots" / snapshot_id).resolve()
         snapshots_root = (self.repo_path / ".loom_snapshots").resolve()
         if snapshots_root not in snapshot_dir.parents:
