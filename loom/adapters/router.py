@@ -34,6 +34,7 @@ PROVIDER_KEY_ENV_MAP: Dict[str, List[str]] = {
     "deepseek": ["DEEPSEEK_API_KEY"],
     "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
     "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "openrouter": ["OPENROUTER_API_KEY"],
 }
 
 

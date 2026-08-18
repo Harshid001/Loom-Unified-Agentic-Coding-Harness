@@ -100,6 +100,12 @@ class LiteLLMAdapter(BaseModelAdapter):
                 oa_key = os.getenv("OPENAI_API_KEY")
                 if oa_key:
                     kwargs["api_key"] = oa_key
+            elif target_model.startswith("openrouter/") or os.getenv("OPENROUTER_API_KEY"):
+                or_key = os.getenv("OPENROUTER_API_KEY")
+                if or_key:
+                    kwargs["api_key"] = or_key
+                    if not target_model.startswith("openrouter/"):
+                        kwargs["model"] = f"openrouter/{target_model}"
 
             if request.max_tokens:
                 kwargs["max_tokens"] = request.max_tokens

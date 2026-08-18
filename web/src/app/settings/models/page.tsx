@@ -22,7 +22,7 @@ import {
   Zap,
 } from 'lucide-react';
 
-type ProviderKey = 'anthropic' | 'openai' | 'deepseek' | 'gemini';
+type ProviderKey = 'anthropic' | 'openai' | 'deepseek' | 'gemini' | 'openrouter';
 
 interface ProviderMeta {
   id: ProviderKey;
@@ -86,6 +86,22 @@ const PROVIDERS: Record<ProviderKey, ProviderMeta> = {
       'gemini-2.0-flash-lite',
     ],
   },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter / Free',
+    badge: 'Free / Router',
+    placeholder: 'sk-or-v1-...',
+    docUrl: 'https://openrouter.ai/keys',
+    description: 'Unified endpoint with free tier access to Gemini 2.0 Flash, DeepSeek R1, Llama 3.3, and Claude models.',
+    defaultModels: [
+      'google/gemini-2.0-flash-exp:free',
+      'google/gemini-2.5-pro',
+      'deepseek/deepseek-r1:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'anthropic/claude-3.7-sonnet',
+      'openai/gpt-4o',
+    ],
+  },
 };
 
 interface ProviderStatus {
@@ -106,21 +122,24 @@ function ModelSettingsContent() {
     openai: '',
     deepseek: '',
     gemini: '',
+    openrouter: '',
   });
   const [showKey, setShowKey] = useState<Record<ProviderKey, boolean>>({
     anthropic: false,
     openai: false,
     deepseek: false,
     gemini: false,
+    openrouter: false,
   });
 
-  const [activeModel, setActiveModel] = useState<string>('claude-3-5-sonnet-20241022');
-  const [selectedModel, setSelectedModel] = useState<string>('claude-3-5-sonnet-20241022');
+  const [activeModel, setActiveModel] = useState<string>('gemini-3-flash-preview');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3-flash-preview');
   const [detectedModels, setDetectedModels] = useState<Record<ProviderKey, string[]>>({
     anthropic: PROVIDERS.anthropic.defaultModels,
     openai: PROVIDERS.openai.defaultModels,
     deepseek: PROVIDERS.deepseek.defaultModels,
     gemini: PROVIDERS.gemini.defaultModels,
+    openrouter: PROVIDERS.openrouter.defaultModels,
   });
 
   const [providerConfigured, setProviderConfigured] = useState<Record<ProviderKey, boolean>>({
@@ -128,6 +147,7 @@ function ModelSettingsContent() {
     openai: false,
     deepseek: false,
     gemini: false,
+    openrouter: false,
   });
 
   const [isDetecting, setIsDetecting] = useState(false);
@@ -152,11 +172,13 @@ function ModelSettingsContent() {
       const savedOpenai = localStorage.getItem('loom_provider_openai_key') || '';
       const savedDeepseek = localStorage.getItem('loom_provider_deepseek_key') || '';
       const savedGemini = localStorage.getItem('loom_provider_gemini_key') || '';
+      const savedOpenRouter = localStorage.getItem('loom_provider_openrouter_key') || '';
       setApiKeys({
         anthropic: savedAnthropic,
         openai: savedOpenai,
         deepseek: savedDeepseek,
         gemini: savedGemini,
+        openrouter: savedOpenRouter,
       });
     }
     try {
@@ -180,6 +202,7 @@ function ModelSettingsContent() {
             openai: data.providers.openai?.configured || false,
             deepseek: data.providers.deepseek?.configured || false,
             gemini: data.providers.gemini?.configured || false,
+            openrouter: data.providers.openrouter?.configured || false,
           };
           setProviderConfigured(updatedConfigured);
 
@@ -196,6 +219,9 @@ function ModelSettingsContent() {
             gemini: data.providers.gemini?.models?.length
               ? data.providers.gemini.models
               : PROVIDERS.gemini.defaultModels,
+            openrouter: data.providers.openrouter?.models?.length
+              ? data.providers.openrouter.models
+              : PROVIDERS.openrouter.defaultModels,
           };
           setDetectedModels(updatedDetected);
         }
