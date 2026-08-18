@@ -75,10 +75,11 @@ class LiteLLMAdapter(BaseModelAdapter):
                     target_model = f"deepseek/{target_model}"
 
             api_base = os.getenv("API_BASE") or os.getenv("OPENAI_API_BASE")
+            temp = 1.0 if "gemini-3" in target_model.lower() else request.temperature
             kwargs: Dict[str, Any] = {
                 "model": target_model,
                 "messages": messages,
-                "temperature": request.temperature,
+                "temperature": temp,
             }
             if api_base:
                 kwargs["api_base"] = api_base
