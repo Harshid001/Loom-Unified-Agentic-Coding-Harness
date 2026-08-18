@@ -82,8 +82,9 @@ describe('EvidenceView component', () => {
 describe('AblationsTab component', () => {
   it('renders standard ablation benchmark matrix when no custom data is provided', () => {
     render(<AblationsTab displayData={null} />);
-    expect(screen.getByText(/Ablation Experiment Benchmark Matrix/i)).toBeInTheDocument();
+    expect(screen.getByText(/Ablation Experiment Framework/i)).toBeInTheDocument();
     expect(screen.getByText(/Full Loom Harness/i)).toBeInTheDocument();
+    expect(screen.getByText(/CALIBRATION PENDING/i)).toBeInTheDocument();
   });
 
   it('renders custom ablation data if supplied', () => {
