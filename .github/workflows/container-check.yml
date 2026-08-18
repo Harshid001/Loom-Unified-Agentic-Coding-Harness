@@ -28,6 +28,7 @@ jobs:
           LOOM_FIRECRACKER_WORKER_URL: http://firecracker-worker:8101
           LOOM_FIRECRACKER_WORKER_TOKEN: ci-placeholder-firecracker-token
           LOOM_BACKUP_ENCRYPTION_KEY: ci-placeholder-backup-key
+          LOOM_BACKUP_S3_BUCKET: ci-placeholder-backup-bucket
           POSTGRES_PASSWORD: ci-placeholder-postgres-password
         run: docker compose config --quiet
       - name: Build production API image
