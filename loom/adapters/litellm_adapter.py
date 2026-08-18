@@ -90,7 +90,8 @@ class LiteLLMAdapter(BaseModelAdapter):
                     target_model = f"deepseek/{target_model}"
 
             api_base = (
-                os.getenv("DEEPSEEK_API_BASE")
+                os.getenv("TOKENHARBOR_API_BASE")
+                or os.getenv("DEEPSEEK_API_BASE")
                 or os.getenv("XKIRO_API_BASE")
                 or os.getenv("API_BASE")
                 or os.getenv("OPENAI_API_BASE")
