@@ -28,6 +28,16 @@ MODEL_COSTS = {
     "gemini/gemini-2.5-flash": {"input": 0.00000015, "output": 0.0000006},
     "gemini/gemini-2.0-flash": {"input": 0.0000001, "output": 0.0000004},
     "gemini/gemini-2.0-flash-lite": {"input": 0.000000075, "output": 0.0000003},
+    "deepseek/deepseek-v4-pro": {"input": 0.00000027, "output": 0.0000011},
+    "deepseek/deepseek-v4": {"input": 0.00000027, "output": 0.0000011},
+    "deepseek/deepseek-chat": {"input": 0.00000027, "output": 0.0000011},
+    "deepseek/deepseek-reasoner": {"input": 0.00000055, "output": 0.00000219},
+    "deepseek/deepseek-v3": {"input": 0.00000027, "output": 0.0000011},
+    "deepseek-v4-pro": {"input": 0.00000027, "output": 0.0000011},
+    "deepseek-v4": {"input": 0.00000027, "output": 0.0000011},
+    "deepseek-chat": {"input": 0.00000027, "output": 0.0000011},
+    "deepseek-reasoner": {"input": 0.00000055, "output": 0.00000219},
+    "deepseek-v3": {"input": 0.00000027, "output": 0.0000011},
     "mock": {"input": 0.0, "output": 0.0},
 }
 
@@ -71,6 +81,7 @@ class LiteLLMAdapter(BaseModelAdapter):
                     "deepseek",
                     "deepseek v4 pro",
                     "deepseek-v4 pro",
+                    "deepseek-v4-pro",
                     "deepseek-v4",
                     "deepseek-chat",
                 ]:
@@ -78,7 +89,12 @@ class LiteLLMAdapter(BaseModelAdapter):
                 else:
                     target_model = f"deepseek/{target_model}"
 
-            api_base = os.getenv("API_BASE") or os.getenv("OPENAI_API_BASE")
+            api_base = (
+                os.getenv("DEEPSEEK_API_BASE")
+                or os.getenv("XKIRO_API_BASE")
+                or os.getenv("API_BASE")
+                or os.getenv("OPENAI_API_BASE")
+            )
             temp = 1.0 if "gemini-3" in target_model.lower() else request.temperature
             kwargs: Dict[str, Any] = {
                 "model": target_model,

@@ -60,12 +60,12 @@ const PROVIDERS: Record<ProviderKey, ProviderMeta> = {
   },
   deepseek: {
     id: 'deepseek',
-    name: 'DeepSeek',
-    badge: 'V3 / Reasoner',
+    name: 'DeepSeek / Xkiro',
+    badge: 'V4 Pro / Reasoner',
     placeholder: 'sk-...',
     docUrl: 'https://platform.deepseek.com/api_keys',
-    description: 'Cost-efficient frontier open-architecture models optimized for coding and mathematical reasoning.',
-    defaultModels: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v3', 'deepseek/deepseek-chat'],
+    description: 'Cost-efficient frontier models including DeepSeek V4 Pro (via Xkiro), V3, and Reasoner / R1.',
+    defaultModels: ['deepseek-v4-pro', 'deepseek-v4', 'deepseek-chat', 'deepseek-reasoner', 'deepseek-v3'],
   },
   gemini: {
     id: 'gemini',

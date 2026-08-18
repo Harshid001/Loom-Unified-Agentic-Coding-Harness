@@ -47,6 +47,10 @@ const AVAILABLE_MODELS = [
   'claude-3-5-sonnet-20241022',
   'gpt-4o',
   'gpt-4o-mini',
+  'deepseek-v4-pro',
+  'deepseek-v4',
+  'deepseek-chat',
+  'deepseek-reasoner',
   'deepseek-v3',
   'claude-3-opus-20240229',
 ];

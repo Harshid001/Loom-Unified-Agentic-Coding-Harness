@@ -64,10 +64,11 @@ CURATED_MODELS: Dict[str, List[str]] = {
         "o3-mini",
     ],
     "deepseek": [
+        "deepseek-v4-pro",
+        "deepseek-v4",
         "deepseek-chat",
         "deepseek-reasoner",
         "deepseek-v3",
-        "deepseek/deepseek-chat",
     ],
     "gemini": [
         "gemini-3-flash-preview",
