@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -96,21 +96,23 @@ async def test_redis_run_store_mocked():
     mock_client.publish = AsyncMock()
     mock_client.aclose = AsyncMock()
 
+    # _get_client() is async; preloading _client avoids an unnecessary patch and
+    # preserves the real coroutine contract exercised by RedisRunStore.
     store._client = mock_client
-    with patch.object(store, "_get_client", return_value=mock_client):
-        await store.set_run("run_mock_01", {"status": "running", "step_count": 5})
-        mock_client.hset.assert_called_once()
 
-        res = await store.get_run("run_mock_01")
-        assert res is not None
-        assert res["status"] == "running"
-        assert res["step_count"] == 5
+    await store.set_run("run_mock_01", {"status": "running", "step_count": 5})
+    mock_client.hset.assert_called_once()
 
-        await store.delete_run("run_mock_01")
-        mock_client.delete.assert_called_once()
+    res = await store.get_run("run_mock_01")
+    assert res is not None
+    assert res["status"] == "running"
+    assert res["step_count"] == 5
 
-        await store.publish_event("run_mock_01", {"type": "ping"})
-        mock_client.publish.assert_called_once()
+    await store.delete_run("run_mock_01")
+    mock_client.delete.assert_called_once()
 
-        await store.close()
-        mock_client.aclose.assert_called_once()
+    await store.publish_event("run_mock_01", {"type": "ping"})
+    mock_client.publish.assert_called_once()
+
+    await store.close()
+    mock_client.aclose.assert_called_once()
