@@ -66,7 +66,7 @@ jobs:
           fi
 
       - name: Checkout exact release under test
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.release_ref }}
           fetch-depth: 0
@@ -81,7 +81,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${RELEASE_REF}"
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
@@ -197,7 +197,7 @@ jobs:
 
       - name: Upload release-gate evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: production-release-gates-${{ github.run_id }}
           path: |

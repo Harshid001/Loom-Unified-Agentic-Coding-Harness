@@ -71,7 +71,7 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
   ];
 
   return (
-    <div className="flex-1 flex flex-col gap-6" id="tabpanel-dag" role="tabpanel">
+    <div className="flex-1 flex flex-col gap-6" id="tabpanel-dag" role="tabpanel" aria-label="5-stage autonomous execution graph">
       {/* Topology Header */}
       <div className="loom-card-elevated flex items-center justify-between flex-wrap gap-4">
         <div>
@@ -90,15 +90,16 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
 
         <button
           onClick={onOpenLiveBox}
+          aria-label="Execute multi-agent pipeline in Live Box"
           className="btn-primary h-8 px-3.5 text-xs gap-1.5"
         >
-          <Play className="h-3 w-3 fill-current" />
+          <Play className="h-3 w-3 fill-current" aria-hidden="true" />
           <span>Execute Pipeline</span>
         </button>
       </div>
 
       {/* Signature Execution Graph */}
-      <div className="loom-card">
+      <div className="loom-card" role="region" aria-label="Pipeline DAG Topology Visualization">
         <ExecutionGraph
           stages={stages}
           activeStageId={selectedStage}
@@ -112,7 +113,7 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
           const currentStage = stages.find(s => s.id === selectedStage);
           if (!currentStage) return null;
           return (
-            <div className="loom-card-active space-y-3 animate-fadeIn">
+            <div className="loom-card-active space-y-3 animate-fadeIn" role="region" aria-label={`Stage details for ${currentStage.name}`}>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-[var(--brand)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">
@@ -128,9 +129,10 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox }) =>
                   </span>
                   <button
                     onClick={() => setSelectedStage(null)}
-                    className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-mono px-2 py-0.5 rounded hover:bg-[var(--bg-hover)] transition"
+                    aria-label="Close stage details"
+                    className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded border border-[var(--border-subtle)]"
                   >
-                    ✕ Close
+                    Close
                   </button>
                 </div>
               </div>

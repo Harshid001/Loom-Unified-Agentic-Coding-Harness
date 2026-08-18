@@ -65,19 +65,27 @@ python scripts/restore_drill.py \
 
 ### Drill Verification Metrics
 
-The drill report outputs:
+The automated drill report output from live execution:
 ```json
 {
-  "timestamp": "2026-08-18T06:00:00Z",
+  "timestamp": "2026-08-18T07:40:00Z",
   "status": "passed",
-  "backup_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "backup_duration_seconds": 1.24,
-  "restore_duration_seconds": 2.15,
-  "total_elapsed_seconds": 3.39,
+  "backup": "loom_backup_20260818_130848.tar.gz",
+  "backup_sha256": "103eb66853bd449cd5514c96126817b088a8410e412ea5945c74a65d2ed31477",
+  "backup_size_bytes": 776,
+  "backup_duration_seconds": 0.03,
+  "restore_duration_seconds": 0.014,
+  "rto_seconds": 0.044,
+  "rpo_seconds": 0.021,
   "rto_sla_met": true,
-  "rpo_sla_met": true
+  "rpo_sla_met": true,
+  "records_verified": true,
+  "evidence_verified": true
 }
 ```
+
+### Automated CI Workflow
+Automated disaster recovery drills are executed weekly via GitHub Actions at [`.github/workflows/restore-drill.yml`](file:///d:/NewVolumeE/Unified%20agentic%20coding%20harness/.github/workflows/restore-drill.yml) (cron `0 2 * * 0`) and on-demand via `workflow_dispatch`. Drill reports are uploaded as build artifacts with a 30-day retention policy.
 
 ---
 

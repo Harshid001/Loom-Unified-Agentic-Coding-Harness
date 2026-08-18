@@ -34,7 +34,7 @@ class TelemetryTracer:
         self._unflushed_count = 0
 
         self.otlp_endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-        self.otel_tracer = None
+        self.otel_tracer: Any = None
         if self.otlp_endpoint:
             self._init_otlp_exporter()
 

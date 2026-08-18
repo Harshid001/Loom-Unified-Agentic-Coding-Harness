@@ -317,24 +317,27 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowRawJson(!showRawJson)}
+              aria-expanded={showRawJson}
+              aria-label={showRawJson ? "Hide raw JSON evidence bundle" : "View raw JSON evidence bundle"}
               className="btn-secondary h-8 px-3 text-xs gap-1.5"
             >
-              <Code2 className="h-3.5 w-3.5" />
+              <Code2 className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{showRawJson ? 'Hide JSON' : 'View JSON'}</span>
             </button>
             <button
               onClick={() => handleCopy(rawJsonContent)}
               disabled={!hasArtifacts}
+              aria-label="Export complete evidence bundle JSON to clipboard"
               className="btn-primary h-8 px-3.5 text-xs gap-1.5"
             >
               {copiedHash === rawJsonContent ? (
                 <>
-                  <Check className="h-3.5 w-3.5" />
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Copied</span>
                 </>
               ) : (
                 <>
-                  <Copy className="h-3.5 w-3.5" />
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Export Bundle</span>
                 </>
               )}
@@ -344,18 +347,19 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({
 
         {/* Hash Seal Bar */}
         {rootSeal ? (
-          <div className="mt-4 p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg flex items-center justify-between gap-3 text-xs font-mono">
+          <div className="mt-4 p-3 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg flex items-center justify-between gap-3 text-xs font-mono" role="region" aria-label="Cryptographic hash seal">
             <div className="flex items-center gap-2 min-w-0">
-              <Lock className="h-3.5 w-3.5 text-[var(--brand)] shrink-0" />
+              <Lock className="h-3.5 w-3.5 text-[var(--brand)] shrink-0" aria-hidden="true" />
               <span className="text-[var(--text-muted)] shrink-0">SHA-256 CHAIN SEAL:</span>
               <span className="text-[var(--cyan)] truncate">{rootSeal}</span>
             </div>
             <button
               onClick={() => handleCopy(rootSeal)}
               className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition shrink-0"
+              aria-label="Copy SHA-256 hash seal to clipboard"
               title="Copy SHA-256 Hash Seal"
             >
-              {copiedHash === rootSeal ? <Check className="h-3.5 w-3.5 text-[var(--success)]" /> : <Copy className="h-3.5 w-3.5 text-[var(--text-muted)]" />}
+              {copiedHash === rootSeal ? <Check className="h-3.5 w-3.5 text-[var(--success)]" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5 text-[var(--text-muted)]" aria-hidden="true" />}
             </button>
           </div>
         ) : (

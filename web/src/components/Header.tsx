@@ -80,10 +80,11 @@ export const Header: React.FC<HeaderProps> = ({
         {onOpenRepoModal && (
           <button
             onClick={onOpenRepoModal}
+            aria-label={`Target repository: ${connectedRepo?.fullName || 'No Repository Connected'}`}
             className="flex items-center gap-1.5 text-xs bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] px-3 py-1.5 rounded-lg transition text-[var(--text-primary)] group h-8"
             title="Target Repository"
           >
-            <FolderGit2 className="h-3.5 w-3.5 text-[var(--text-secondary)] group-hover:text-[var(--brand)] transition shrink-0" />
+            <FolderGit2 className="h-3.5 w-3.5 text-[var(--text-secondary)] group-hover:text-[var(--brand)] transition shrink-0" aria-hidden="true" />
             <span className="font-mono text-xs max-w-[150px] truncate text-[var(--text-primary)]">
               {connectedRepo?.fullName || 'No Repository Connected'}
             </span>
@@ -91,8 +92,8 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Branch Indicator */}
-        <div className="flex items-center gap-1 text-xs bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 py-1.5 rounded-lg text-[var(--text-secondary)] font-mono h-8">
-          <GitBranch className="h-3 w-3 text-[var(--success)]" />
+        <div className="flex items-center gap-1 text-xs bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 py-1.5 rounded-lg text-[var(--text-secondary)] font-mono h-8" aria-label={`Current branch: ${connectedRepo?.selectedBranch || 'main'}`}>
+          <GitBranch className="h-3 w-3 text-[var(--success)]" aria-hidden="true" />
           <span>{connectedRepo?.selectedBranch || 'main'}</span>
         </div>
 
@@ -100,27 +101,32 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="relative">
           <button
             onClick={() => setShowModelDropdown(!showModelDropdown)}
+            aria-haspopup="listbox"
+            aria-expanded={showModelDropdown}
+            aria-label={`Select active model, currently ${modelName}`}
             className="flex items-center gap-1.5 text-xs bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] px-3 py-1.5 rounded-lg text-[var(--text-primary)] font-mono transition h-8"
             title="Active LLM"
           >
-            <Cpu className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+            <Cpu className="h-3.5 w-3.5 text-[var(--text-secondary)]" aria-hidden="true" />
             <span className="max-w-[140px] truncate">{modelName}</span>
-            <ChevronDown className="h-3 w-3 text-[var(--text-muted)] ml-0.5" />
+            <ChevronDown className="h-3 w-3 text-[var(--text-muted)] ml-0.5" aria-hidden="true" />
           </button>
 
           {showModelDropdown && (
             <>
-              <div className="fixed inset-0 z-30" onClick={() => setShowModelDropdown(false)} />
-              <div className="absolute left-0 mt-1.5 w-64 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl shadow-2xl z-40 py-1.5 overflow-hidden">
+              <div className="fixed inset-0 z-30" onClick={() => setShowModelDropdown(false)} aria-hidden="true" />
+              <div className="absolute left-0 mt-1.5 w-64 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-xl shadow-2xl z-40 py-1.5 overflow-hidden" role="listbox" aria-label="Available models">
                 <div className="px-3 py-1.5 text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold flex items-center justify-between border-b border-[var(--border-subtle)] mb-1">
                   <span>Select Active Model</span>
-                  <Link href="/settings/models" className="text-[var(--brand)] hover:underline text-[10px]">
+                  <Link href="/settings/models" className="text-[var(--brand)] hover:underline text-[10px]" aria-label="Configure models">
                     Configure
                   </Link>
                 </div>
                 {availableModels.map(m => (
                   <button
                     key={m}
+                    role="option"
+                    aria-selected={m === modelName}
                     onClick={() => {
                       onModelChange(m);
                       setShowModelDropdown(false);
@@ -131,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
                         : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] border-l-2 border-transparent'
                     }`}
                   >
-                    <Cpu className="h-3 w-3 opacity-60" />
+                    <Cpu className="h-3 w-3 opacity-60" aria-hidden="true" />
                     <span className="truncate">{m}</span>
                     {m === modelName && (
                       <span className="ml-auto text-[9px] bg-[var(--brand-soft)] text-[var(--brand-hover)] px-1.5 py-0.2 rounded shrink-0">
@@ -149,10 +155,11 @@ export const Header: React.FC<HeaderProps> = ({
         {connectedRepo && onOpenIssuesDrawer && (
           <button
             onClick={onOpenIssuesDrawer}
+            aria-label="Browse open GitHub issues"
             className="hidden sm:flex items-center gap-1.5 text-xs text-[var(--text-secondary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] px-3 py-1.5 rounded-lg transition font-medium h-8"
             title="Browse Open GitHub Issues"
           >
-            <ListTodo className="h-3.5 w-3.5 text-[var(--brand)]" />
+            <ListTodo className="h-3.5 w-3.5 text-[var(--brand)]" aria-hidden="true" />
             <span>Issues</span>
           </button>
         )}
@@ -161,42 +168,45 @@ export const Header: React.FC<HeaderProps> = ({
       {/* 3. RIGHT ZONE: Execution State & Actions */}
       <div className="flex items-center space-x-2.5 flex-wrap">
         {/* System Execution State Indicator */}
-        <div className={`status-pill ${isExecuting ? 'status-pill-running' : 'status-pill-success'} h-8`}>
-          <Circle className={`h-2 w-2 fill-current ${isExecuting ? 'animate-ping' : ''}`} />
+        <div className={`status-pill ${isExecuting ? 'status-pill-running' : 'status-pill-success'} h-8`} aria-live="polite" aria-label={`System status: ${isExecuting ? 'Executing' : 'System ready'}`}>
+          <Circle className={`h-2 w-2 fill-current ${isExecuting ? 'animate-ping' : ''}`} aria-hidden="true" />
           <span>{isExecuting ? 'EXECUTING' : 'SYSTEM READY'}</span>
         </div>
 
         {/* Total Runs Count */}
-        <div className="status-pill status-pill-idle h-8">
+        <div className="status-pill status-pill-idle h-8" aria-label={`Total runs: ${runCount}`}>
           <span>{runCount} RUNS</span>
         </div>
 
         {/* Model Settings Link */}
         <Link
           href="/settings/models"
+          aria-label="Open model settings"
           className="flex items-center justify-center h-8 w-8 text-[var(--text-secondary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)] rounded-lg transition"
           title="Model Settings"
         >
-          <SettingsIcon className="h-3.5 w-3.5" />
+          <SettingsIcon className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
 
         {/* API Key Modal Button */}
         {onOpenApiKeyModal && (
           <button
             onClick={onOpenApiKeyModal}
+            aria-label="Manage API keys"
             className="flex items-center justify-center h-8 w-8 text-[var(--text-secondary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)] rounded-lg transition"
             title="API Keys"
           >
-            <Key className="h-3.5 w-3.5" />
+            <Key className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         )}
 
         {/* Primary Action Button: Launch Live Box / New Run */}
         <button
           onClick={onOpenLiveBox}
+          aria-label="Open Live Box execution panel"
           className="btn-primary h-8 px-3.5 gap-1.5 text-xs shrink-0"
         >
-          <Play className="h-3 w-3 fill-current" />
+          <Play className="h-3 w-3 fill-current" aria-hidden="true" />
           <span>Open Live Box</span>
         </button>
       </div>

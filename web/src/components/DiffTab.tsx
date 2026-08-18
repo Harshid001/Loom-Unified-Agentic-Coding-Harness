@@ -27,9 +27,10 @@ export const DiffTab: React.FC<DiffTabProps> = ({ displayData, onOpenLiveBox }) 
         </div>
         <button
           onClick={onOpenLiveBox}
+          aria-label="Launch run to generate verified patch"
           className="btn-primary gap-1.5"
         >
-          <Play className="h-3.5 w-3.5 fill-current" />
+          <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
           <span>Launch Run to Generate Patch</span>
         </button>
       </div>
@@ -46,7 +47,7 @@ export const DiffTab: React.FC<DiffTabProps> = ({ displayData, onOpenLiveBox }) 
   };
 
   return (
-    <div className="flex-1 loom-card flex flex-col gap-4" id="tabpanel-diff" role="tabpanel">
+    <div className="flex-1 loom-card flex flex-col gap-4" id="tabpanel-diff" role="tabpanel" aria-label="Verified unified patch diff viewer">
       <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
         <div>
           <div className="flex items-center gap-2">
@@ -64,16 +65,17 @@ export const DiffTab: React.FC<DiffTabProps> = ({ displayData, onOpenLiveBox }) 
 
         <button
           onClick={handleCopy}
+          aria-label={copied ? "Patch diff copied to clipboard" : "Copy patch diff to clipboard"}
           className="btn-secondary h-8 px-3 text-xs gap-1.5"
         >
           {copied ? (
             <>
-              <Check className="h-3.5 w-3.5 text-[var(--success)]" />
+              <Check className="h-3.5 w-3.5 text-[var(--success)]" aria-hidden="true" />
               <span>Copied Diff</span>
             </>
           ) : (
             <>
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Copy Diff</span>
             </>
           )}

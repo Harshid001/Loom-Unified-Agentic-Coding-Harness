@@ -267,6 +267,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
                     type={showPassword ? 'text' : 'password'}
                     value={token}
                     onChange={(event) => setToken(event.target.value)}
+                    aria-label="Dashboard Token or Root API Key"
                     placeholder="Enter master token or API key"
                     autoComplete="current-password"
                     className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-root)] pl-9 pr-10 py-2.5 text-xs font-mono text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)]/60 focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/20"
@@ -276,10 +277,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1"
+                      aria-label={showPassword ? 'Hide token' : 'Show token'}
                       title={showPassword ? 'Hide token' : 'Show token'}
                       tabIndex={-1}
                     >
-                      {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      {showPassword ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Eye className="h-3.5 w-3.5" aria-hidden="true" />}
                     </button>
                   )}
                 </div>
@@ -288,18 +290,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
               <button
                 type="submit"
                 disabled={checking || !token.trim()}
+                aria-label="Authenticate with token"
                 className="btn-primary w-full h-11 text-xs font-mono font-bold uppercase tracking-wider gap-2 shadow-lg shadow-[var(--brand)]/20 hover:shadow-[var(--brand)]/40 transition-all group"
               >
                 {checking ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                     <span>Authenticating…</span>
                   </>
                 ) : (
                   <>
-                    <Key className="h-3.5 w-3.5" />
+                    <Key className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Sign in with Token</span>
-                    <ArrowRight className="h-3.5 w-3.5 ml-auto opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                    <ArrowRight className="h-3.5 w-3.5 ml-auto opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" aria-hidden="true" />
                   </>
                 )}
               </button>

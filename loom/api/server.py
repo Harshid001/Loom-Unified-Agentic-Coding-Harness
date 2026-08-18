@@ -40,6 +40,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
+from loom.infra.distributed import RedisCoordinator, RunMetadata
+
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
@@ -126,6 +128,7 @@ REQUEST_LATENCY = _safe_prometheus_metric(Histogram, "loom_request_duration_seco
 
 # Process-local active run store with TTL eviction
 ACTIVE_RUNS: Dict[str, Dict[str, Any]] = {}
+coordinator = RedisCoordinator()
 
 
 def prune_active_runs(max_age_seconds: int = 3600, max_entries: int = 1000) -> None:
@@ -558,9 +561,6 @@ async def create_run(
     org = entitlements.get_org(org_id) or entitlements._orgs.get(next(iter(getattr(entitlements, "_orgs", {})), ""), None)
 
     idempotency_key = req.idempotency_key or idempotency_key_header or x_idempotency_key_header
-    from loom.infra.distributed import RedisCoordinator
-
-    coordinator = RedisCoordinator()
     if idempotency_key and coordinator.enabled:
         existing_run_id = await coordinator.get_idempotent_run(org_id, idempotency_key)
         if existing_run_id:
@@ -653,6 +653,18 @@ async def create_run(
     run_entry: Dict[str, Any] = {"queues": [], "events": [], "state": state, "created_at": time.time()}
     ACTIVE_RUNS[run_id] = run_entry
 
+    if coordinator.enabled:
+        await coordinator.register_run(
+            RunMetadata(
+                run_id=run_id,
+                org_id=org_id,
+                repo_path=repo_path,
+                status="running",
+                sandbox_tier=sandbox_tier,
+                created_at=time.time(),
+            )
+        )
+
     def broadcast_event(event_type: str, step_name: str, data: Dict[str, Any]) -> None:
         evt = {
             "type": event_type,
@@ -666,6 +678,12 @@ async def create_run(
             try:
                 q.put_nowait(evt)
             except Exception:
+                pass
+        if coordinator.enabled:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(coordinator.record_event(run_id, evt))
+            except RuntimeError:
                 pass
 
     def on_step_start(step_name: str, model_name: str) -> None:
@@ -745,6 +763,48 @@ async def stream_run_events(
     """Authenticated SSE stream scoped to the run's owning organization."""
     run_entry = ACTIVE_RUNS.get(run_id)
     if not run_entry:
+        if coordinator.enabled:
+            run_data = await coordinator.get_run(run_id)
+            if not run_data or run_data.get("org_id") != principal.org_id:
+                raise HTTPException(status_code=404, detail="Run not found")
+
+            async def remote_event_generator() -> Any:
+                terminal_seen = False
+                for event in await coordinator.list_events(run_id):
+                    yield f"data: {json.dumps(event)}\n\n"
+                    if isinstance(event, dict) and event.get("type") == "status_change":
+                        st = str(event.get("data", {}).get("status", "")).lower()
+                        if st in {"completed", "failed", "merged", "cancelled", "rolled_back", "security_hold", "evidence_review"}:
+                            terminal_seen = True
+
+                if terminal_seen:
+                    return
+
+                pubsub = coordinator.client.pubsub()
+                channel = f"loom:run:{run_id}:events"
+                await pubsub.subscribe(channel)
+                try:
+                    while True:
+                        msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                        if msg and msg.get("type") == "message":
+                            data_val = msg["data"]
+                            yield f"data: {data_val}\n\n"
+                            try:
+                                evt = json.loads(data_val) if isinstance(data_val, str) else data_val
+                                if isinstance(evt, dict) and evt.get("type") == "status_change":
+                                    st = str(evt.get("data", {}).get("status", "")).lower()
+                                    if st in {"completed", "failed", "merged", "cancelled", "rolled_back", "security_hold", "evidence_review"}:
+                                        break
+                            except Exception:
+                                pass
+                        else:
+                            yield f"data: {json.dumps({'type': 'ping', 'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'run_id': run_id})}\n\n"
+                finally:
+                    await pubsub.unsubscribe(channel)
+                    await pubsub.aclose()
+
+            return StreamingResponse(remote_event_generator(), media_type="text/event-stream")
+
         raise HTTPException(status_code=404, detail="Run not found")
 
     run_org = run_entry.get("state").shared_data.get("org_id") if run_entry.get("state") else None
@@ -796,6 +856,16 @@ async def control_run(
 ) -> dict:
     run_entry = ACTIVE_RUNS.get(req.run_id)
     if not run_entry:
+        if coordinator.enabled:
+            run_data = await coordinator.get_run(req.run_id)
+            if not run_data or run_data.get("org_id") != principal.org_id:
+                raise HTTPException(status_code=404, detail=f"Active run {req.run_id} not found")
+            await coordinator.publish_control(
+                req.run_id,
+                req.action,
+                {"model": req.model, "snapshot_id": req.snapshot_id},
+            )
+            return {"status": "accepted", "action": req.action.lower(), "run_id": req.run_id, "remote": True}
         if req.action == "rollback" and req.run_id:
             return _do_rollback(req.run_id)
         raise HTTPException(status_code=404, detail=f"Active run {req.run_id} not found")

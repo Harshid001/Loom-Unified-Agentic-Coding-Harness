@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <h3 className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider px-2 mb-1.5">
         {title}
       </h3>
-      <nav className="space-y-0.5">
+      <nav className="space-y-0.5" aria-label={title}>
         {items.map(item => {
           const isActive = activeTab === item.id;
           const Icon = item.icon;
@@ -119,13 +119,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
+              aria-pressed={isActive}
+              aria-controls={`tabpanel-${item.id}`}
+              id={`tab-${item.id}`}
               className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
                 isActive
                   ? 'bg-[var(--brand-soft)] text-[var(--brand-hover)] border border-[var(--brand)]/30 font-semibold'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] border border-transparent'
               }`}
             >
-              <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-[var(--brand)]' : 'text-[var(--text-muted)]'}`} />
+              <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-[var(--brand)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
               <span>{item.label}</span>
             </button>
           );
@@ -150,10 +153,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {onOpenRepoModal && (
             <button
               onClick={onOpenRepoModal}
+              aria-label="Target repository configuration"
               className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
             >
               <div className="flex items-center gap-2 truncate">
-                <FolderGit2 className="h-3.5 w-3.5 text-[var(--text-muted)] shrink-0" />
+                <FolderGit2 className="h-3.5 w-3.5 text-[var(--text-muted)] shrink-0" aria-hidden="true" />
                 <span className="truncate">{connectedRepoName}</span>
               </div>
             </button>
@@ -161,18 +165,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <Link
             href="/settings/models"
+            aria-label="Open model settings"
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
           >
-            <SettingsIcon className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+            <SettingsIcon className="h-3.5 w-3.5 text-[var(--text-muted)]" aria-hidden="true" />
             <span>Model Settings</span>
           </Link>
 
           {onOpenApiKeyModal && (
             <button
               onClick={onOpenApiKeyModal}
+              aria-label="Manage API keys"
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition"
             >
-              <Key className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+              <Key className="h-3.5 w-3.5 text-[var(--text-muted)]" aria-hidden="true" />
               <span>API Keys</span>
             </button>
           )}
@@ -195,7 +201,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Filter & Search */}
         <div className="space-y-1.5 mb-2">
           <div className="relative">
-            <Search className="h-3 w-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <Search className="h-3 w-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
             <input
               type="text"
               value={searchQuery}
@@ -203,11 +209,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
+              aria-label="Filter runs history"
               placeholder="Filter runs..."
               className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg pl-7 pr-2 py-1 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--brand)] font-mono"
             />
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" role="group" aria-label="Status filters">
             {(['all', 'pass', 'fail', 'exec'] as const).map(filter => (
               <button
                 key={filter}
@@ -215,6 +222,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   setStatusFilter(filter);
                   setCurrentPage(1);
                 }}
+                aria-pressed={statusFilter === filter}
+                aria-label={`Filter by ${filter} status`}
                 className={`flex-1 py-0.5 text-[9px] uppercase font-mono font-bold rounded transition ${
                   statusFilter === filter
                     ? 'bg-[var(--brand-soft)] text-[var(--brand-hover)] border border-[var(--brand)]/30'
@@ -229,17 +238,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Runs List Items */}
         {isLoadingRuns ? (
-          <div className="flex-1 flex items-center justify-center py-6">
-            <Loader2 className="h-4 w-4 text-[var(--text-muted)] animate-spin" />
+          <div className="flex-1 flex items-center justify-center py-6" aria-live="polite">
+            <Loader2 className="h-4 w-4 text-[var(--text-muted)] animate-spin" aria-hidden="true" />
           </div>
         ) : filteredRuns.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-3 gap-1">
-            <Circle className="h-4 w-4 text-[var(--text-muted)]" />
+            <Circle className="h-4 w-4 text-[var(--text-muted)]" aria-hidden="true" />
             <p className="text-[11px] text-[var(--text-muted)]">No recorded runs</p>
           </div>
         ) : (
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="space-y-1 overflow-y-auto flex-1 pr-0.5">
+            <div className="space-y-1 overflow-y-auto flex-1 pr-0.5" role="feed" aria-label="Historical runs">
               {paginatedRuns.map(run => {
                 const isSelected = selectedRun === run.id;
                 const isPassed = run.status === 'VERIFIED SUCCESS';
@@ -252,6 +261,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       setSelectedRun(run.id);
                       setActiveTab('overview');
                     }}
+                    aria-label={`Select run ${run.id}: ${run.issue}`}
                     className={`w-full text-left p-2 rounded-lg border transition ${
                       isSelected
                         ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--text-primary)] shadow-sm'
@@ -284,7 +294,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]">
+              <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)] text-[10px] font-mono text-[var(--text-muted)]" aria-label="Runs pagination">
                 <span>
                   {currentPage} / {totalPages}
                 </span>
@@ -292,16 +302,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
+                    aria-label="Previous page of runs"
                     className="p-1 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] disabled:opacity-30 border border-[var(--border-subtle)]"
                   >
-                    <ChevronLeft className="h-3 w-3" />
+                    <ChevronLeft className="h-3 w-3" aria-hidden="true" />
                   </button>
                   <button
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
+                    aria-label="Next page of runs"
                     className="p-1 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] disabled:opacity-30 border border-[var(--border-subtle)]"
                   >
-                    <ChevronRight className="h-3 w-3" />
+                    <ChevronRight className="h-3 w-3" aria-hidden="true" />
                   </button>
                 </div>
               </div>

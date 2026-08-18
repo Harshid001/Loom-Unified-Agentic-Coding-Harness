@@ -268,7 +268,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
 
           {/* Subtabs Bar */}
-          <div className="flex items-center gap-1 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto">
+          <div className="flex items-center gap-1 border-b border-[var(--border-subtle)] pb-2 overflow-x-auto" role="tablist" aria-label="Run inspection tabs">
             {[
               { id: 'overview' as const, label: 'Overview', icon: Activity },
               { id: 'diff' as const, label: 'Patch Diff', icon: FileCode },
@@ -281,6 +281,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               return (
                 <button
                   key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`subpanel-${tab.id}`}
+                  id={`subtab-${tab.id}`}
                   onClick={() => setDetailTab(tab.id)}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono transition ${
                     isActive
@@ -288,7 +292,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] border border-transparent'
                   }`}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{tab.label}</span>
                 </button>
               );
