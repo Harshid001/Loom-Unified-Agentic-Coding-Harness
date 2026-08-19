@@ -156,7 +156,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn cursor-pointer"
+      className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in cursor-pointer"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
@@ -244,7 +244,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
         {/* Generated Key Alert Box */}
         {generatedKey && (
-          <div className="bg-[var(--success)]/10 border border-[var(--success)]/30 rounded-xl p-3 space-y-2 animate-fadeIn">
+           <div className="bg-[var(--success)]/10 border border-[var(--success)]/30 rounded-xl p-3 space-y-2 animate-fade-in">
             <div className="flex items-center justify-between text-xs text-[var(--success)] font-semibold font-mono">
               <span>API Key Generated & Activated!</span>
             </div>

@@ -82,7 +82,9 @@ export const NewRunModal: React.FC<NewRunModalProps> = ({
     >
       <div className="bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-2xl shadow-2xl shadow-black/50 w-full max-w-xl overflow-hidden animate-slide-in-from-top">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-[var(--border-subtle)]">
+        <div className="relative flex items-center justify-between px-6 pt-5 pb-4 border-b border-[var(--border-subtle)]">
+          {/* Top accent line */}
+          <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--brand)]/40 to-transparent" aria-hidden="true" />
           <div>
             <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30 inline-block mb-1.5">
               PIPELINE EXECUTION

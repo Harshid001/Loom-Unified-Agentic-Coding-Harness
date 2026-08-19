@@ -159,17 +159,27 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
     <div className={`w-full ${className}`}>
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
-          <GitBranch className="h-4 w-4 text-[var(--brand)]" />
+          <div className="h-6 w-6 rounded-lg bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center">
+            <GitBranch className="h-3 w-3 text-[var(--brand)]" />
+          </div>
           <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider font-mono">
             5-Stage Execution Graph
           </h3>
         </div>
-        <span className="text-[11px] font-mono text-[var(--text-muted)]">
-          Preconditioned State Machine DAG
-        </span>
+        <div className="flex items-center gap-1.5">
+          <div className="h-1 w-1 rounded-full bg-[var(--text-muted)]" />
+          <div className="h-1 w-1 rounded-full bg-[var(--text-muted)]/60" />
+          <div className="h-1 w-1 rounded-full bg-[var(--text-muted)]/30" />
+          <span className="text-[10px] font-mono text-[var(--text-muted)] ml-1">
+            Preconditioned State Machine DAG
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 relative">
+        {/* Connecting line (desktop only) */}
+        <div className="hidden md:block absolute top-[42px] left-[calc(10%+8px)] right-[calc(10%+8px)] h-px bg-gradient-to-r from-[var(--border-subtle)] via-[var(--border-default)] to-[var(--border-subtle)] pointer-events-none" aria-hidden="true" />
+
         {stages.map((stage, idx) => {
           const isSelected = activeStageId === stage.id;
           const statusClasses = getStageStatusClasses(stage.status, isSelected);
@@ -177,9 +187,14 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
           return (
             <div key={stage.id} className="relative flex flex-col">
+              {/* Connector dot (desktop) */}
+              <div className="hidden md:flex absolute top-[38px] left-1/2 -translate-x-1/2 z-10 pointer-events-none" aria-hidden="true">
+                <div className="h-2 w-2 rounded-full bg-[var(--bg-sidebar)] border border-[var(--border-default)]" />
+              </div>
+
               <button
                 onClick={() => onSelectStage?.(stage.id)}
-                className={`w-full text-left p-3.5 rounded-xl border transition flex flex-col justify-between min-h-[118px] cursor-pointer group ${statusClasses}`}
+                className={`w-full text-left p-3.5 rounded-xl border transition-all duration-300 ease-out flex flex-col justify-between min-h-[118px] cursor-pointer group ${statusClasses}`}
                 aria-label={`Stage ${stage.number}: ${stage.name} - ${stage.status}`}
               >
                 {/* Header: Stage Number + Status Badge */}

@@ -1,6 +1,5 @@
 "use client";
 
-import React, { useEffect } from 'react';
 import { X, Keyboard, Command } from 'lucide-react';
 
 interface KeyboardShortcutsHelpProps {
@@ -20,18 +19,6 @@ const SHORTCUTS = [
 ];
 
 export const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({ isOpen, onClose }) => {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isCmd = e.metaKey || e.ctrlKey;
-      if (isCmd && e.key === '/') {
-        e.preventDefault();
-        isOpen ? onClose() : undefined; // Will be handled by parent to open, but we handle close here just in case
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   return (

@@ -87,15 +87,15 @@ export const GitHubIssuesDrawer: React.FC<GitHubIssuesDrawerProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-end bg-black/80 backdrop-blur-sm animate-fadeIn cursor-pointer"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="issues-drawer-title"
-      onClick={onClose}
-    >
       <div
-        className="w-full max-w-xl h-full bg-[var(--bg-surface)] border-l border-[var(--border-default)] shadow-2xl flex flex-col overflow-hidden animate-slideInRight cursor-default"
+        className="fixed inset-0 z-50 flex items-center justify-end bg-black/80 backdrop-blur-sm animate-fade-in cursor-pointer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="issues-drawer-title"
+        onClick={onClose}
+      >
+      <div
+        className="w-full max-w-xl h-full bg-[var(--bg-surface)] border-l border-[var(--border-default)] shadow-2xl flex flex-col overflow-hidden animate-slide-in-from-right cursor-default"
         onClick={e => e.stopPropagation()}
       >
         {/* Drawer Header */}

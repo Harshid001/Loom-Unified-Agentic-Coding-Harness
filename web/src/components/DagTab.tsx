@@ -114,7 +114,7 @@ export const DagTab: React.FC<DagTabProps> = ({ displayData, onOpenLiveBox, acti
           const currentStage = stages.find(s => s.id === selectedStage);
           if (!currentStage) return null;
           return (
-            <div className="loom-card-active space-y-3 animate-fadeIn" role="region" aria-label={`Stage details for ${currentStage.name}`}>
+            <div className="loom-card-active space-y-3 animate-fade-in" role="region" aria-label={`Stage details for ${currentStage.name}`}>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-[var(--brand)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">

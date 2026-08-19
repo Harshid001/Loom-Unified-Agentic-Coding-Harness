@@ -253,7 +253,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       aria-label="Harness Navigation"
     >
       {/* ── Harness Lifecycle Navigation ── */}
-      <div className="bg-[var(--bg-sidebar)] border border-[var(--border-subtle)] rounded-xl overflow-hidden">
+      <div className="bg-[var(--bg-sidebar)] border border-[var(--border-subtle)] rounded-xl overflow-hidden relative">
+        {/* Subtle animated top-edge accent */}
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[var(--brand)]/20 to-transparent pointer-events-none" aria-hidden="true" />
         {/* Collapse toggle */}
         <div className="flex items-center justify-between px-2 pt-2">
           {!collapsed && (

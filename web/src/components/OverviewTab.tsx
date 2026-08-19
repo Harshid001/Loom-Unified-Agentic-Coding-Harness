@@ -145,7 +145,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       <div className="loom-card-elevated overflow-hidden relative">
         {/* Subtle brand gradient accent at top */}
         <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--brand)]/50 to-transparent" aria-hidden="true" />
-        <div className="flex items-start justify-between flex-wrap gap-4">
+        {/* Background ambient glow */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--brand)]/5 rounded-full blur-[80px] pointer-events-none" aria-hidden="true" />
+        <div className="relative z-10 flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">

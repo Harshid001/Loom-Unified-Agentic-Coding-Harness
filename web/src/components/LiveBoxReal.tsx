@@ -360,10 +360,16 @@ export function LiveBoxReal({
       {/* Modal Content */}
       <div className="relative w-full max-w-6xl h-[85vh] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
         {/* Header Bar */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-subtle)] shrink-0">
+        <div className="relative flex items-center justify-between px-5 py-3 border-b border-[var(--border-subtle)] shrink-0">
+          {/* Top accent */}
+          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[var(--brand)]/20 to-transparent pointer-events-none" aria-hidden="true" />
           <div className="flex items-center gap-3">
-            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-[var(--brand)] to-[var(--cyan)] flex items-center justify-center shadow-md shadow-[var(--brand)]/20">
-              <Terminal className="h-3.5 w-3.5 text-white" aria-hidden="true" />
+            {/* Terminal-style icon with ambient glow */}
+            <div className="relative">
+              <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-[var(--brand)] to-[var(--cyan)] flex items-center justify-center shadow-md shadow-[var(--brand)]/20">
+                <Terminal className="h-3.5 w-3.5 text-white" aria-hidden="true" />
+              </div>
+              <div className="absolute -inset-1 rounded-xl bg-[var(--brand)]/10 blur-sm -z-10 pointer-events-none" aria-hidden="true" />
             </div>
             <div>
               <h2 className="text-xs font-bold text-[var(--text-primary)] font-mono uppercase">Live Pipeline Execution</h2>

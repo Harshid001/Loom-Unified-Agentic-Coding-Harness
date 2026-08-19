@@ -97,9 +97,12 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <>
     <header
-      className="border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/90 backdrop-blur-md px-4 lg:px-6 py-2.5 flex items-center justify-between shrink-0 gap-3 z-30"
+      className="border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/90 backdrop-blur-md px-4 lg:px-6 py-2.5 flex items-center justify-between shrink-0 gap-3 z-30 relative"
       role="banner"
     >
+      {/* Subtle animated top-edge glow */}
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[var(--brand)]/30 to-transparent pointer-events-none" aria-hidden="true" />
+
       {/* ── 1. LEFT ZONE: Brand & Harness Subtitle ── */}
       <div className="flex items-center gap-3 shrink-0">
         {/* Gradient logo with animated ring */}

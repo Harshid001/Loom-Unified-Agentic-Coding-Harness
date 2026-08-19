@@ -144,9 +144,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({ runHistory, connecte
   }
 
   return (
-    <div className="flex flex-col gap-5" id="tabpanel-analytics" role="tabpanel" aria-label="Execution analytics dashboard">
+    <div className="flex flex-col gap-5 animate-fade-in" id="tabpanel-analytics" role="tabpanel" aria-label="Execution analytics dashboard">
       {/* Header */}
-      <div className="loom-card-elevated">
+      <div className="loom-card-elevated relative overflow-hidden">
+        <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--brand)]/30 to-transparent" aria-hidden="true" />
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">
             ANALYTICS

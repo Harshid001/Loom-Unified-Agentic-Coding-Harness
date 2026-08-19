@@ -421,7 +421,9 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({
         {/* Hero Header */}
         <div className="loom-card-active relative overflow-hidden">
           <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--brand)]/50 to-transparent" aria-hidden="true" />
-          <div className="flex items-start justify-between flex-wrap gap-4">
+          {/* Ambient background glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-[var(--brand)]/5 rounded-full blur-[80px] pointer-events-none" aria-hidden="true" />
+          <div className="relative z-10 flex items-start justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3.5">
               <div className="sha-seal h-12 w-12 rounded-full">
                 <div className="h-12 w-12 rounded-full bg-[var(--bg-surface)] flex items-center justify-center">

@@ -123,6 +123,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <main className="min-h-screen bg-[var(--bg-root)] text-[var(--text-primary)] flex items-center justify-center px-6 relative overflow-hidden">
         {/* Background glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[var(--brand)]/15 rounded-full blur-[120px] pointer-events-none" aria-hidden="true" />
+        {/* Animated ring pulses */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 border border-[var(--brand)]/10 rounded-full animate-ping opacity-20" aria-hidden="true" />
         <div className="relative z-10 flex flex-col items-center gap-4 font-mono">
           <div className="relative flex items-center justify-center">
             <div className="h-16 w-16 rounded-2xl border border-[var(--brand)]/40 bg-[var(--bg-surface)]/80 flex items-center justify-center shadow-2xl shadow-[var(--brand)]/20">

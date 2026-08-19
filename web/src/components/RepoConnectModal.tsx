@@ -235,7 +235,7 @@ export const RepoConnectModal: React.FC<RepoConnectModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn cursor-pointer"
+       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in cursor-pointer"
       role="dialog"
       aria-modal="true"
       aria-labelledby="repo-modal-title"

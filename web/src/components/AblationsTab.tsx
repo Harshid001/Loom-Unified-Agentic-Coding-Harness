@@ -55,7 +55,7 @@ export const AblationsTab: React.FC<AblationsTabProps> = ({ displayData }) => {
   const ablations = hasMeasuredData ? displayData.ablations : ARCHITECTURE_CONFIGURATIONS;
 
   return (
-    <div className="flex-1 loom-card flex flex-col gap-6" id="tabpanel-ablations" role="tabpanel">
+    <div className="flex-1 loom-card flex flex-col gap-6 animate-fade-in" id="tabpanel-ablations" role="tabpanel">
       <div className="border-b border-[var(--border-subtle)] pb-3">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-mono font-bold text-[var(--brand-hover)] bg-[var(--brand-soft)] px-2 py-0.5 rounded border border-[var(--brand)]/30">

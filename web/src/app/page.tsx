@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRuns } from '../hooks/useRuns';
 import { useActiveRun } from '../hooks/useActiveRun';
 import { useGitHub } from '../hooks/useGitHub';
@@ -24,7 +24,6 @@ import { MobileBottomNav } from '../components/MobileBottomNav';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
   FolderGit2,
-  GitBranch,
   ListTodo,
   Cpu,
   Box,
@@ -51,7 +50,6 @@ const AVAILABLE_MODELS = [
   'deepseek-v3',
   'deepseek-chat',
   'deepseek-reasoner',
-  'claude-3-7-sonnet-20250219',
   'claude-3-opus-20240229',
   'gpt-4o-mini',
 ];
@@ -288,8 +286,6 @@ function LoomControlPlane() {
       }
     : null;
 
-  const repoName = connectedRepo?.fullName || 'No Repository Connected';
-
   return (
     <div className="min-h-screen flex flex-col font-sans">
       <Header
@@ -336,7 +332,7 @@ function LoomControlPlane() {
           connectedRepoName={connectedRepo?.fullName || 'No Repository Connected'}
         />
 
-        <main className="flex-1 flex flex-col min-w-0 gap-5">
+        <main className="flex-1 flex flex-col min-w-0 gap-5 animate-fade-in">
           {/* View: Overview & Live Active Run */}
           {activeTab === 'overview' && (
             <OverviewTab
@@ -369,7 +365,7 @@ function LoomControlPlane() {
 
           {/* View: Agents Architecture */}
           {activeTab === 'agents' && (
-            <div className="loom-card flex flex-col gap-6">
+            <div className="loom-card-elevated flex flex-col gap-6 animate-fade-in">
               <div className="border-b border-[var(--border-subtle)] pb-3">
                 <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase tracking-tight">
                   Multi-Agent Architecture
@@ -391,7 +387,7 @@ function LoomControlPlane() {
                   const Icon = agent.icon;
                   const isActive = displayData && displayData.nodes?.[i]?.status === 'completed';
                   return (
-                    <div key={i} className="relative">
+                    <div key={i} style={{ animationDelay: `${i * 80}ms` }} className="animate-fade-in">
                       {/* Flow arrow between agents */}
                       {i < arr.length - 1 && (
                         <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-10 hidden sm:flex items-center gap-1 text-[var(--text-muted)]">
@@ -441,7 +437,7 @@ function LoomControlPlane() {
 
           {/* View: Sandbox Isolation */}
           {activeTab === 'sandbox' && (
-            <div className="loom-card flex flex-col gap-6">
+            <div className="loom-card-elevated flex flex-col gap-6 animate-fade-in">
               <div className="border-b border-[var(--border-subtle)] pb-3">
                 <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase tracking-tight">
                   Sandbox Tier Isolation
@@ -461,11 +457,12 @@ function LoomControlPlane() {
                   return (
                     <div
                       key={tier.tier}
-                      className={`p-4 rounded-xl border space-y-3 transition-all duration-200 ${
+                      className={`loom-card p-4 rounded-xl border space-y-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${
                         tier.active
-                          ? 'tier-card-active border-[var(--cyan)]/60 bg-[var(--bg-elevated)]'
-                          : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)]'
+                          ? 'loom-card-active'
+                          : 'border-[var(--border-subtle)] hover:border-[var(--border-default)]'
                       }`}
+                      style={tier.active ? { borderColor: 'rgba(0,212,255,0.4)' } : undefined}
                     >
                       <div className="flex items-center gap-2">
                         <div
@@ -510,7 +507,7 @@ function LoomControlPlane() {
 
           {/* View: Tests */}
           {activeTab === 'tests' && (
-            <div className="loom-card flex flex-col gap-4">
+            <div className="loom-card-elevated flex flex-col gap-4 animate-fade-in">
               <div className="border-b border-[var(--border-subtle)] pb-3 flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase tracking-tight">
