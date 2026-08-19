@@ -210,3 +210,95 @@ def test_execute_failure_502(worker_client, tmp_path: Path, monkeypatch):
         )
         assert resp.status_code == 502
 
+
+def test_sha256sum_file_contains_real_hash():
+    """Production-grade guard: infra/firecracker/SHA256SUM must contain a real
+    64-char hex hash that matches the upstream Firecracker v1.16.1 release,
+    not the placeholder. The host validator fails closed otherwise."""
+    import re
+
+    repo_root = Path(__file__).resolve().parents[1]
+    sha256_file = repo_root / "infra" / "firecracker" / "SHA256SUM"
+    assert sha256_file.exists(), "infra/firecracker/SHA256SUM must exist"
+
+    raw = sha256_file.read_text(encoding="utf-8")
+    hashes = [
+        line.strip().lower()
+        for line in raw.splitlines()
+        if re.fullmatch(r"[0-9a-fA-F]{64}", line.strip())
+    ]
+    assert len(hashes) == 1, f"Expected exactly one hash, got {len(hashes)}: {hashes}"
+    assert set(hashes[0]) != {"0"}, "Placeholder (all zeros) hash detected"
+    # Officially published Firecracker v1.16.1 x86_64 release hash:
+    assert hashes[0] == (
+        "382a02a869e4d6d5cb14c40577f9545e8458021ea8b0b2d3fc10ec14d9c242e6"
+    ), f"SHA256SUM must pin the published v1.16.1 hash; got {hashes[0]}"
+
+
+def test_host_health_rejects_missing_approved_hash(tmp_path: Path):
+    """host_health() must fail closed when the approved SHA256SUM contains
+    no real hash (regression for the old placeholder-text issue)."""
+    import io as _io
+    import os as _os
+
+    fake_hash_file = tmp_path / "SHA256SUM.empty"
+    fake_hash_file.write_text("# REQUIRED: replace with the SHA-256...\n", encoding="utf-8")
+
+    binary = tmp_path / "firecracker_bin"
+    binary.write_bytes(b"fake-firecracker-binary-content-for-hash-test")
+    kernel = tmp_path / "vmlinux"
+    kernel.write_bytes(b"kernel")
+    rootfs = tmp_path / "rootfs.ext4"
+    rootfs.write_bytes(b"rootfs")
+
+    _orig_name = _os.name
+    _os.name = "posix"
+    try:
+        with patch.object(firecracker_worker, "APPROVED_HASH_FILE", fake_hash_file), \
+             patch.object(firecracker_worker, "FIRECRACKER_BIN", binary), \
+             patch.object(firecracker_worker, "KERNEL_PATH", kernel), \
+             patch.object(firecracker_worker, "ROOTFS_PATH", rootfs), \
+             patch.object(firecracker_worker.platform, "machine", return_value="x86_64"), \
+             patch.object(firecracker_worker.os, "popen", lambda cmd: _io.StringIO("Firecracker v1.16.1\n")), \
+             patch.object(firecracker_worker.os, "access", lambda p, m: True), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("pathlib.Path.is_file", return_value=True):
+            with pytest.raises(RuntimeError, match="approved Firecracker SHA256"):
+                firecracker_worker.host_health()
+    finally:
+        _os.name = _orig_name
+
+
+def test_host_health_rejects_mismatched_hash(tmp_path: Path):
+    """host_health() must fail closed when the approved hash doesn't match
+    the actual binary hash."""
+    import io as _io
+    import os as _os
+
+    fake_hash_file = tmp_path / "SHA256SUM"
+    fake_hash_file.write_text("0" * 64 + "\n", encoding="utf-8")
+
+    binary = tmp_path / "firecracker_bin"
+    binary.write_bytes(b"some-binary-content")
+    kernel = tmp_path / "vmlinux"
+    kernel.write_bytes(b"kernel")
+    rootfs = tmp_path / "rootfs.ext4"
+    rootfs.write_bytes(b"rootfs")
+
+    _orig_name = _os.name
+    _os.name = "posix"
+    try:
+        with patch.object(firecracker_worker, "APPROVED_HASH_FILE", fake_hash_file), \
+             patch.object(firecracker_worker, "FIRECRACKER_BIN", binary), \
+             patch.object(firecracker_worker, "KERNEL_PATH", kernel), \
+             patch.object(firecracker_worker, "ROOTFS_PATH", rootfs), \
+             patch.object(firecracker_worker.platform, "machine", return_value="x86_64"), \
+             patch.object(firecracker_worker.os, "popen", lambda cmd: _io.StringIO("Firecracker v1.16.1\n")), \
+             patch.object(firecracker_worker.os, "access", lambda p, m: True), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("pathlib.Path.is_file", return_value=True):
+            with pytest.raises(RuntimeError, match="approved Firecracker SHA256"):
+                firecracker_worker.host_health()
+    finally:
+        _os.name = _orig_name
+

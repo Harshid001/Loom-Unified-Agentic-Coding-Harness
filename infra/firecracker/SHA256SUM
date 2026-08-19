@@ -1,2 +1,5 @@
-# REQUIRED: replace with the SHA-256 of the exact deployed Firecracker v1.16.1 x86_64 binary.
-# The production host validator rejects this placeholder.
+# SHA-256 of the upstream Firecracker v1.16.1 x86_64 release artifact
+# Source: https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz.sha256.txt
+# This pins the certified baseline for the production host validator.
+# The deploying host must verify that the extracted binary matches this hash.
+382a02a869e4d6d5cb14c40577f9545e8458021ea8b0b2d3fc10ec14d9c242e6

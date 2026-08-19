@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 from loom.api.app import create_app
 from loom.api.dependencies import get_entitlements, reset_entitlements
 from loom.api.routes import iter_routes
+from loom.auth.context import get_service_principal
 from loom.business.models import Membership, MembershipRole, RunRecord
 from loom.db.records_store import get_run_record_store, reset_run_record_store
 from loom.orchestrator.state import OrchestratorState
@@ -78,9 +79,15 @@ def seeded_client(matrix_app):
     app, tmp_path = matrix_app
 
     entitlements = get_entitlements()
-    # The default org already has dev_user as OWNER via get_entitlements()
     own_org_id = "default"
     foreign_org_id = "org_foreign_test"
+
+    # The authenticated API-key user is the service principal. Seed its
+    # membership as OWNER so the RBAC tests can manipulate role cleanly.
+    auth_user_id = get_service_principal().user_id
+    entitlements.add_membership(
+        Membership(user_id=auth_user_id, org_id=own_org_id, role=MembershipRole.OWNER)
+    )
 
     store = get_run_record_store(str(tmp_path / "records.db"))
     store.record_run(RunRecord(run_id="run_own_001", org_id=own_org_id, issue_text="own run"))
@@ -255,9 +262,11 @@ def test_cross_org_returns_404(seeded_client, method, url, body):
 def test_rbac_role_matrix(seeded_client, role, url, method, body, expected_success):
     """Role-based access must match the authorization matrix."""
     client, own_org_id, _, entitlements = seeded_client
+    # Clear and re-seed membership for the actual authenticated principal
+    auth_user_id = get_service_principal().user_id
     entitlements._memberships.clear()
     entitlements.add_membership(
-        Membership(user_id="dev_user", org_id=own_org_id, role=role)
+        Membership(user_id=auth_user_id, org_id=own_org_id, role=role)
     )
 
     if method == "GET":

@@ -46,6 +46,11 @@ def _run(cmd: list[str], cwd: Path, timeout: int = 300) -> tuple[int, str, str]:
         return 1, "", f"Command not found: {exc}"
 
 
+def _npm() -> str:
+    """Resolve npm executable, handling .cmd suffix on Windows."""
+    return shutil.which("npm.cmd") or shutil.which("npm") or "npm"
+
+
 def _git_sha(repo: Path) -> str:
     rc, out, _ = _run(["git", "rev-parse", "HEAD"], repo)
     return out.strip() if rc == 0 else "unknown"
@@ -78,9 +83,7 @@ def _run_tests(repo: Path) -> dict:
     """Run pytest and collect results."""
     start = time.time()
     rc, stdout, stderr = _run(
-        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short",
-         "--json-report", "--json-report-file=/dev/null",
-         "-q", "--no-header"],
+        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short", "-q", "--no-header"],
         repo,
         timeout=600,
     )
@@ -251,7 +254,7 @@ def _run_npm_audit(repo: Path) -> dict:
 
     start = time.time()
     rc, stdout, stderr = _run(
-        ["npm", "audit", "--json"],
+        [_npm(), "audit", "--json"],
         web_dir,
         timeout=120,
     )
@@ -281,7 +284,7 @@ def _run_frontend_build(repo: Path) -> dict:
 
     start = time.time()
     rc, stdout, stderr = _run(
-        ["npm", "run", "build"],
+        [_npm(), "run", "build"],
         web_dir,
         timeout=300,
     )
@@ -411,8 +414,11 @@ def capture(repo: Path, output_dir: Path) -> Path:
     overall = (
         test_results["overall_status"] == "pass"
         and security_results["overall_status"] == "pass"
+        and build_results["overall_status"] == "pass"
     )
     print(f"[baseline] OVERALL STATUS: {'PASS' if overall else 'FAIL'}")
+    if not overall:
+        sys.exit(1)
     return artifact_dir
 
 

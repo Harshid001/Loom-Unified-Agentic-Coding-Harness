@@ -36,7 +36,8 @@ dependencies = [
     "questionary>=2.1.1",
     "textual>=0.52.0",
     "redis>=5.0.0",
-    "boto3>=1.35.0"
+    "boto3>=1.35.0",
+    "stripe>=7.0.0"
 ]
 
 [project.optional-dependencies]

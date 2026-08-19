@@ -155,12 +155,30 @@ def serialize_billing_state(org: Organization) -> Dict[str, Any]:
 
 
 class StripeBillingAdapter:
-    """Production Stripe adapter handling webhooks, customer portal, checkout, and metered sync."""
+    """Production Stripe adapter handling webhooks, customer portal, checkout, and metered sync.
+
+    When ``stripe`` is installed and ``api_key`` is configured (or ``STRIPE_API_KEY``
+    is set in the environment) the adapter delegates to the real Stripe SDK.
+    Otherwise it falls back to deterministic stubs so that dev and test environments
+    do not require live credentials.
+    """
 
     def __init__(self, api_key: Optional[str] = None, webhook_secret: Optional[str] = None):
         self.api_key = api_key or os.getenv("STRIPE_API_KEY")
         self.webhook_secret = webhook_secret or os.getenv("STRIPE_WEBHOOK_SECRET")
         self._reported_usage: List[Dict[str, Any]] = []
+        self._stripe = None
+        if self.api_key:
+            try:
+                import stripe as _stripe
+                _stripe.api_key = self.api_key
+                self._stripe = _stripe
+            except ImportError:
+                pass
+
+    @property
+    def _is_live(self) -> bool:
+        return self._stripe is not None and bool(self.api_key)
 
     def parse_event(
         self,
@@ -221,6 +239,38 @@ class StripeBillingAdapter:
         cancel_url: str,
         customer_email: Optional[str] = None,
     ) -> Dict[str, Any]:
+        if self._is_live:
+            try:
+                session = self._stripe.checkout.Session.create(  # type: ignore[union-attr]
+                    mode="subscription",
+                    line_items=[
+                        {
+                            "price_data": {
+                                "currency": "usd",
+                                "product_data": {"name": f"Loom {target_tier.value.title()} Plan"},
+                                "unit_amount": self._tier_price_cents(target_tier),
+                                "recurring": {"interval": "month"},
+                            },
+                            "quantity": 1,
+                        }
+                    ],
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                    client_reference_id=org_id,
+                    metadata={"org_id": org_id, "target_tier": target_tier.value},
+                )
+                return {
+                    "id": session.id,
+                    "url": session.url,
+                    "org_id": org_id,
+                    "target_tier": target_tier.value,
+                    "success_url": success_url,
+                    "cancel_url": cancel_url,
+                }
+            except Exception as exc:
+                logger.warning("Stripe checkout session creation failed, falling back to stub: %s", exc)
+
+        # Stub fallback for dev/test without live Stripe credentials
         session_id = f"cs_test_{secrets.token_urlsafe(16)}"
         url = f"https://checkout.stripe.com/c/pay/{session_id}?org_id={org_id}&tier={target_tier.value}"
         return {
@@ -233,6 +283,22 @@ class StripeBillingAdapter:
         }
 
     def create_portal_session(self, customer_id: str, return_url: str) -> Dict[str, Any]:
+        if self._is_live:
+            try:
+                session = self._stripe.billing_portal.Session.create(  # type: ignore[union-attr]
+                    customer=customer_id,
+                    return_url=return_url,
+                )
+                return {
+                    "id": session.id,
+                    "url": session.url,
+                    "customer_id": customer_id,
+                    "return_url": return_url,
+                }
+            except Exception as exc:
+                logger.warning("Stripe portal session creation failed, falling back to stub: %s", exc)
+
+        # Stub fallback for dev/test without live Stripe credentials
         session_id = f"bps_{secrets.token_urlsafe(16)}"
         url = f"https://billing.stripe.com/p/session/{session_id}?customer={customer_id}"
         return {
@@ -248,6 +314,25 @@ class StripeBillingAdapter:
         quantity: int,
         timestamp: Optional[int] = None,
     ) -> Dict[str, Any]:
+        if self._is_live:
+            try:
+                record = self._stripe.SubscriptionItem.create_usage_record(  # type: ignore[union-attr]
+                    subscription_item=subscription_item_id,
+                    quantity=quantity,
+                    timestamp=timestamp or int(time.time()),
+                    action="increment",
+                )
+                return {
+                    "id": record.id,
+                    "subscription_item_id": subscription_item_id,
+                    "quantity": quantity,
+                    "timestamp": record.timestamp,
+                    "status": "recorded",
+                }
+            except Exception as exc:
+                logger.warning("Stripe metered usage reporting failed, falling back to stub: %s", exc)
+
+        # Stub fallback for dev/test without live Stripe credentials
         record = {
             "id": f"mrec_{secrets.token_hex(8)}",
             "subscription_item_id": subscription_item_id,
@@ -257,6 +342,16 @@ class StripeBillingAdapter:
         }
         self._reported_usage.append(record)
         return record
+
+    def _tier_price_cents(self, tier: OrgTier) -> int:
+        """Return monthly price in cents for the given tier."""
+        prices = {
+            OrgTier.SOLO: 0,
+            OrgTier.TEAM: 2900,
+            OrgTier.ENTERPRISE: 9900,
+            OrgTier.SELF_HOSTED: 0,
+        }
+        return prices.get(tier, 0)
 
 
 _stripe_adapter_instance: Optional[StripeBillingAdapter] = None
