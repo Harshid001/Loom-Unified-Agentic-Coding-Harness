@@ -2,14 +2,45 @@
 
 Production execution must fail closed when a required security boundary is unavailable.
 
-## 1. Containerized deployment
+## 1. Native deployment — systemd + Postgres + Redis + Nginx
 
-The supported application topology uses PostgreSQL and Redis as shared infrastructure. Tier B/C execution is delegated to the authenticated Firecracker worker; it must not fall back to host execution.
+Loom runs natively on a Debian/Ubuntu host under systemd. No container runtime is required.
+
+Services:
+- `loom-api` — FastAPI server (`loom.runtime.entrypoint`) on `127.0.0.1:8000`
+- `loom-worker` — durable Redis-backed run worker
+- `loom-backup` — scheduled encrypted backups
+- `loom-dashboard` — Next.js standalone dashboard on `127.0.0.1:3000`
+- `nginx` — TLS reverse proxy (see `infra/systemd/nginx.conf`)
+- `postgresql` / `redis-server` — distro packages
+
+Deploy on a Debian/Ubuntu host as root:
 
 ```bash
-docker compose up -d --build
-docker compose logs -f api
+sudo bash infra/systemd/install.sh /opt/loom
 ```
+
+The installer creates the `loom` user, installs packages, builds the dashboard (standalone output), applies PostgreSQL migrations, installs unit files from `infra/systemd/`, and enables all services. Then:
+
+```bash
+# Fill in real secrets (API_KEY, DASHBOARD_AUTH_TOKEN, DATABASE_URL, provider keys)
+sudo nano /etc/loom/loom.env
+sudo nano /etc/loom/dashboard.env
+sudo systemctl restart loom-api loom-dashboard
+```
+
+Post-deployment:
+
+```bash
+curl -f http://127.0.0.1:8000/api/v1/health/readiness
+systemctl status loom-api loom-worker loom-dashboard
+journalctl -u loom-api -f
+```
+
+Notes:
+- Swap the generated self-signed TLS certs (`/etc/nginx/certs/`) for a real domain certificate before exposing publicly.
+- Tier B/C (Firecracker microVM) requires a KVM host plus the worker unit at `infra/firecracker/loom-firecracker-worker.service`. Tier A (git worktree) runs on any host.
+- Backups: `loom-backup` runs continuously; interval is `LOOM_BACKUP_INTERVAL_SECONDS`.
 
 Validate configuration before startup:
 
@@ -21,7 +52,6 @@ python scripts/postgres_migrate.py --database-url "$DATABASE_URL"
 ## 2. Firecracker worker
 
 The repository pins the certified Firecracker baseline in `infra/firecracker/VERSION`. Before enabling production:
-
 ```bash
 sudo bash scripts/validate_firecracker_host.sh
 ```
@@ -56,7 +86,7 @@ RATE_LIMIT_ALLOW_LOCAL_FALLBACK=false
 
 Store production secrets in a dedicated secrets manager. Never commit real credentials.
 
-## 4. PostgreSQL migrations
+## 3. PostgreSQL migrations
 
 Production schema changes are versioned under `migrations/postgres/` and applied with an advisory lock:
 
@@ -66,7 +96,7 @@ python scripts/postgres_migrate.py --database-url "$DATABASE_URL"
 
 Each applied migration records its filename and SHA-256 checksum in `schema_migrations`. A checksum mismatch blocks startup/deployment rather than silently accepting drift.
 
-## 5. Backup and disaster recovery
+## 4. Backup and disaster recovery
 
 Create an encrypted, checksummed backup:
 
@@ -85,14 +115,14 @@ python scripts/restore_drill.py \
 
 The report records backup duration, restore duration, measured RPO and RTO. Production still requires off-site retention, scheduled execution, alerting on failures, and periodic successful drills.
 
-## 6. Health and monitoring
+## 5. Health and monitoring
 
 - `GET /healthz` — liveness
 - `GET /api/v1/health/readiness` — database/Redis readiness
 - `GET /metrics` — Prometheus metrics
 - OpenTelemetry exporters can be configured through `OTEL_EXPORTER_OTLP_ENDPOINT`
 
-## 7. Load and failure testing
+## 6. Load and failure testing
 
 The load test can be run against the real staging/production topology:
 
@@ -107,7 +137,7 @@ python scripts/load_test.py \
 
 Release approval should record measured p95/p99 latency, throughput, success rate, Redis behavior, worker capacity, and database saturation. Do not substitute arbitrary benchmark numbers for measured deployment evidence.
 
-## 8. Release gates
+## 7. Release gates
 
 The repository includes a manual workflow named `Production Release Gates`. It accepts a staging/production URL and runs the strict production preflight, API liveness/readiness, load test, Firecracker E2E validation, and restore drill using GitHub Environment secrets.
 

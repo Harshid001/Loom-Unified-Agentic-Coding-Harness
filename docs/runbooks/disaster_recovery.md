@@ -94,7 +94,7 @@ Automated disaster recovery drills are executed weekly via GitHub Actions at [`.
 In the event of primary host loss or database corruption:
 
 1. **Provision New Target Infrastructure**:
-   - Deploy new Postgres 16 instance and Loom API container host.
+   - Deploy new Postgres 16 instance and Loom API host.
    - Configure environment variables (`DATABASE_URL`, `LOOM_ENCRYPTION_KEY`, `REDIS_URL`).
 
 2. **Retrieve Latest Verified Backup from Offsite Storage**:

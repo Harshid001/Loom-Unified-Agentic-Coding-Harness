@@ -1,0 +1,33 @@
+[Unit]
+Description=Loom Agentic Harness API
+After=network.target postgresql.service redis-server.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=loom
+Group=loom
+EnvironmentFile=/etc/loom/loom.env
+WorkingDirectory=/opt/loom
+ExecStart=/opt/loom/venv/bin/python -m loom.runtime.entrypoint
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/home/loom/.loom /var/repos /var/lib/loom
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

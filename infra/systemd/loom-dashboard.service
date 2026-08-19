@@ -1,0 +1,30 @@
+[Unit]
+Description=Loom Web Dashboard (Next.js)
+After=network.target loom-api.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=loom
+Group=loom
+EnvironmentFile=/etc/loom/dashboard.env
+WorkingDirectory=/opt/loom/web/.next/standalone
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

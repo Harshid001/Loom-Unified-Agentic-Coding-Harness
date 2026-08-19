@@ -32,10 +32,10 @@ python scripts/production/final_release_gate.py
    ```
 
 2. **Rolling Worker Update:**
-   Deploy new container image to worker pool one replica at a time. Active runs finish on legacy nodes.
+   Deploy the new code to the worker one host at a time. Active runs finish on legacy nodes.
 
 3. **API Fleet Update:**
-   Deploy API container image. Healthcheck endpoint `/api/v1/health/readiness` must return 200 OK before traffic is routed.
+   Deploy the API code and restart `loom-api`. Healthcheck endpoint `/api/v1/health/readiness` must return 200 OK before traffic is routed.
 
 ---
 
