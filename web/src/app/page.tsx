@@ -98,7 +98,7 @@ function LoomControlPlane() {
     createPullRequest,
   } = githubState;
 
-  const repoPath = connectedRepo?.fullName || '';
+  const repoPath = connectedRepo?.htmlUrl || connectedRepo?.fullName || '';
 
   const {
     selectedRun,
