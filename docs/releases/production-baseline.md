@@ -1,6 +1,6 @@
 # Loom — Production Release Baseline
 
-**Captured:** 2026-08-19T11:21:23.598713+00:00
+**Captured:** 2026-08-19T12:17:13.629098+00:00
 **Commit SHA:** `abc123`
 **Branch:** `main`
 

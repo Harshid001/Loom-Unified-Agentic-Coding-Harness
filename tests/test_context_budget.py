@@ -33,7 +33,7 @@ class TestBudgetLimits:
         assert limits["total"] == 4096
 
     def test_claude_model_budget(self):
-        b = ContextBudgetManager(model_name="claude-3-5-sonnet-20241022")
+        b = ContextBudgetManager(model_name="claude-3-7-sonnet-20250219")
         limits = b.budget_limits
         assert limits["total"] == 200000
 
@@ -205,7 +205,7 @@ class TestBudgetAssembly:
         assert result.headroom_remaining >= 0
 
     def test_assembly_includes_ranked_symbols(self):
-        b = ContextBudgetManager(model_name="claude-3-5-sonnet-20241022")
+        b = ContextBudgetManager(model_name="claude-3-7-sonnet-20250219")
         syms = [
             Symbol(
                 name="calculate_total",
@@ -262,7 +262,7 @@ class TestBudgetAssembly:
         assert result.truncated_count == 0
 
     def test_headroom_present_with_small_input(self):
-        b = ContextBudgetManager(model_name="claude-3-5-sonnet-20241022")
+        b = ContextBudgetManager(model_name="claude-3-7-sonnet-20250219")
         result = b.assemble_context(
             "Fix",
             [],
@@ -319,7 +319,7 @@ class TestRankedSymbolTruncation:
             assert t.truncated_reason in ("budget_exhausted", "body_omitted_budget")
 
     def test_no_truncation_when_budget_plentiful(self):
-        b = ContextBudgetManager(model_name="claude-3-5-sonnet-20241022")
+        b = ContextBudgetManager(model_name="claude-3-7-sonnet-20250219")
         syms = [
             Symbol(name="f1", kind="function", file_path="f1.py", line_number=1),
         ]

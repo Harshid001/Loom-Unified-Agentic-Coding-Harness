@@ -24,7 +24,7 @@ async def test_full_pipeline_e2e(tmp_path, monkeypatch):
         issue_description="Fix bug in add function: returns a - b instead of a + b",
     )
 
-    router = ModelRouter(default_model="claude-3-5-sonnet-20241022", mock_mode=True)
+    router = ModelRouter(default_model="claude-3-7-sonnet-20250219", mock_mode=True)
     tracer = TelemetryTracer(run_id=run_id, log_dir=str(tmp_path / "traces"))
     cost_tracker = CostTracker(run_id=run_id)
 

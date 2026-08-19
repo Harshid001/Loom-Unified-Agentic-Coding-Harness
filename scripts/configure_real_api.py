@@ -103,7 +103,7 @@ def run_configuration(args: argparse.Namespace) -> int:
         "OPENAI_API_KEY": openai_key,
         "GEMINI_API_KEY": gemini_key,
         "DEEPSEEK_API_KEY": deepseek_key,
-        "MODEL_DEFAULT": args.default_model or "claude-3-5-sonnet-20241022",
+        "MODEL_DEFAULT": args.default_model or "claude-3-7-sonnet-20250219",
     }
 
     web_env = {

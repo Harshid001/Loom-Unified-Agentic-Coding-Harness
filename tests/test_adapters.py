@@ -18,7 +18,7 @@ async def test_mock_adapter():
 
 
 def test_model_router():
-    router = ModelRouter(default_model="claude-3-5-sonnet-20241022", mock_mode=True)
+    router = ModelRouter(default_model="claude-3-7-sonnet-20250219", mock_mode=True)
     assert router.resolve_model("onboarding") == "mock"
 
 
@@ -47,7 +47,7 @@ async def test_litellm_adapter_live_mocked():
     mock_res.model_dump.return_value = {"id": "res_123"}
 
     req = ModelRequest(
-        model="claude-3-5-sonnet-20241022",
+        model="claude-3-7-sonnet-20250219",
         messages=[{"role": "user", "content": "Run tests"}],
         system_prompt="You are a helpful assistant",
         tools=[{"type": "function", "function": {"name": "execute_command"}}],
@@ -70,7 +70,7 @@ async def test_litellm_adapter_live_mocked():
 async def test_litellm_adapter_exception_in_production():
     adapter = LiteLLMAdapter(mock_mode=False)
     req = ModelRequest(
-        model="claude-3-5-sonnet-20241022", messages=[{"role": "user", "content": "Test patch issue"}]
+        model="claude-3-7-sonnet-20250219", messages=[{"role": "user", "content": "Test patch issue"}]
     )
 
     with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:

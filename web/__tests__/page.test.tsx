@@ -12,8 +12,8 @@ describe('Header component', () => {
     const handleModelChange = vi.fn();
     render(
       <Header
-        modelName="claude-3-5-sonnet"
-        availableModels={['claude-3-5-sonnet', 'gpt-4o']}
+        modelName="claude-3-7-sonnet"
+        availableModels={['claude-3-7-sonnet', 'gpt-4o']}
         onModelChange={handleModelChange}
         onOpenLiveBox={handleOpenLiveBox}
         runCount={3}
@@ -21,7 +21,7 @@ describe('Header component', () => {
     );
 
     expect(screen.getByText(/LOOM/i)).toBeInTheDocument();
-    expect(screen.getByText(/claude-3-5-sonnet/i)).toBeInTheDocument();
+    expect(screen.getByText(/claude-3-7-sonnet/i)).toBeInTheDocument();
 
     const startButton = screen.getByRole('button', { name: /Open Live Box/i });
     expect(startButton).toBeInTheDocument();

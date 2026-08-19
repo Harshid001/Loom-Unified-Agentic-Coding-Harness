@@ -26,7 +26,7 @@ def setup_test_env(monkeypatch, tmp_path):
     reset_run_record_store()
     get_run_record_store(str(tmp_path / "records.db"))
     clear_session_keys()
-    set_current_active_model("claude-3-5-sonnet-20241022")
+    set_current_active_model("claude-3-7-sonnet-20250219")
 
 
 def test_runtime_api_key_override(monkeypatch):

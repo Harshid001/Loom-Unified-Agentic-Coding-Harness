@@ -103,7 +103,7 @@ X-Org-ID: org_enterprise_corp
   {
     "issue": "Fix authentication bug in login router when token expires",
     "repo_path": "/workspace/my-app",
-    "model": "claude-3-5-sonnet-20241022",
+    "model": "claude-3-7-sonnet-20250219",
     "mock": false,
     "context_budget_tokens": 32000,
     "sandbox_tier": "tier_b",
