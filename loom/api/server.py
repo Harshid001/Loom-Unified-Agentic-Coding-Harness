@@ -506,7 +506,8 @@ def is_git_url(repo_target: str) -> bool:
         return True
     parts = repo_target.strip().split("/")
     if len(parts) == 2 and parts[0] and parts[1] and not Path(repo_target).exists():
-        return True
+        if parts[0] not in (".", ".."):
+            return True
     return False
 
 
