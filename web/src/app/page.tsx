@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRuns } from '../hooks/useRuns';
+import { useActiveRun } from '../hooks/useActiveRun';
 import { useGitHub } from '../hooks/useGitHub';
 import { Header } from '../components/Header';
 import { Sidebar, LifecycleTab } from '../components/Sidebar';
@@ -16,6 +17,11 @@ import { ApiKeyModal } from '../components/ApiKeyModal';
 import { RepoConnectModal } from '../components/RepoConnectModal';
 import { GitHubIssuesDrawer } from '../components/GitHubIssuesDrawer';
 import { NewRunModal } from '../components/NewRunModal';
+import { AnalyticsTab } from '../components/AnalyticsTab';
+import { OnboardingTour } from '../components/OnboardingTour';
+import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp';
+import { MobileBottomNav } from '../components/MobileBottomNav';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
   FolderGit2,
   GitBranch,
@@ -30,6 +36,9 @@ import {
   XCircle,
   Clock,
   Terminal,
+  ArrowRight,
+  Zap,
+  Lock,
 } from 'lucide-react';
 
 const AVAILABLE_MODELS = [
@@ -47,6 +56,15 @@ const AVAILABLE_MODELS = [
   'gpt-4o-mini',
 ];
 
+type ToastVariant = 'success' | 'error';
+
+interface ToastItem {
+  id: number;
+  message: string;
+  variant: ToastVariant;
+  exiting?: boolean;
+}
+
 function LoomControlPlane() {
   const [activeTab, setActiveTab] = useState<LifecycleTab>('overview');
   const [isLiveBoxOpen, setIsLiveBoxOpen] = useState(false);
@@ -54,6 +72,7 @@ function LoomControlPlane() {
   const [isRepoModalOpen, setIsRepoModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isIssuesDrawerOpen, setIsIssuesDrawerOpen] = useState(false);
+  const [isKeyboardHelpOpen, setIsKeyboardHelpOpen] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>(AVAILABLE_MODELS);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -63,7 +82,10 @@ function LoomControlPlane() {
   });
   const [newIssue, setNewIssue] = useState('');
   const [mockMode, setMockMode] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastIdRef = useRef(0);
+
+  const activeRun = useActiveRun();
 
   const githubState = useGitHub();
   const {
@@ -90,7 +112,38 @@ function LoomControlPlane() {
     fetchRuns,
   } = useRuns();
 
-  // Synchronize model settings with localStorage, events, and backend
+  useKeyboardShortcuts({
+    onNewRun: () => setIsNewRunModalOpen(true),
+    onEvidence: () => setActiveTab('evidence'),
+    onAnalytics: () => setActiveTab('analytics'),
+    onEscape: () => {
+      setIsNewRunModalOpen(false);
+      setIsLiveBoxOpen(false);
+      setIsRepoModalOpen(false);
+      setIsApiKeyModalOpen(false);
+      setIsIssuesDrawerOpen(false);
+      setIsKeyboardHelpOpen(false);
+    },
+    onSwitchTab: (idx) => {
+      const tabs: LifecycleTab[] = ['overview', 'analytics', 'dag', 'agents', 'sandbox', 'diff', 'tests', 'evidence', 'ablations'];
+      if (tabs[idx]) setActiveTab(tabs[idx]);
+    },
+    tabCount: 9,
+  });
+
+  // Handle Cmd+/ for keyboard shortcuts help
+  useEffect(() => {
+    const handleCmdSlash = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        setIsKeyboardHelpOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleCmdSlash);
+    return () => window.removeEventListener('keydown', handleCmdSlash);
+  }, []);
+
+  // Model sync
   useEffect(() => {
     const syncActiveModel = () => {
       if (typeof window !== 'undefined') {
@@ -156,21 +209,28 @@ function LoomControlPlane() {
     }).catch(() => {});
   }, []);
 
-  const showNotification = useCallback((msg: string) => {
-    setNotification(msg);
-    setTimeout(() => setNotification(null), 5000);
+  const showToast = useCallback((message: string, variant: ToastVariant = 'success') => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { id, message, variant }]);
+    setTimeout(() => {
+      setToasts(prev => prev.map(t => t.id === id ? { ...t, exiting: true } : t));
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, 250);
+    }, 5000);
   }, []);
 
   const handleOpenLiveBox = useCallback(() => {
-    setIsLiveBoxOpen(true);
+    setIsNewRunModalOpen(true);
   }, []);
 
   const handleRunComplete = useCallback(
     (runId: string, success: boolean) => {
-      if (success) showNotification(`Run ${runId} completed successfully`);
+      if (success) showToast(`Run ${runId} completed successfully`, 'success');
+      else showToast(`Run ${runId} completed with issues`, 'error');
       fetchRuns();
     },
-    [fetchRuns, showNotification]
+    [showToast, fetchRuns]
   );
 
   const handleRollback = useCallback(async () => {
@@ -181,11 +241,12 @@ function LoomControlPlane() {
         const errData = await res.json().catch(() => ({ detail: 'Rollback failed' }));
         throw new Error(errData.detail || 'Rollback execution failed');
       }
-      showNotification(`Rollback successful for run ${selectedRun}`);
+      showToast(`Rollback successful for run ${selectedRun}`, 'success');
     } catch (err) {
       setErrorBanner(`Rollback failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showToast(`Rollback failed`, 'error');
     }
-  }, [selectedRun, showNotification, setErrorBanner]);
+  }, [selectedRun, showToast, setErrorBanner]);
 
   const checkpoint = selectedRunDetails?.checkpoint;
   const traceEvents = selectedRunDetails?.trace_events || [];
@@ -197,8 +258,8 @@ function LoomControlPlane() {
         duration: checkpoint.shared_data?.total_duration_ms
           ? `${(checkpoint.shared_data.total_duration_ms / 1000).toFixed(1)}s`
           : checkpoint.duration_seconds
-          ? `${checkpoint.duration_seconds.toFixed(1)}s`
-          : '--',
+            ? `${checkpoint.duration_seconds.toFixed(1)}s`
+            : '--',
         cost: checkpoint.shared_data?.cost_report?.total_cost_usd
           ? `$${checkpoint.shared_data.cost_report.total_cost_usd.toFixed(4)}`
           : '--',
@@ -227,35 +288,42 @@ function LoomControlPlane() {
       }
     : null;
 
+  const repoName = connectedRepo?.fullName || 'No Repository Connected';
+
   return (
     <div className="min-h-screen flex flex-col font-sans">
-      {/* 1. Top Operational Bar */}
       <Header
         modelName={selectedModel}
         availableModels={availableModels}
         onModelChange={handleModelChange}
-        onOpenLiveBox={() => setIsNewRunModalOpen(true)}
+        onOpenLiveBox={handleOpenLiveBox}
         onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
         onOpenRepoModal={() => setIsRepoModalOpen(true)}
         onOpenIssuesDrawer={() => setIsIssuesDrawerOpen(true)}
         connectedRepo={connectedRepo}
         githubUser={githubUser}
         runCount={runHistory.length}
+        isExecuting={activeRun.isActive}
+        activeRunStage={activeRun.currentStage}
+        activeRunProgress={activeRun.currentStageIndex}
+        activeRunTotal={activeRun.totalStages}
+        activeRunElapsed={activeRun.elapsedFormatted}
+        activeRunId={activeRun.activeRunId}
       />
 
-      {notification && (
-        <div className="bg-[var(--success)]/10 border-b border-[var(--success)]/30 px-6 py-2 text-xs text-[var(--success)] font-medium font-mono" role="status">
-          ✓ {notification}
-        </div>
-      )}
+      {/* Notification Banner (legacy top bar — kept as subtle strip) */}
       {errorBanner && (
-        <div className="bg-[var(--danger)]/10 border-b border-[var(--danger)]/30 px-6 py-2 text-xs text-[var(--danger)] font-mono" role="alert">
+        <div
+          className="bg-[var(--danger)]/10 border-b border-[var(--danger)]/30 px-6 py-2 text-xs text-[var(--danger)] font-medium font-mono animate-slide-in-from-top"
+          role="alert"
+        >
           ⚠ {errorBanner}
+          <button onClick={() => setErrorBanner(null)} className="ml-3 hover:underline">Dismiss</button>
         </div>
       )}
 
-      {/* 2. Main Control Plane Layout (Sidebar + Center Content) */}
-      <div className="flex-1 flex max-w-[1400px] w-full mx-auto p-8 gap-8">
+      {/* ── Main Control Plane Layout ── */}
+      <div className="flex-1 flex max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 gap-5">
         <Sidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -268,7 +336,7 @@ function LoomControlPlane() {
           connectedRepoName={connectedRepo?.fullName || 'No Repository Connected'}
         />
 
-        <main className="flex-1 flex flex-col min-w-0">
+        <main className="flex-1 flex flex-col min-w-0 gap-5">
           {/* View: Overview & Live Active Run */}
           {activeTab === 'overview' && (
             <OverviewTab
@@ -276,7 +344,7 @@ function LoomControlPlane() {
               selectedRun={selectedRun}
               onRollback={handleRollback}
               isLoadingDetails={isLoadingDetails}
-              onOpenLiveBox={() => setIsNewRunModalOpen(true)}
+              onOpenLiveBox={handleOpenLiveBox}
               onSelectStarterIssue={(issue: string) => {
                 setNewIssue(issue);
                 setIsLiveBoxOpen(true);
@@ -289,66 +357,9 @@ function LoomControlPlane() {
             />
           )}
 
-          {/* View: Runs Feed */}
-          {activeTab === 'runs' && (
-            <div className="loom-card flex flex-col gap-4">
-              <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
-                <div>
-                  <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase">
-                    Execution Runs History
-                  </h2>
-                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                    Chronological ledger of multi-agent DAG runs for {connectedRepo?.fullName || 'this workspace'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsNewRunModalOpen(true)}
-                  className="btn-primary h-8 px-3.5 text-xs gap-1.5"
-                >
-                  <Play className="h-3 w-3 fill-current" />
-                  <span>Launch Run</span>
-                </button>
-              </div>
-
-              {runHistory.length > 0 ? (
-                <div className="space-y-2">
-                  {runHistory.map(r => (
-                    <div
-                      key={r.id}
-                      onClick={() => {
-                        setSelectedRun(r.id);
-                        setActiveTab('overview');
-                      }}
-                      className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--bg-hover)] transition cursor-pointer flex items-center justify-between gap-4"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-xs font-bold text-[var(--brand-hover)]">{r.id}</span>
-                          <span className={`status-pill ${r.status === 'VERIFIED SUCCESS' ? 'status-pill-verified' : r.status === 'FAILED' ? 'status-pill-failed' : 'status-pill-running'} text-[10px]`}>
-                            {r.status}
-                          </span>
-                        </div>
-                        <p className="text-xs text-[var(--text-primary)] font-sans">{r.issue}</p>
-                      </div>
-                      <div className="text-right font-mono text-xs text-[var(--text-muted)] shrink-0">
-                        <span>{r.cost ? `$${r.cost.toFixed(4)}` : '--'}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-12 text-center text-xs text-[var(--text-muted)] flex flex-col items-center gap-3">
-                  <p>No execution runs recorded yet for {connectedRepo?.fullName || 'this repository'}.</p>
-                  <button
-                    onClick={() => setIsNewRunModalOpen(true)}
-                    className="btn-primary h-8 px-3 text-xs gap-1.5"
-                  >
-                    <Play className="h-3 w-3 fill-current" />
-                    <span>Launch First Run</span>
-                  </button>
-                </div>
-              )}
-            </div>
+          {/* View: Analytics Dashboard */}
+          {activeTab === 'analytics' && (
+            <AnalyticsTab runHistory={runHistory} connectedRepoName={connectedRepo?.fullName || 'Workspace'} />
           )}
 
           {/* View: DAG Execution */}
@@ -360,7 +371,7 @@ function LoomControlPlane() {
           {activeTab === 'agents' && (
             <div className="loom-card flex flex-col gap-6">
               <div className="border-b border-[var(--border-subtle)] pb-3">
-                <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase">
+                <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase tracking-tight">
                   Multi-Agent Architecture
                 </h2>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
@@ -368,26 +379,62 @@ function LoomControlPlane() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* DAG flow visualization */}
+              <div className="grid grid-cols-1 gap-3">
                 {[
-                  { name: 'Repo Mapper Agent', role: 'Tree-Sitter AST & Call Graph Proximity', model: 'Tree-Sitter AST', budget: 'Symbol Indexer' },
-                  { name: 'Reproduction Agent', role: 'Failing Test Synthesis (Red Phase)', model: selectedModel, budget: '16,000 tokens' },
-                  { name: 'Patcher Agent', role: 'Surgical Unified Code Modification', model: selectedModel, budget: '32,000 tokens' },
-                  { name: 'Verifier Agent', role: 'Isolated Container Pytest Execution', model: 'Sandbox Tier B', budget: 'Strict Isolation' },
-                  { name: 'Reviewer Agent', role: 'SHA-256 Hash Chain Proof Construction', model: 'Cryptographic Proof Engine', budget: '5 artifacts' },
-                ].map((agent, i) => (
-                  <div key={i} className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
-                    <div className="flex items-center gap-2 text-[var(--brand)]">
-                      <Cpu className="h-4 w-4" />
-                      <h3 className="text-xs font-bold font-mono text-[var(--text-primary)]">{agent.name}</h3>
+                  { name: 'Repo Mapper Agent', role: 'Tree-Sitter AST & Call Graph Proximity', model: 'Tree-Sitter AST', budget: 'Symbol Indexer', accent: 'var(--brand)', icon: FileCode },
+                  { name: 'Reproduction Agent', role: 'Failing Test Synthesis (Red Phase)', model: selectedModel, budget: '16,000 tokens', accent: 'var(--cyan)', icon: TestTube2 },
+                  { name: 'Patcher Agent', role: 'Surgical Unified Code Modification', model: selectedModel, budget: '32,000 tokens', accent: 'var(--brand-hover)', icon: FileCode },
+                  { name: 'Verifier Agent', role: 'Isolated Container Pytest Execution', model: 'Sandbox Tier B', budget: 'Strict Isolation', accent: 'var(--success)', icon: ShieldCheck },
+                  { name: 'Reviewer Agent', role: 'SHA-256 Hash Chain Proof Construction', model: 'Cryptographic Proof Engine', budget: '5 artifacts', accent: 'var(--warning)', icon: CheckCircle2 },
+                ].map((agent, i, arr) => {
+                  const Icon = agent.icon;
+                  const isActive = displayData && displayData.nodes?.[i]?.status === 'completed';
+                  return (
+                    <div key={i} className="relative">
+                      {/* Flow arrow between agents */}
+                      {i < arr.length - 1 && (
+                        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-10 hidden sm:flex items-center gap-1 text-[var(--text-muted)]">
+                          <div className="h-4 w-px bg-[var(--border-default)]" />
+                          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                        </div>
+                      )}
+                      <div
+                        className={`p-4 rounded-xl border-l-[3px] transition-all duration-200 hover:shadow-lg ${
+                          isActive
+                            ? 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] shadow-[0_0_16px_rgba(124,92,255,0.08)]'
+                            : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)] opacity-80'
+                        }`}
+                        style={{ borderLeftColor: agent.accent }}
+                      >
+                        <div className="flex items-center gap-2.5 mb-1.5">
+                          <div
+                            className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+                            style={{ backgroundColor: `${agent.accent}20`, color: agent.accent }}
+                          >
+                            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                          </div>
+                          <h3 className="text-xs font-bold font-mono text-[var(--text-primary)]">{agent.name}</h3>
+                          {isActive && (
+                            <span className="status-pill status-pill-verified text-[8px] py-0 ml-auto">DONE</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[var(--text-secondary)] mb-2.5 ml-[2.85rem]">{agent.role}</p>
+                        <div className="flex items-center gap-3 text-[10px] font-mono text-[var(--text-muted)] ml-[2.85rem]">
+                          <span className="flex items-center gap-1">
+                            <Cpu className="h-3 w-3" aria-hidden="true" />
+                            {agent.model}
+                          </span>
+                          <span className="text-[var(--border-default)]">|</span>
+                          <span className="flex items-center gap-1">
+                            <Terminal className="h-3 w-3" aria-hidden="true" />
+                            {agent.budget}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-xs text-[var(--text-secondary)]">{agent.role}</p>
-                    <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)]">
-                      <span>Model: {agent.model}</span>
-                      <span>Config: {agent.budget}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -396,7 +443,7 @@ function LoomControlPlane() {
           {activeTab === 'sandbox' && (
             <div className="loom-card flex flex-col gap-6">
               <div className="border-b border-[var(--border-subtle)] pb-3">
-                <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase">
+                <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase tracking-tight">
                   Sandbox Tier Isolation
                 </h2>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
@@ -405,23 +452,53 @@ function LoomControlPlane() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
-                  <span className="text-[10px] font-mono font-bold text-[var(--brand)]">TIER A</span>
-                  <h3 className="text-sm font-bold text-[var(--text-primary)] font-mono">Git Worktree</h3>
-                  <p className="text-xs text-[var(--text-muted)]">Fastest checkout for read-only AST indexing and static lint analysis.</p>
-                </div>
-
-                <div className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] ring-1 ring-[var(--brand)]/30 space-y-2">
-                  <span className="text-[10px] font-mono font-bold text-[var(--cyan)]">TIER B (ACTIVE)</span>
-                  <h3 className="text-sm font-bold text-[var(--text-primary)] font-mono">Container (gVisor)</h3>
-                  <p className="text-xs text-[var(--text-muted)]">Isolated container with strict DENY_ALL egress and syscall filtering.</p>
-                </div>
-
-                <div className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] space-y-2">
-                  <span className="text-[10px] font-mono font-bold text-[var(--warning)]">TIER C</span>
-                  <h3 className="text-sm font-bold text-[var(--text-primary)] font-mono">Firecracker MicroVM</h3>
-                  <p className="text-xs text-[var(--text-muted)]">Hardware-level virtualization for adversarial patch executions.</p>
-                </div>
+                {[
+                  { tier: 'TIER A', name: 'Git Worktree', icon: Zap, color: 'var(--text-muted)', accent: 'var(--text-muted)', desc: 'Fastest checkout for read-only AST indexing and static lint analysis.', features: ['Zero isolation overhead', 'Local filesystem access', 'Tree-sitter AST parsing'], active: false },
+                  { tier: 'TIER B', name: 'Container (gVisor)', icon: Box, color: 'var(--cyan)', accent: 'var(--cyan)', desc: 'Isolated container with strict DENY_ALL egress and syscall filtering.', features: ['gVisor kernel interception', 'DENY_ALL network egress', 'Pytest sandbox execution'], active: true },
+                  { tier: 'TIER C', name: 'Firecracker MicroVM', icon: Lock, color: 'var(--warning)', accent: 'var(--warning)', desc: 'Hardware-level virtualization for adversarial patch executions.', features: ['KVM hardware isolation', 'MSHV hypervisor (Windows)', 'Full memory snapshot'], active: false },
+                ].map(tier => {
+                  const Icon = tier.icon;
+                  return (
+                    <div
+                      key={tier.tier}
+                      className={`p-4 rounded-xl border space-y-3 transition-all duration-200 ${
+                        tier.active
+                          ? 'tier-card-active border-[var(--cyan)]/60 bg-[var(--bg-elevated)]'
+                          : 'bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-default)]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="h-7 w-7 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: `${tier.accent}15`, color: tier.accent }}
+                        >
+                          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-mono font-bold uppercase tracking-wider" style={{ color: tier.accent }}>
+                            {tier.tier} {tier.active && '(ACTIVE)'}
+                          </span>
+                          <h3 className="text-sm font-bold text-[var(--text-primary)] font-mono leading-tight">{tier.name}</h3>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">{tier.desc}</p>
+                      <ul className="space-y-1.5">
+                        {tier.features.map(f => (
+                          <li key={f} className="flex items-center gap-1.5 text-[10px] font-mono text-[var(--text-muted)]">
+                            <CheckCircle2 className="h-3 w-3 shrink-0" style={{ color: tier.accent }} aria-hidden="true" />
+                            {f}
+                          </li>
+                        ))}
+                      </ul>
+                      {tier.active && (
+                        <div className="flex items-center gap-1.5 pt-2 border-t border-[var(--cyan)]/20">
+                          <Lock className="h-3 w-3 text-[var(--cyan)]" aria-hidden="true" />
+                          <span className="text-[10px] font-mono text-[var(--cyan)] font-bold">DENY_ALL EGRESS</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -436,7 +513,7 @@ function LoomControlPlane() {
             <div className="loom-card flex flex-col gap-4">
               <div className="border-b border-[var(--border-subtle)] pb-3 flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase">
+                  <h2 className="text-base font-bold text-[var(--text-primary)] font-mono uppercase tracking-tight">
                     Reproduction & Sandbox Test Suites
                   </h2>
                   <p className="text-xs text-[var(--text-muted)] mt-0.5">
@@ -452,18 +529,21 @@ function LoomControlPlane() {
 
               {displayData?.reproductionTest ? (
                 <div className="bg-[var(--bg-root)] border border-[var(--border-subtle)] rounded-xl p-4 font-mono text-xs text-[var(--text-secondary)] overflow-x-auto space-y-2">
-                  <p className="text-[var(--brand)] font-bold">{'// Synthesized Reproduction Test for Run '}{displayData.id}:</p>
+                  <p className="text-[var(--brand)] font-bold">{`// Synthesized Reproduction Test for Run `}{displayData.id}:</p>
                   <pre className="whitespace-pre-wrap text-[var(--text-primary)]">{displayData.reproductionTest}</pre>
                 </div>
               ) : (
-                <div className="py-12 text-center text-xs text-[var(--text-muted)] flex flex-col items-center gap-3">
+                <div className="py-14 text-center text-xs text-[var(--text-muted)] flex flex-col items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--text-muted)]">
+                    <TestTube2 className="h-5 w-5" aria-hidden="true" />
+                  </div>
                   <p>No test suite execution recorded yet for {connectedRepo?.fullName || 'this repository'}.</p>
                   <button
                     onClick={() => setIsNewRunModalOpen(true)}
-                    className="btn-primary h-8 px-3 text-xs gap-1.5"
+                    className="btn-primary h-8 px-3 text-xs gap-1.5 shadow-lg shadow-[var(--brand)]/20"
                   >
-                    <Play className="h-3 w-3 fill-current" />
-                    <span>Launch Run to Synthesize Tests</span>
+                    <Play className="h-3 w-3 fill-current relative z-10" />
+                    <span className="relative z-10">Launch Run to Synthesize Tests</span>
                   </button>
                 </div>
               )}
@@ -487,7 +567,7 @@ function LoomControlPlane() {
         </main>
       </div>
 
-      {/* New Run Modal */}
+      {/* ── Modals / Drawers ── */}
       <NewRunModal
         isOpen={isNewRunModalOpen}
         onClose={() => setIsNewRunModalOpen(false)}
@@ -506,7 +586,6 @@ function LoomControlPlane() {
         onOpenIssuesDrawer={() => setIsIssuesDrawerOpen(true)}
       />
 
-      {/* LiveBox Modal with Execution & PR Generation */}
       <LiveBoxReal
         isOpen={isLiveBoxOpen}
         onClose={() => setIsLiveBoxOpen(false)}
@@ -522,20 +601,17 @@ function LoomControlPlane() {
         onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
       />
 
-      {/* API Key Modal */}
       <ApiKeyModal
         isOpen={isApiKeyModalOpen}
         onClose={() => setIsApiKeyModalOpen(false)}
       />
 
-      {/* Repository Connection Modal */}
       <RepoConnectModal
         isOpen={isRepoModalOpen}
         onClose={() => setIsRepoModalOpen(false)}
         githubState={githubState}
       />
 
-      {/* GitHub Issues Drawer */}
       <GitHubIssuesDrawer
         isOpen={isIssuesDrawerOpen}
         onClose={() => setIsIssuesDrawerOpen(false)}
@@ -548,6 +624,39 @@ function LoomControlPlane() {
           setIsLiveBoxOpen(true);
         }}
       />
+
+      <KeyboardShortcutsHelp
+        isOpen={isKeyboardHelpOpen}
+        onClose={() => setIsKeyboardHelpOpen(false)}
+      />
+
+      <OnboardingTour />
+
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={(t) => setActiveTab(t as LifecycleTab)}
+        onOpenSettings={() => setIsRepoModalOpen(true)}
+      />
+
+      {/* ── Toast Notifications ── */}
+      <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none" aria-live="polite">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            role="status"
+            className={`notification-toast ${toast.variant === 'success' ? 'toast-success' : 'toast-error'} ${toast.exiting ? 'toast-exit' : ''}`}
+          >
+            <div className="flex items-start gap-2 flex-1">
+              {toast.variant === 'success'
+                ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+                : <XCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+              }
+              <span className="text-[11px] font-mono leading-snug">{toast.message}</span>
+            </div>
+            <div className="toast-progress" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

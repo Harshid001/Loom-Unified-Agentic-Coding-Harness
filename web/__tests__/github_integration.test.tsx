@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, renderHook, act } from '@testing-library/react';
+import { render, renderHook, waitFor } from '@testing-library/react';
 import { screen, fireEvent } from '@testing-library/dom';
 import { RepoConnectModal } from '../src/components/RepoConnectModal';
 import { GitHubIssuesDrawer } from '../src/components/GitHubIssuesDrawer';
@@ -13,13 +13,18 @@ describe('useGitHub credential security', () => {
     vi.restoreAllMocks();
   });
 
-  it('purges any legacy plaintext token from localStorage on initialization', () => {
+  it('purges any legacy plaintext token from localStorage on initialization', async () => {
     localStorage.setItem('loom_github_token', 'ghp_secret_legacy_token');
     expect(localStorage.getItem('loom_github_token')).toBe('ghp_secret_legacy_token');
 
-    const { result } = renderHook(() => useGitHub());
+    await act(async () => {
+      renderHook(() => useGitHub());
+    });
 
-    expect(localStorage.getItem('loom_github_token')).toBeNull();
+    // useGitHub's useEffect dispatches cleanup; wait for it to settle
+    await waitFor(() => {
+      expect(localStorage.getItem('loom_github_token')).toBeNull();
+    });
   });
 
   it('does not persist PAT to localStorage upon authentication', async () => {
@@ -28,13 +33,18 @@ describe('useGitHub credential security', () => {
       json: async () => ({ login: 'testuser', avatar_url: '', html_url: '', public_repos: 1 }),
     });
 
+    // Render hook outside act(), wrap the async state transition (authenticate) inside act()
     const { result } = renderHook(() => useGitHub());
+    const hookResult = result;
 
     await act(async () => {
-      await result.current.authenticate('ghp_new_ephemeral_token');
+      await hookResult.current.authenticate('ghp_new_ephemeral_token');
     });
 
-    expect(result.current.token).toBe('ghp_new_ephemeral_token');
+    // Wait for all post-authentication async state updates to flush
+    await waitFor(() => {
+      expect(hookResult.current.token).toBe('ghp_new_ephemeral_token');
+    });
     expect(localStorage.getItem('loom_github_token')).toBeNull();
   });
 });

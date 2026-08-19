@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { screen, fireEvent } from '@testing-library/dom';
@@ -7,6 +7,7 @@ import { DagTab } from '../src/components/DagTab';
 import { AblationsTab } from '../src/components/AblationsTab';
 import { EvidenceView } from '../src/components/EvidenceView';
 import { Header } from '../src/components/Header';
+import { AuthGate } from '../src/components/AuthGate';
 
 describe('DiffTab component', () => {
   it('renders placeholder when no displayData is provided', () => {
@@ -70,11 +71,14 @@ describe('EvidenceView component', () => {
       reproductionTest: 'def test_repro(): pass',
       snapshotId: 'snap_101',
     };
-    render(<EvidenceView displayData={mockDisplay} runId="run_101" integrityValid={true} />);
-    expect(screen.getByText(/SHA-256 Hash Chain Audit Bundle/i)).toBeInTheDocument();
+    await act(async () => {
+      render(<EvidenceView displayData={mockDisplay} runId="run_101" integrityValid={true} />);
+    });
+
     await waitFor(() => {
       expect(screen.getByText(/INTEGRITY VALID/i)).toBeInTheDocument();
     });
+    expect(screen.getByText(/SHA-256 Hash Chain Audit Bundle/i)).toBeInTheDocument();
     expect(screen.getByText(/Verification Proof Checklist/i)).toBeInTheDocument();
     expect(screen.getByText(/Chained Artifact Manifest/i)).toBeInTheDocument();
   });
@@ -122,20 +126,14 @@ describe('Header component', () => {
 
 describe('AuthGate component', () => {
   it('renders Google sign in button and token login form', async () => {
-    const { AuthGate } = await import('../src/components/AuthGate');
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: async () => ({ authenticated: false }),
+    await act(async () => {
+      render(
+        <AuthGate>
+          <div>Protected Content</div>
+        </AuthGate>
+      );
     });
 
-    render(
-      <AuthGate>
-        <div>Protected Content</div>
-      </AuthGate>
-    );
-
-    const { waitFor } = await import('@testing-library/react');
     await waitFor(() => {
       expect(screen.getByText(/Sign in with Google/i)).toBeInTheDocument();
       expect(screen.getByText(/or continue with token/i)).toBeInTheDocument();

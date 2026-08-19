@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ModelSettingsPage, { ModelSettingsContent } from '../src/app/settings/models/page';
@@ -22,6 +22,7 @@ describe('ModelSettingsPage', () => {
               openai: { configured: false, models: ['gpt-4o'] },
               deepseek: { configured: false, models: ['deepseek-v3'] },
               gemini: { configured: false, models: ['gemini-1.5-pro'] },
+              openrouter: { configured: false, models: ['google/gemini-2.0-flash-exp:free'] },
             },
           }),
         });
@@ -53,9 +54,15 @@ describe('ModelSettingsPage', () => {
   });
 
   it('renders provider tabs and main controls', async () => {
-    render(<ModelSettingsContent />);
+    await act(async () => {
+      render(<ModelSettingsContent />);
+    });
 
-    expect(screen.getByText(/Model Settings/i)).toBeInTheDocument();
+    // Wait for the async fetchConfig useEffect to resolve and state to settle
+    await waitFor(() => {
+      expect(screen.getByText(/Model Settings/i)).toBeInTheDocument();
+    });
+
     expect(screen.getByText(/Runtime Model Detection & Switching/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Anthropic/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/OpenAI/i).length).toBeGreaterThan(0);
@@ -65,23 +72,43 @@ describe('ModelSettingsPage', () => {
   });
 
   it('switches provider tab when clicked', async () => {
-    render(<ModelSettingsContent />);
+    await act(async () => {
+      render(<ModelSettingsContent />);
+    });
+
+    // Wait for async fetchConfig to complete before interacting
+    await waitFor(() => {
+      expect(screen.getByText(/Model Settings/i)).toBeInTheDocument();
+    });
 
     const openAiTabs = screen.getAllByText('OpenAI');
-    fireEvent.click(openAiTabs[0]);
+    await act(async () => {
+      fireEvent.click(openAiTabs[0]);
+    });
 
     expect(screen.getByText(/OpenAI Authentication/i)).toBeInTheDocument();
     expect(screen.getByText(/Detected OpenAI Models/i)).toBeInTheDocument();
   });
 
   it('handles test & detect flow with feedback', async () => {
-    render(<ModelSettingsContent />);
+    await act(async () => {
+      render(<ModelSettingsContent />);
+    });
+
+    // Wait for initial fetchConfig to resolve
+    await waitFor(() => {
+      expect(screen.getByText(/Model Settings/i)).toBeInTheDocument();
+    });
 
     const input = screen.getByPlaceholderText(/sk-ant-api03/i);
-    fireEvent.change(input, { target: { value: 'sk-ant-test-key-12345' } });
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'sk-ant-test-key-12345' } });
+    });
 
     const detectBtn = screen.getByText(/Test & Detect/i);
-    fireEvent.click(detectBtn);
+    await act(async () => {
+      fireEvent.click(detectBtn);
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Successfully validated Anthropic key/i)).toBeInTheDocument();
@@ -89,7 +116,10 @@ describe('ModelSettingsPage', () => {
   });
 
   it('protects ModelSettingsPage behind AuthGate', async () => {
-    render(<ModelSettingsPage />);
+    await act(async () => {
+      render(<ModelSettingsPage />);
+    });
+
     await waitFor(() => {
       expect(screen.getByText(/Loom Dashboard/i)).toBeInTheDocument();
       expect(screen.getByPlaceholderText(/Enter master token or API key/i)).toBeInTheDocument();

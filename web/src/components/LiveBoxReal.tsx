@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitPullRequest, ExternalLink, Check, Loader2, AlertCircle, X, Terminal, Sparkles, Play, Pause, RotateCcw, Key } from "lucide-react";
+import { GitPullRequest, ExternalLink, Check, Loader2, AlertCircle, X, Terminal, Sparkles, Play, Pause, RotateCcw, Key, Copy, TestTube2, FileCode, ShieldCheck, Cpu, CheckCircle2 } from "lucide-react";
 import { Github } from "./GithubIcon";
 
 interface LiveBoxProps {
@@ -42,6 +42,24 @@ const initialSteps: StepState[] = [
   { name: "reviewer", status: "pending" },
 ];
 
+  const AGENT_STEP_META: Record<string, { role: string; sandbox: string; auditor: string }> = {
+    onboarding:   { role: 'AST Call Graph',        sandbox: 'Tier A Worktree',  auditor: 'Source Mapper' },
+    reproduction: { role: 'Failing Test Synthesis', sandbox: 'Tier B Container', auditor: 'Proof Layer Auditor' },
+    patcher:      { role: 'Surgical Modification', sandbox: 'Tier B Container', auditor: 'Security Linter' },
+    verifier:     { role: 'Regression Verification', sandbox: 'Tier C MicroVM', auditor: 'Proof Layer Auditor' },
+    reviewer:     { role: 'Security & Quality Audit', sandbox: 'Tier C MicroVM', auditor: 'Quality Gate' },
+  };
+
+  const AGENT_ICONS: Record<string, React.ElementType> = {
+    onboarding: Terminal,
+    reproduction: TestTube2,
+    patcher: FileCode,
+    verifier: ShieldCheck,
+    reviewer: CheckCircle2,
+    system: Cpu,
+    stream: Loader2,
+  };
+
 export function LiveBoxReal({
   isOpen,
   onClose,
@@ -66,9 +84,11 @@ export function LiveBoxReal({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("idle");
 
-  useEffect(() => {
-    if (model) setCurrentModel(model);
-  }, [model]);
+  const getStepModel = (stepName: string): string => {
+    const active = model || 'gpt-4o';
+    if (stepName === 'onboarding') return 'Tree-Sitter AST';
+    return active;
+  };
 
   // PR Creation State
   const [isCreatingPR, setIsCreatingPR] = useState(false);
@@ -77,24 +97,51 @@ export function LiveBoxReal({
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => { if (model) setCurrentModel(model); }, [model]);
 
   useEffect(() => () => eventSourceRef.current?.close(), []);
 
+  // Auto-scroll logs
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView?.({ behavior: "smooth" });
+    }
   }, [logs]);
 
+  // Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape" && !isCreatingPR) onClose();
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose, isCreatingPR]);
 
   const addLog = useCallback((entry: LogEntry) => {
     setLogs(prev => [...prev, entry]);
+  }, []);
+
+  const getLogLevelStyles = useCallback((level: string) => {
+    switch (level.toLowerCase()) {
+      case 'warn':  return 'log-warn';
+      case 'error': return 'log-error';
+      case 'success':
+      case 'ok':    return 'log-success';
+      case 'info':
+      default:      return level.toLowerCase() === 'system' ? 'log-system' : 'log-info';
+    }
+  }, []);
+
+  const getStepStatusIcon = useCallback((stepStatus: string, stepName: string) => {
+    switch (stepStatus) {
+      case "completed": return <Check className="h-3.5 w-3.5 text-[var(--success)]" aria-hidden="true" />;
+      case "running":   return <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--cyan)]" aria-hidden="true" />;
+      case "failed":    return <AlertCircle className="h-3.5 w-3.5 text-[var(--danger)]" aria-hidden="true" />;
+      default:          return <div className="h-2 w-2 rounded-full bg-[var(--border-default)]" aria-hidden="true" />;
+    }
   }, []);
 
   const sendControl = useCallback(async (action: string, payload?: Record<string, any>) => {
@@ -193,29 +240,26 @@ export function LiveBoxReal({
         providerKey = localStorage.getItem('loom_provider_openai_key') || '';
       } else if (m.includes('deepseek')) {
         providerKey = localStorage.getItem('loom_provider_deepseek_key') || '';
-      } else if (m.includes('openrouter') || m.includes('llama')) {
+      } else if (m.includes('')) {
         providerKey = localStorage.getItem('loom_provider_openrouter_key') || '';
       }
     }
 
     setError(null);
-    setIsRunning(true);
-    setStatus("running");
+    setSteps(initialSteps);
     setLogs([]);
     setPatchDiff(null);
     setCreatedPRUrl(null);
     setPrError(null);
-    setSteps(initialSteps.map(step => ({ ...step, status: "pending" })));
+    setIsRunning(true);
+    setStatus("running");
 
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (loomApiKey) headers["X-API-Key"] = loomApiKey;
-
-      const response = await fetch("/api/run", {
+      const res = await fetch("/api/run", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json", ...(loomApiKey ? { "X-API-Key": loomApiKey } : {}) },
         body: JSON.stringify({
-          issue,
+          issue: issue.trim(),
           model: targetModel,
           repo_path: repoPath,
           mock: isMock,
@@ -223,328 +267,355 @@ export function LiveBoxReal({
           provider_key: providerKey || undefined,
         }),
       });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.detail || `Run trigger failed with status ${response.status}`);
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `Run request failed: ${res.status}`);
       }
-      const data = await response.json();
-      setRunId(data.run_id);
-      startStream(data.run_id);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : "Failed to start run";
+
+      const data = await res.json().catch(() => ({}));
+      const runIdStr = data.run_id || data.id;
+      if (!runIdStr) throw new Error("No run ID returned from server");
+
+      setRunId(runIdStr);
+      addLog({
+        timestamp: new Date().toISOString(),
+        level: "success",
+        agent: "system",
+        message: `Run ${runIdStr} started on ${targetModel}${isMock ? ' (MOCK)' : ''}`,
+      });
+
+      startStream(runIdStr);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start run');
       setIsRunning(false);
-      setStatus("failed");
-      setError(errMsg);
+      setStatus("idle");
       addLog({
         timestamp: new Date().toISOString(),
         level: "error",
-        agent: "orchestrator",
-        message: errMsg,
+        agent: "system",
+        message: `Start failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
       });
-    }
-  };
-
-  const handleAction = async (action: string) => {
-    try {
-      await sendControl(action);
-      if (action === "cancel") {
-        setIsRunning(false);
-        setStatus("cancelled");
-        eventSourceRef.current?.close();
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : `Failed to execute ${action}`);
     }
   };
 
   const handleCreatePullRequest = async () => {
-    if (!onCreatePR) return;
+    if (!onCreatePR || !runId) return;
     setIsCreatingPR(true);
     setPrError(null);
-
     try {
-      const branchName = `loom-fix-${runId || Date.now()}`;
-      const title = `fix: ${issue.slice(0, 70)}${issue.length > 70 ? '...' : ''}`;
-      const body = `### Automated Fix by Loom Agentic Harness\n\n**Issue:**\n${issue}\n\n**Model Router:** \`${currentModel || model}\`\n**Run ID:** \`${runId || 'N/A'}\`\n\n### Changes Summary\nUnified patch verified under Sandbox Tier B.\n\n---\n*Generated by Loom Control Plane*`;
-
-      const pr = await onCreatePR({
-        title,
-        body,
-        head: branchName,
+      const result = await onCreatePR({
+        title: `loom-fix: ${issue.slice(0, 60)}${issue.length > 60 ? '…' : ''}`,
+        body: `Automated fix generated by Loom harness\n\nRun ID: ${runId}\nModel: ${currentModel}`,
+        head: `loom-fix-${runId.slice(0, 8)}`,
+        base: "main",
       });
-
-      if (pr?.html_url) {
-        setCreatedPRUrl(pr.html_url);
-      }
-    } catch (err: any) {
-      setPrError(err.message || 'Failed to create pull request on GitHub');
+      setCreatedPRUrl(result?.html_url || result?.url || null);
+    } catch {
+      setPrError("Failed to create pull request. Check GitHub token.");
     } finally {
       setIsCreatingPR(false);
     }
   };
 
-  const getStepModel = (stepName: string, stepModelOverride?: string): string => {
-    if (stepModelOverride) return stepModelOverride;
-    if (stepName === "onboarding") return "Tree-Sitter AST";
-    if (stepName === "verifier") return "Tier B Container";
-    if (stepName === "reviewer") return "Proof Layer Auditor";
-    return currentModel || model || "Active Model";
+  const handleAction = async (action: string) => {
+    if (!runId) return;
+    try {
+      await sendControl(action);
+      addLog({
+        timestamp: new Date().toISOString(),
+        level: "info",
+        agent: "system",
+        message: `Control action "${action}" sent successfully.`,
+      });
+    } catch {
+      addLog({
+        timestamp: new Date().toISOString(),
+        level: "error",
+        agent: "system",
+        message: `Control action "${action}" failed.`,
+      });
+    }
   };
 
-  const completed = useMemo(() => steps.filter(step => step.status === "completed").length, [steps]);
-  const progress = Math.round((completed / steps.length) * 100);
+  const copyAllLogs = useCallback(() => {
+    const allLogs = logs.map(l => `[${l.timestamp}] [${l.level.toUpperCase()}] [${l.agent}] ${l.message}`).join('\n');
+    navigator.clipboard.writeText(allLogs).catch(() => {});
+  }, [logs]);
 
   if (!isOpen) return null;
 
+  const isCompleted = status === "completed" || status === "failed";
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn cursor-pointer"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="livebox-title"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Live Box Execution Terminal">
+      {/* Backdrop with vignette */}
       <div
-        className="flex h-[88vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-surface)] shadow-2xl cursor-default"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] px-6 py-4">
+        className="absolute inset-0 bg-black/75 backdrop-blur-xl"
+        style={{ background: 'radial-gradient(ellipse at center, rgba(8,10,15,0.7) 0%, rgba(8,10,15,0.95) 100%)' }}
+        onClick={!isRunning ? onClose : undefined}
+        aria-hidden="true"
+      />
+
+      {/* Modal Content */}
+      <div className="relative w-full max-w-6xl h-[85vh] bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
+        {/* Header Bar */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-subtle)] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-[var(--brand-soft)] border border-[var(--brand)]/30 flex items-center justify-center text-[var(--brand)]">
-              <Terminal className="h-4 w-4" />
+            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-[var(--brand)] to-[var(--cyan)] flex items-center justify-center shadow-md shadow-[var(--brand)]/20">
+              <Terminal className="h-3.5 w-3.5 text-white" aria-hidden="true" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 id="livebox-title" className="text-sm font-bold text-[var(--text-primary)] uppercase font-mono tracking-tight">
-                  Live Pipeline Execution
-                </h2>
-                <span className="status-pill status-pill-idle text-[9px] py-0 px-1.5 font-mono">
-                  5-STAGE DAG
-                </span>
-              </div>
-              <p className="mt-0.5 text-xs text-[var(--text-muted)]">Real-time trace stream with state machine preconditions and evidence verification.</p>
+              <h2 className="text-xs font-bold text-[var(--text-primary)] font-mono uppercase">Live Pipeline Execution</h2>
+              <p className="text-[10px] text-[var(--text-muted)] font-mono">
+                {isRunning ? `Running: ${runId || '…'}` : isCompleted ? `Completed: ${runId || '—'}` : 'Idle'}
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="btn-secondary h-8 px-3 text-xs font-mono">
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            <span className={`status-pill ${isRunning ? 'status-pill-running' : isCompleted ? 'status-pill-success' : 'status-pill-idle'} text-[9px]`}>
+              {isRunning ? 'EXECUTING' : isCompleted ? 'COMPLETED' : 'READY'}
+            </span>
+            <button
+              onClick={onClose}
+              disabled={isRunning}
+              aria-label="Close terminal"
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition disabled:opacity-40"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 p-5 lg:grid-cols-3">
-          {/* Left Panel: Run Metadata & Control */}
-          <section className="min-h-0 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 lg:col-span-1 flex flex-col justify-between overflow-y-auto">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between font-mono text-xs">
-                <span className="text-[var(--text-muted)] font-bold uppercase">RUN ID</span>
-                <span className="text-[var(--brand-hover)] font-semibold">{runId || "not started"}</span>
-              </div>
+        {/* Main 2-col Grid */}
+        <div className="flex-1 flex min-h-0">
+          {/* LEFT: Controls + Steps */}
+          <div className="w-72 border-r border-[var(--border-subtle)] flex flex-col overflow-y-auto shrink-0">
+            {/* Issue Card */}
+            <div className="p-4 border-b border-[var(--border-subtle)] space-y-2">
+              <h3 className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider">Issue</h3>
+              <p className="text-xs text-[var(--text-secondary)] font-mono leading-relaxed line-clamp-4">{issue || 'No issue specified'}</p>
+            </div>
 
-              <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2.5 space-y-1.5 text-xs font-mono">
-                <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                  <span>Repository:</span>
-                  <span className="text-[var(--text-primary)] truncate max-w-[170px]" title={repoPath || '.'}>
-                    {repoPath || '.'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] gap-2">
-                  <span>Model:</span>
-                  {availableModels && availableModels.length > 0 && !isRunning && status === 'idle' ? (
-                    <select
-                      value={currentModel}
-                      onChange={(e) => handleModelSelect(e.target.value)}
-                      className="bg-[var(--bg-root)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded px-1.5 py-0.5 text-xs text-[var(--cyan)] font-mono outline-none cursor-pointer max-w-[170px] truncate"
-                      aria-label="Select execution model"
-                    >
-                      {availableModels.map(m => (
-                        <option key={m} value={m} className="bg-[var(--bg-elevated)] text-[var(--text-primary)] font-mono">
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="text-[var(--cyan)] font-bold truncate max-w-[170px]" title={currentModel}>
-                      {currentModel}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] pt-1.5 border-t border-[var(--border-subtle)]">
-                  <span>Execution Mode:</span>
-                  <button
-                    type="button"
-                    onClick={() => !isRunning && setIsMock(!isMock)}
-                    disabled={isRunning}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition flex items-center gap-1 cursor-pointer ${
-                      isMock
-                        ? 'bg-[var(--cyan)]/15 text-[var(--cyan)] border border-[var(--cyan)]/40 hover:bg-[var(--cyan)]/25'
-                        : 'bg-[var(--bg-root)] text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
-                    }`}
-                  >
-                    <span>{isMock ? '⚡ Mock Mode (Simulated)' : '🌐 Real Frontier LLM'}</span>
-                  </button>
-                </div>
-              </div>
+            {/* Model Selector */}
+            <div className="p-4 border-b border-[var(--border-subtle)] space-y-2">
+              <h3 className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider">Model</h3>
+              <select
+                value={currentModel}
+                onChange={e => handleModelSelect(e.target.value)}
+                disabled={isRunning}
+                aria-label="Select model"
+                className="w-full appearance-none bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[var(--brand)] rounded-lg px-3 py-2 text-xs font-mono text-[var(--text-primary)] outline-none pr-8 cursor-pointer disabled:opacity-50 transition"
+              >
+                {availableModels?.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
 
-              <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-root)] p-3 text-xs text-[var(--text-secondary)] font-mono leading-relaxed max-h-24 overflow-y-auto">
-                {issue || "No issue provided"}
-              </div>
-
-              <div className="h-1.5 overflow-hidden rounded bg-[var(--bg-root)] border border-[var(--border-subtle)]">
-                <div className="h-full bg-[var(--brand)] transition-all duration-300" style={{ width: `${progress}%` }} />
-              </div>
-
-              <div className="text-xs text-[var(--text-muted)] font-mono flex items-center justify-between">
-                <span>Status: <span className={`font-semibold uppercase ${status === 'completed' ? 'text-[var(--success)]' : status === 'running' ? 'text-[var(--warning)]' : status === 'failed' ? 'text-[var(--danger)]' : 'text-[var(--text-primary)]'}`}>{status}</span></span>
-                <span className="text-[11px]">{completed}/{steps.length} steps</span>
-              </div>
-
+            <div className="p-4 border-b border-[var(--border-subtle)] space-y-2">
+              <h3 className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider">Pipeline Steps</h3>
               <div className="space-y-1.5">
                 {steps.map(step => {
-                  const stepModel = getStepModel(step.name, step.model);
+                  const statusColor =
+                    step.status === 'completed' ? 'border-l-[var(--success)]' :
+                    step.status === 'running' ? 'border-l-[var(--cyan)]' :
+                    step.status === 'failed' ? 'border-l-[var(--danger)]' : 'border-l-[var(--border-default)]';
+                  const meta = AGENT_STEP_META[step.name] || { role: step.name, sandbox: '--', auditor: '--' };
+                  const stepModel = step.model || getStepModel(step.name);
                   return (
-                    <div key={step.name} className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-mono gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[var(--text-secondary)] capitalize shrink-0">{step.name}</span>
-                        <span className="text-[9px] text-[var(--cyan)] bg-[var(--bg-root)] px-1.5 py-0.2 rounded border border-[var(--border-subtle)] truncate max-w-[100px]" title={stepModel}>
+                    <div
+                      key={step.name}
+                      className={`p-2.5 rounded-lg border-l-[3px] bg-[var(--bg-surface)] ${statusColor} transition-all duration-300`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {getStepStatusIcon(step.status, step.name)}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-[11px] font-mono font-bold capitalize ${step.status === 'completed' ? 'text-[var(--success)]' : step.status === 'running' ? 'text-[var(--cyan)]' : 'text-[var(--text-muted)]'}`}>
+                            {step.name}
+                          </p>
+                          <p className="text-[9px] font-mono text-[var(--text-muted)] truncate">{meta.role}</p>
+                        </div>
+                      </div>
+                      {step.duration && (
+                        <p className="text-[9px] font-mono text-[var(--text-muted)] mt-0.5">
+                          {(step.duration / 1000).toFixed(1)}s
+                        </p>
+                      )}
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--cyan)] border border-[var(--border-subtle)]">
                           {stepModel}
                         </span>
+                        <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
+                          {meta.sandbox}
+                        </span>
+                        <span className="text-[8px] font-mono px-1 py-0.5 rounded bg-[var(--bg-elevated)] text-[var(--brand-hover)] border border-[var(--border-subtle)]">
+                          {meta.auditor}
+                        </span>
                       </div>
-                      <span className={`text-[10px] uppercase font-semibold shrink-0 ${step.status === 'completed' ? 'text-[var(--success)]' : step.status === 'running' ? 'text-[var(--warning)]' : 'text-[var(--text-muted)]'}`}>
-                        {step.status}
-                      </span>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            <div className="pt-3 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                {!isRunning ? (
-                  <button onClick={handleStart} disabled={!issue.trim()} className="btn-primary h-8 text-xs font-mono gap-1.5">
-                    <Play className="h-3 w-3 fill-current" />
-                    <span>Start Run</span>
+            {/* Action Buttons */}
+            <div className="p-4 space-y-2 mt-auto border-t border-[var(--border-subtle)]">
+              {!isRunning && !isCompleted && (
+                <button
+                  onClick={handleStart}
+                  className="btn-primary w-full h-9 text-xs gap-2 shadow-lg shadow-[var(--brand)]/20"
+                >
+                  <Play className="h-3.5 w-3.5 fill-current relative z-10" />
+                  <span className="relative z-10">Start Pipeline</span>
+                </button>
+              )}
+              {isRunning && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => handleAction("pause")} className="btn-secondary h-8 text-[10px] gap-1">
+                    <Pause className="h-3 w-3" aria-hidden="true" /> Pause
                   </button>
-                ) : (
-                  <button onClick={() => handleAction("cancel")} className="btn-secondary h-8 text-xs font-mono text-[var(--danger)] hover:border-[var(--danger)]/50">
-                    Cancel
+                  <button onClick={() => handleAction("cancel")} className="btn-secondary h-8 text-[10px] gap-1 text-[var(--danger)] hover:border-[var(--danger)]/50">
+                    <X className="h-3 w-3" aria-hidden="true" /> Cancel
                   </button>
-                )}
-                <button onClick={() => handleAction("pause")} disabled={!runId || !isRunning} className="btn-secondary h-8 text-xs font-mono">
-                  Pause
-                </button>
-                <button onClick={() => handleAction("resume")} disabled={!runId} className="btn-secondary h-8 text-xs font-mono">
-                  Resume
-                </button>
-                <button onClick={() => handleAction("step")} disabled={!runId} className="btn-secondary h-8 text-xs font-mono">
-                  Step
-                </button>
-              </div>
-
-              {/* GitHub PR Action on Completion */}
-              {(status === 'completed' || patchDiff) && onCreatePR && (
-                <div className="pt-1">
-                  {createdPRUrl ? (
-                    <a
-                      href={createdPRUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="w-full h-8 bg-[var(--success)]/10 border border-[var(--success)]/30 hover:bg-[var(--success)]/20 text-[var(--success)] rounded-lg text-xs font-mono font-semibold flex items-center justify-center gap-1.5 transition"
-                    >
-                      <Check className="h-3.5 w-3.5 stroke-[3]" />
-                      <span>View PR on GitHub</span>
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  ) : (
-                    <button
-                      onClick={handleCreatePullRequest}
-                      disabled={isCreatingPR}
-                      className="btn-primary w-full h-8 text-xs font-mono gap-1.5"
-                    >
-                      {isCreatingPR ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>Creating PR...</span>
-                        </>
-                      ) : (
-                        <>
-                          <GitPullRequest className="h-3.5 w-3.5" />
-                          <span>Create GitHub PR</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-                  {prError && (
-                    <p className="text-[10px] text-[var(--danger)] mt-1 flex items-center gap-1 font-mono">
-                      <AlertCircle className="h-3 w-3 shrink-0" />
-                      <span>{prError}</span>
-                    </p>
-                  )}
                 </div>
               )}
-
+              {isCompleted && (
+                <button
+                  onClick={handleCreatePullRequest}
+                  disabled={isCreatingPR || !hasGitHubToken}
+                  className="btn-primary w-full h-9 text-xs gap-2"
+                  title={!hasGitHubToken ? 'Connect a GitHub account first' : 'Create pull request'}
+                >
+                  <GitPullRequest className="h-3.5 w-3.5 relative z-10" aria-hidden="true" />
+                  <span className="relative z-10">{isCreatingPR ? 'Creating PR…' : 'Create Pull Request'}</span>
+                </button>
+              )}
               {error && (
-                <div role="alert" className="rounded-lg border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)] font-mono space-y-2">
-                  <div className="flex items-start gap-1.5">
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span className="leading-tight text-[11px]">{error}</span>
-                  </div>
-                  {(error.toLowerCase().includes('auth') || error.includes('401') || error.toLowerCase().includes('key') || error.toLowerCase().includes('backend')) && (
-                    <div className="flex items-center gap-2 pt-1 border-t border-[var(--danger)]/20 flex-wrap">
-                      {onOpenApiKeyModal && (
-                        <button
-                          type="button"
-                          onClick={onOpenApiKeyModal}
-                          className="btn-secondary h-6 px-2 text-[10px] gap-1 font-mono text-[var(--text-primary)]"
-                        >
-                          <Key className="h-2.5 w-2.5 text-[var(--brand)]" />
-                          <span>Set Loom API Key</span>
-                        </button>
-                      )}
-                      <a
-                        href="/settings/models"
-                        className="btn-secondary h-6 px-2 text-[10px] gap-1 font-mono text-[var(--text-primary)]"
-                      >
-                        <Sparkles className="h-2.5 w-2.5 text-[var(--cyan)]" />
-                        <span>Model Settings</span>
-                      </a>
-                    </div>
-                  )}
+                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/30 text-[11px] text-[var(--danger)] font-mono">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="leading-snug">{error}</span>
                 </div>
               )}
             </div>
-          </section>
+          </div>
 
-          {/* Right Panel: Live Trace Stream & Unified Diff */}
-          <section className="min-h-0 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 lg:col-span-2 flex flex-col justify-between">
-            <div className="h-[48%] flex flex-col min-h-0">
-              <div className="mb-2 text-xs font-mono font-bold uppercase text-[var(--text-muted)] flex items-center justify-between">
-                <span>Live Event Stream</span>
-                <span className="text-[10px] text-[var(--text-muted)]">{logs.length} events</span>
+          {/* RIGHT: Log Stream + Patch Diff */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Log Stream */}
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-subtle)] shrink-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider">Event Stream</h3>
+                  {logs.length > 0 && (
+                    <span className="text-[9px] font-mono text-[var(--text-muted)] bg-[var(--bg-surface)] px-1.5 py-0.5 rounded-full">
+                      {logs.length} entries
+                    </span>
+                  )}
+                </div>
+                {logs.length > 0 && (
+                  <button onClick={copyAllLogs} aria-label="Copy all logs" className="btn-tertiary text-[10px] gap-1">
+                    <Copy className="h-3 w-3" aria-hidden="true" /> Copy All
+                  </button>
+                )}
               </div>
-              <div className="flex-1 overflow-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-root)] p-3 font-mono text-[11px]">
-                {logs.length === 0 ? <div className="text-[var(--text-muted)] italic">Waiting for backend execution events…</div> : logs.map((log, index) => (
-                  <div key={`${log.timestamp}-${index}`} className="mb-1.5">
-                    <span className="text-[var(--text-muted)]">{log.timestamp.slice(11, 19)}</span>{" "}
-                    <span className="text-[var(--brand-hover)] font-semibold">[{log.agent}]</span>{" "}
-                    <span className="text-[var(--text-secondary)]">[{log.level}]</span>{" "}
-                    <span className="text-[var(--text-primary)]">{log.message}</span>
+              <div
+                ref={logsContainerRef}
+                className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs bg-[var(--bg-root)]"
+                role="log"
+                aria-label="Live event stream"
+              >
+                {logs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-[var(--text-muted)] gap-2 py-8">
+                    <Terminal className="h-6 w-6 opacity-30" aria-hidden="true" />
+                    <p className="text-[11px]">Waiting for events…</p>
                   </div>
-                ))}
+                ) : (
+                  logs.map((log, i) => {
+                    const time = new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    const levelCls = getLogLevelStyles(log.level);
+                    const StepIcon = AGENT_ICONS[log.agent] || Cpu;
+                    return (
+                      <div key={i} className={`flex items-start gap-2 py-1 px-2 rounded ${levelCls}`}>
+                        <span className="text-[var(--text-muted)] shrink-0 select-none tabular-nums text-[10px] pt-0.5">{time}</span>
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${
+                          log.level === 'error' ? 'bg-[var(--danger)]/15 text-[var(--danger)]' :
+                          log.level === 'warn' ? 'bg-[var(--warning)]/15 text-[var(--warning)]' :
+                          log.level === 'success' || log.level === 'ok' ? 'bg-[var(--success)]/15 text-[var(--success)]' :
+                          'bg-[var(--brand-soft)] text-[var(--brand-hover)]'
+                        }`}>
+                          {log.level.toUpperCase()}
+                        </span>
+                        <span className="text-[var(--text-muted)] shrink-0 text-[10px] mt-0.5 hidden sm:inline">{log.agent}</span>
+                        <span className="leading-snug break-all">{log.message}</span>
+                      </div>
+                    );
+                  })
+                )}
                 <div ref={logsEndRef} />
               </div>
             </div>
 
-            <div className="h-[48%] flex flex-col min-h-0 mt-3">
-              <div className="mb-2 text-xs font-mono font-bold uppercase text-[var(--text-muted)] flex items-center justify-between">
-                <span>Patch Proposal</span>
-                {patchDiff && <span className="status-pill status-pill-verified text-[9px] py-0">UNIFIED DIFF</span>}
+            {/* Patch Diff */}
+            {patchDiff && (
+              <div className="h-48 border-t border-[var(--border-subtle)] flex flex-col shrink-0 animate-slide-in-from-right">
+                <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-subtle)] shrink-0">
+                  <h3 className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider">
+                    Patch Proposal
+                  </h3>
+                  <span className="text-[9px] font-mono text-[var(--success)] bg-[var(--success)]/10 px-2 py-0.5 rounded-full font-bold">
+                    ✓ Generated
+                  </span>
+                </div>
+                <div className="flex-1 overflow-auto p-3 font-mono text-xs text-[var(--text-secondary)] bg-[var(--bg-root)]">
+                  <pre className="whitespace-pre-wrap">{patchDiff}</pre>
+                </div>
               </div>
-              <pre className="flex-1 overflow-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-root)] p-3 text-[11px] text-[var(--text-secondary)] font-mono">
-                {patchDiff || "No patch event received yet."}
-              </pre>
-            </div>
-          </section>
+            )}
+
+            {/* PR Result */}
+            {(createdPRUrl || prError) && (
+              <div className={`shrink-0 p-3 border-t animate-slide-in-from-right ${
+                prError ? 'border-[var(--danger)]/40 bg-[var(--danger)]/10' : 'border-[var(--success)]/40 bg-[var(--success)]/10'
+              }`}>
+                {prError ? (
+                  <div className="flex items-start gap-2 text-xs text-[var(--danger)] font-mono">
+                    <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <div>
+                      <p className="font-bold">PR Creation Failed</p>
+                      <p className="text-[var(--text-muted)] mt-0.5">{prError}</p>
+                    </div>
+                  </div>
+                ) : createdPRUrl && (
+                  <div className="flex items-center gap-3">
+                    <div className="h-6 w-6 rounded-full bg-[var(--success)]/20 flex items-center justify-center text-[var(--success)]">
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-mono font-bold text-[var(--success)]">Pull Request Created</p>
+                      <a
+                        href={createdPRUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-[var(--brand-hover)] hover:underline font-mono truncate block"
+                      >
+                        {createdPRUrl}
+                      </a>
+                    </div>
+                    <a
+                      href={createdPRUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary h-7 px-2.5 text-[10px] gap-1 shrink-0"
+                    >
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      View PR
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

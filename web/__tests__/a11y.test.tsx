@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import React from 'react';
+import React, { act } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { Sidebar } from '../src/components/Sidebar';
 import { Header } from '../src/components/Header';
@@ -115,28 +115,34 @@ describe('Frontend Accessibility (a11y) Verification', () => {
     expect(executeBtn).toBeDefined();
   });
 
-  it('EvidenceView provides cryptographic seal regions and export button', () => {
-    render(
-      <EvidenceView
-        displayData={{
-          id: 'run_a11y_01',
-          status: 'VERIFIED SUCCESS',
-          patchDiff: 'diff --git a/test b/test',
-        }}
-        connectedRepoName="loom/test-repo"
-      />
-    );
+  it('EvidenceView provides cryptographic seal regions and export button', async () => {
+    await act(async () => {
+      render(
+        <EvidenceView
+          displayData={{
+            id: 'run_a11y_01',
+            status: 'VERIFIED SUCCESS',
+            patchDiff: 'diff --git a/test b/test',
+          }}
+          connectedRepoName="loom/test-repo"
+        />
+      );
+    });
 
-    const exportBtn = screen.getByRole('button', { name: /export/i });
-    expect(exportBtn).toBeDefined();
+    await waitFor(() => {
+      const exportBtn = screen.getByRole('button', { name: /export/i });
+      expect(exportBtn).toBeDefined();
+    });
   });
 
   it('AuthGate provides accessible input labels and alert semantics on error', async () => {
-    render(
-      <AuthGate>
-        <div>Dashboard Content</div>
-      </AuthGate>
-    );
+    await act(async () => {
+      render(
+        <AuthGate>
+          <div>Dashboard Content</div>
+        </AuthGate>
+      );
+    });
 
     await waitFor(() => {
       const tokenInput = screen.getByPlaceholderText(/enter master token or api key/i);

@@ -73,7 +73,10 @@ describe('Active Model Propagation & Display across Components', () => {
     expect(screen.getByText(/Live Pipeline Execution/i)).toBeInTheDocument();
     expect(screen.getAllByText('gpt-4o').length).toBeGreaterThan(0);
     expect(screen.getByText('Tree-Sitter AST')).toBeInTheDocument();
-    expect(screen.getByText('Tier B Container')).toBeInTheDocument();
-    expect(screen.getByText('Proof Layer Auditor')).toBeInTheDocument();
+    expect(screen.getAllByText('Tier B Container').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Source Mapper')).toBeInTheDocument();
+    expect(screen.getAllByText('Proof Layer Auditor').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Security Linter')).toBeInTheDocument();
+    expect(screen.getByText('Quality Gate')).toBeInTheDocument();
   });
 });

@@ -6,6 +6,7 @@ export interface RunItem {
   status: string;
   cost?: number;
   createdAt?: number;
+  duration?: number;
 }
 
 interface RunDetails {

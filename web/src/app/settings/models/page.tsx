@@ -494,7 +494,7 @@ function ModelSettingsContent() {
             <label className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider block mb-2 px-1">
               SELECT PROVIDER
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {(Object.keys(PROVIDERS) as ProviderKey[]).map(key => {
                 const p = PROVIDERS[key];
                 const isSelected = selectedProvider === key;
@@ -690,7 +690,7 @@ function ModelSettingsContent() {
               <Server className="h-3.5 w-3.5 text-[var(--brand)]" />
               <span>Configured Providers Overview</span>
             </h3>
-            <span className="text-[11px] font-mono text-[var(--text-muted)]">4 Providers Supported</span>
+            <span className="text-[11px] font-mono text-[var(--text-muted)]">{Object.keys(PROVIDERS).length} Providers Supported</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

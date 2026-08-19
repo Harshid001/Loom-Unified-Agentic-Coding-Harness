@@ -6,6 +6,13 @@ export async function GET(req: NextRequest) {
   const origin = getAppOrigin(req);
 
   if (!clientId) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(
+        '[Google OAuth] GOOGLE_CLIENT_ID is not set. ' +
+          'Set it in your environment (e.g. .env.local or shell export) ' +
+          'to enable Google sign-in. Redirecting with error code google_oauth_unconfigured.'
+      );
+    }
     return NextResponse.redirect(`${origin}/?error=google_oauth_unconfigured`);
   }
 
