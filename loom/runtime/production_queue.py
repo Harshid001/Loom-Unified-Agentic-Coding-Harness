@@ -47,18 +47,30 @@ async def _production_create_run(
     if not ok:
         raise HTTPException(status_code=402, detail=reason)
 
-    raw_path = Path(req.repo_path or ".").resolve()
-    if not raw_path.exists() or not raw_path.is_dir():
-        raise HTTPException(status_code=400, detail="Target repo_path does not exist or is not a directory")
-
-    allowed_roots = server_module.os.getenv("ALLOWED_REPO_ROOTS")
-    if not allowed_roots:
-        raise HTTPException(status_code=403, detail="ALLOWED_REPO_ROOTS is required in production")
-    roots = [Path(item.strip()).resolve() for item in allowed_roots.split(",") if item.strip()]
-    if not any(root == raw_path or root in raw_path.parents for root in roots):
-        raise HTTPException(status_code=403, detail="repo_path is not within allowed repository roots")
-
     run_id = f"run_{uuid.uuid4().hex}"
+    req_repo = req.repo_path or "."
+    if req_repo.startswith("https://") or req_repo.startswith("git@") or "github.com" in req_repo:
+        from loom.api.server import clone_remote_repo
+        from loom.api.auth.api_tokens import resolve_vault_token
+
+        token = None
+        try:
+            token = resolve_vault_token(f"vault:{org_id}", allow_ambient_fallback=True)
+        except Exception:
+            token = server_module.os.getenv("GITHUB_TOKEN", server_module.os.getenv("GH_TOKEN", None))
+
+        raw_path = clone_remote_repo(req_repo, run_id, token=token or None)
+    else:
+        raw_path = Path(req_repo).resolve()
+        if not raw_path.exists() or not raw_path.is_dir():
+            raise HTTPException(status_code=400, detail="Target repo_path does not exist or is not a directory")
+
+        allowed_roots = server_module.os.getenv("ALLOWED_REPO_ROOTS")
+        if not allowed_roots:
+            raise HTTPException(status_code=403, detail="ALLOWED_REPO_ROOTS is required in production")
+        roots = [Path(item.strip()).resolve() for item in allowed_roots.split(",") if item.strip()]
+        if not any(root == raw_path or root in raw_path.parents for root in roots):
+            raise HTTPException(status_code=403, detail="repo_path is not within allowed repository roots")
     job = RunJob(
         job_id=f"job_{uuid.uuid4().hex}",
         run_id=run_id,
