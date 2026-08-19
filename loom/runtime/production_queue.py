@@ -50,8 +50,8 @@ async def _production_create_run(
     run_id = f"run_{uuid.uuid4().hex}"
     req_repo = req.repo_path or "."
     if req_repo.startswith("https://") or req_repo.startswith("git@") or "github.com" in req_repo:
-        from loom.integrations.github_client import resolve_vault_token
         from loom.api.server import clone_remote_repo
+        from loom.integrations.github_client import resolve_vault_token
 
         token = None
         try:
