@@ -23,7 +23,7 @@ logger = logging.getLogger("loom.api.settings")
 router_settings = APIRouter(tags=["settings"])
 
 # In-memory default active model setting
-_active_model: str = "claude-3-5-sonnet-20241022"
+_active_model: str = "claude-3-7-sonnet-20250219"
 
 
 def get_current_active_model() -> str:
@@ -39,7 +39,7 @@ def set_current_active_model(model: str) -> str:
 
 
 class SetModelRequest(BaseModel):
-    model: str = Field(..., description="The model ID to set as active (e.g. gpt-4o, claude-3-5-sonnet-20241022)")
+    model: str = Field(..., description="The model ID to set as active (e.g. gpt-4o, claude-3-7-sonnet-20250219)")
     provider: Optional[str] = Field(default=None, description="Optional provider associated with the model")
     api_key: Optional[str] = Field(default=None, description="Optional API key override")
 

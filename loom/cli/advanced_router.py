@@ -28,9 +28,9 @@ class CostOptimizedRouter:
             rules=[
                 RoutingRule(agent_name="onboarding", model="gpt-4o", priority=1),
                 RoutingRule(agent_name="reproduction", model="gpt-4o", priority=1),
-                RoutingRule(agent_name="patcher", model="claude-3-5-sonnet-20241022", priority=2),
+                RoutingRule(agent_name="patcher", model="claude-3-7-sonnet-20250219", priority=2),
                 RoutingRule(agent_name="verifier", model="gpt-4o", priority=1),
-                RoutingRule(agent_name="reviewer", model="claude-3-5-sonnet-20241022", priority=2),
+                RoutingRule(agent_name="reviewer", model="claude-3-7-sonnet-20250219", priority=2),
             ],
         ),
         "minimal_cost": RoutingProfile(
@@ -44,30 +44,30 @@ class CostOptimizedRouter:
             name="max_quality",
             description="Maximum quality — routes everything to Claude 3.5 Sonnet",
             rules=[
-                RoutingRule(agent_name="*", model="claude-3-5-sonnet-20241022", priority=3),
+                RoutingRule(agent_name="*", model="claude-3-7-sonnet-20250219", priority=3),
             ],
         ),
         "hybrid": RoutingProfile(
             name="hybrid",
             description="Claude for patching+review, Gemini for onboarding+repro, GPT-4o for verification",
             rules=[
-                RoutingRule(agent_name="onboarding", model="gemini-1.5-pro", priority=1),
-                RoutingRule(agent_name="reproduction", model="gemini-1.5-pro", priority=1),
-                RoutingRule(agent_name="patcher", model="claude-3-5-sonnet-20241022", priority=2),
+                RoutingRule(agent_name="onboarding", model="gemini-2.5-pro", priority=1),
+                RoutingRule(agent_name="reproduction", model="gemini-2.5-pro", priority=1),
+                RoutingRule(agent_name="patcher", model="claude-3-7-sonnet-20250219", priority=2),
                 RoutingRule(agent_name="verifier", model="gpt-4o", priority=1),
-                RoutingRule(agent_name="reviewer", model="claude-3-5-sonnet-20241022", priority=2),
+                RoutingRule(agent_name="reviewer", model="claude-3-7-sonnet-20250219", priority=2),
             ],
         ),
     }
 
     MODEL_COSTS = {
-        "claude-3-5-sonnet-20241022": {"input": 0.000003, "output": 0.000015},
+        "claude-3-7-sonnet-20250219": {"input": 0.000003, "output": 0.000015},
         "gpt-4o": {"input": 0.0000025, "output": 0.00001},
-        "gemini-1.5-pro": {"input": 0.00000125, "output": 0.000005},
+        "gemini-2.5-pro": {"input": 0.00000125, "output": 0.000005},
         "deepseek/deepseek-chat": {"input": 0.00000014, "output": 0.00000028},
     }
 
-    def __init__(self, default_model: str = "claude-3-5-sonnet-20241022", profile: str = "balanced"):
+    def __init__(self, default_model: str = "claude-3-7-sonnet-20250219", profile: str = "balanced"):
         self.default_model = default_model
         self.profile = self.PRESETS.get(profile, self.PRESETS["balanced"])
         self._custom_rules: Dict[str, List[RoutingRule]] = {}
@@ -125,11 +125,11 @@ class CostOptimizedRouter:
         for env_var in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "DEEPSEEK_API_KEY"]:
             if os.getenv(env_var):
                 if "ANTHROPIC" in env_var:
-                    env_models.append("claude-3-5-sonnet-20241022")
+                    env_models.append("claude-3-7-sonnet-20250219")
                 elif "OPENAI" in env_var:
                     env_models.append("gpt-4o")
                 elif "GEMINI" in env_var:
-                    env_models.append("gemini-1.5-pro")
+                    env_models.append("gemini-2.5-pro")
                 elif "DEEPSEEK" in env_var:
                     env_models.append("deepseek/deepseek-chat")
         return list(dict.fromkeys(env_models or models))

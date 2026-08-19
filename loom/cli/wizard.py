@@ -135,7 +135,7 @@ class InteractiveWizard:
         profile = self._select("Select routing profile:", profiles, default="balanced")
 
         router = CostOptimizedRouter(
-            default_model=self._selections.get("model", "claude-3-5-sonnet-20241022"), profile=profile
+            default_model=self._selections.get("model", "claude-3-7-sonnet-20250219"), profile=profile
         )
         self._selections["routing_profile"] = profile
 

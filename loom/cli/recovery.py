@@ -21,7 +21,7 @@ class RunRecord(BaseModel):
     last_checkpoint: float = Field(default_factory=time.time)
     retry_count: int = 0
     max_retries: int = 3
-    model_used: str = "claude-3-5-sonnet-20241022"
+    model_used: str = "claude-3-7-sonnet-20250219"
     fallback_models: List[str] = Field(default_factory=list)
 
 
@@ -31,9 +31,9 @@ class RecoveryManager:
     RECORDS_DIR = Path.home() / ".loom" / "runs"
     MAX_RETRIES = 3
     FALLBACK_MODEL_MAP = {
-        "claude-3-5-sonnet-20241022": "gpt-4o",
-        "gpt-4o": "claude-3-5-sonnet-20241022",
-        "gemini-1.5-pro": "gpt-4o",
+        "claude-3-7-sonnet-20250219": "gpt-4o",
+        "gpt-4o": "claude-3-7-sonnet-20250219",
+        "gemini-2.5-pro": "gpt-4o",
         "deepseek/deepseek-chat": "gpt-4o",
     }
 

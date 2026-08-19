@@ -9,7 +9,7 @@ logger = logging.getLogger("loom.adapters")
 
 MODEL_COSTS = {
     "gpt-4o": {"input": 0.0000025, "output": 0.00001},
-    "claude-3-5-sonnet-20241022": {"input": 0.000003, "output": 0.000015},
+    "claude-3-7-sonnet-20250219": {"input": 0.000003, "output": 0.000015},
     "gemini-3-flash-preview": {"input": 0.00000015, "output": 0.0000006},
     "gemini-3-pro-preview": {"input": 0.00000125, "output": 0.000005},
     "gemini-3.7-flash": {"input": 0.00000015, "output": 0.0000006},

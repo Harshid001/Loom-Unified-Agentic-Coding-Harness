@@ -51,7 +51,7 @@ class BudgetAssembly:
 class ContextBudgetManager:
     def __init__(
         self,
-        model_name: str = "claude-3-5-sonnet-20241022",
+        model_name: str = "claude-3-7-sonnet-20250219",
         weights: Optional[Dict[str, float]] = None,
     ):
         self.model_name = model_name

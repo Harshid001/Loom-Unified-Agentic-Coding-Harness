@@ -336,7 +336,7 @@ def wizard():
     wiz = InteractiveWizard()
     selections = wiz.run()
 
-    _apply_api_key_if_provided(None, selections.get("model", "claude-3-5-sonnet-20241022"))
+    _apply_api_key_if_provided(None, selections.get("model", "claude-3-7-sonnet-20250219"))
 
     if selections.get("load_plugins", True):
         PluginRegistry.discover_plugins()
@@ -432,7 +432,7 @@ def fix(
     description: str = typer.Argument(None, help="Issue or feature description to resolve in 1 step"),
     repo_path: str = typer.Option(".", "--path", "-p", help="Path to repository root"),
     mock: bool = typer.Option(True, "--mock/--no-mock", help="Run in mock/offline mode"),
-    model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
+    model: str = typer.Option("claude-3-7-sonnet-20250219", "--model", "-m", help="Default model for task routing"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command"),
     api_base: Optional[str] = typer.Option(None, "--api-base", "-b", help="Pass custom LLM provider API base URL"),
     profile: str = typer.Option(
@@ -484,7 +484,7 @@ def issue(
 @app.command()
 def run(
     mock: bool = typer.Option(True, "--mock/--no-mock", help="Run in mock/offline mode without calling paid API keys"),
-    model: str = typer.Option("claude-3-5-sonnet-20241022", "--model", "-m", help="Default model for task routing"),
+    model: str = typer.Option("claude-3-7-sonnet-20250219", "--model", "-m", help="Default model for task routing"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="Pass API key directly in terminal command"),
     api_base: Optional[str] = typer.Option(None, "--api-base", "-b", help="Pass custom LLM provider API base URL"),
     profile: str = typer.Option(

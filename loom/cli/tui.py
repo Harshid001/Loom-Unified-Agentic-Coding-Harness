@@ -451,7 +451,7 @@ def launch_tui() -> None:
 
         def _start_run(self) -> None:
             issue = self.query_one("#inp-issue", Input).value.strip()
-            model = os.getenv("LOOM_TUI_MODEL", "claude-3-5-sonnet-20241022")
+            model = os.getenv("LOOM_TUI_MODEL", "claude-3-7-sonnet-20250219")
             self.controller.start(issue, str(Path.cwd()), model)
 
     LoomTUI().run()

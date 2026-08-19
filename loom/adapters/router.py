@@ -45,9 +45,11 @@ def set_runtime_api_key(provider: str, key: str) -> None:
         os.environ[var] = key
 
 MODEL_PRICING: Dict[str, Dict[str, float]] = {
-    "claude-3-5-sonnet-20241022": {"input": 3.00 / 1e6, "output": 15.00 / 1e6},
+    "claude-3-7-sonnet-20250219": {"input": 3.00 / 1e6, "output": 15.00 / 1e6},
     "gpt-4o": {"input": 2.50 / 1e6, "output": 10.00 / 1e6},
     "gpt-4o-mini": {"input": 0.15 / 1e6, "output": 0.60 / 1e6},
+    "gpt-4.5-preview": {"input": 75.00 / 1e6, "output": 150.00 / 1e6},
+    "o3-mini": {"input": 1.10 / 1e6, "output": 4.40 / 1e6},
     "gemini-3-flash-preview": {"input": 0.15 / 1e6, "output": 0.60 / 1e6},
     "gemini-3-pro-preview": {"input": 1.25 / 1e6, "output": 5.00 / 1e6},
     "gemini-3.7-flash": {"input": 0.15 / 1e6, "output": 0.60 / 1e6},
@@ -56,6 +58,8 @@ MODEL_PRICING: Dict[str, Dict[str, float]] = {
     "gemini-2.5-pro": {"input": 1.25 / 1e6, "output": 5.00 / 1e6},
     "gemini-2.5-flash": {"input": 0.15 / 1e6, "output": 0.60 / 1e6},
     "gemini-2.0-flash": {"input": 0.10 / 1e6, "output": 0.40 / 1e6},
+    "gemini-2.0-flash-thinking-exp-01-21": {"input": 0.10 / 1e6, "output": 0.40 / 1e6},
+    "gemini-2.0-pro-exp-02-05": {"input": 1.25 / 1e6, "output": 5.00 / 1e6},
     "gemini-2.0-flash-lite": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
     "deepseek-v4-pro": {"input": 0.27 / 1e6, "output": 1.10 / 1e6},
     "deepseek-v4": {"input": 0.27 / 1e6, "output": 1.10 / 1e6},
@@ -68,9 +72,11 @@ MODEL_PRICING: Dict[str, Dict[str, float]] = {
 }
 
 CAPABILITY_MATRIX: Dict[str, Dict[str, Any]] = {
-    "claude-3-5-sonnet-20241022": {"context_window": 200_000, "languages": ["*"], "strength": "reasoning"},
+    "claude-3-7-sonnet-20250219": {"context_window": 200_000, "languages": ["*"], "strength": "reasoning"},
     "gpt-4o": {"context_window": 128_000, "languages": ["*"], "strength": "tool_calling"},
     "gpt-4o-mini": {"context_window": 128_000, "languages": ["*"], "strength": "cheap"},
+    "gpt-4.5-preview": {"context_window": 128_000, "languages": ["*"], "strength": "frontier_reasoning"},
+    "o3-mini": {"context_window": 200_000, "languages": ["*"], "strength": "coding_reasoning"},
     "gemini-3-flash-preview": {"context_window": 2_000_000, "languages": ["*"], "strength": "next_gen_intelligence"},
     "gemini-3-pro-preview": {"context_window": 2_000_000, "languages": ["*"], "strength": "next_gen_frontier_reasoning"},
     "gemini-3.7-flash": {"context_window": 2_000_000, "languages": ["*"], "strength": "next_gen_speed_reasoning"},
@@ -79,6 +85,8 @@ CAPABILITY_MATRIX: Dict[str, Dict[str, Any]] = {
     "gemini-2.5-pro": {"context_window": 2_000_000, "languages": ["*"], "strength": "deep_reasoning"},
     "gemini-2.5-flash": {"context_window": 2_000_000, "languages": ["*"], "strength": "fast_multimodal"},
     "gemini-2.0-flash": {"context_window": 1_000_000, "languages": ["*"], "strength": "fast"},
+    "gemini-2.0-flash-thinking-exp-01-21": {"context_window": 1_000_000, "languages": ["*"], "strength": "thinking"},
+    "gemini-2.0-pro-exp-02-05": {"context_window": 2_000_000, "languages": ["*"], "strength": "frontier_reasoning"},
     "gemini-2.0-flash-lite": {"context_window": 1_000_000, "languages": ["*"], "strength": "cheap"},
     "deepseek-v4-pro": {"context_window": 128_000, "languages": ["*"], "strength": "reasoning"},
     "deepseek-v4": {"context_window": 128_000, "languages": ["*"], "strength": "reasoning"},
@@ -141,7 +149,7 @@ class ModelRouter:
 
     def __init__(
         self,
-        default_model: str = "claude-3-5-sonnet-20241022",
+        default_model: str = "claude-3-7-sonnet-20250219",
         mock_mode: bool = False,
         weights: Optional[Dict[str, float]] = None,
         sensitive_globs: Optional[List[str]] = None,
@@ -159,7 +167,7 @@ class ModelRouter:
         self.adapter = LiteLLMAdapter(mock_mode=mock_mode)
 
         self._eligible_models: List[str] = [
-            "claude-3-5-sonnet-20241022",
+            "claude-3-7-sonnet-20250219",
             "gpt-4o",
             "gpt-4o-mini",
             "deepseek-v3",
@@ -464,5 +472,5 @@ class ModelRouter:
         return self.adapter
 
     def estimate_cost(self, model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
-        pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["claude-3-5-sonnet-20241022"])
+        pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["claude-3-7-sonnet-20250219"])
         return (prompt_tokens * pricing["input"]) + (completion_tokens * pricing["output"])
