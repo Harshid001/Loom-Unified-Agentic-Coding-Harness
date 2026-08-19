@@ -1,7 +1,7 @@
 # Loom — Production Release Baseline
 
-**Captured:** 2026-08-19T10:17:14.313524+00:00
-**Commit SHA:** `b45435d5ab2a8a691202f9efeb93d0e1efbb51cd`
+**Captured:** 2026-08-19T11:01:35.891654+00:00
+**Commit SHA:** `abc123`
 **Branch:** `main`
 
 ---
@@ -10,10 +10,10 @@
 
 | Item | Value |
 |---|---|
-| Python | `3.13.11` |
-| Node | `v24.12.0` |
-| npm | `not found` |
-| Platform | `Windows-11-10.0.26100-SP0` |
+| Python | `3.13.0` |
+| Node | `20.0.0` |
+| npm | `10.0.0` |
+| Platform | `Linux-5.4-x86_64` |
 | pyproject.toml SHA256 | `dde12d19e99c4961ea5bd46f2a9f9ee2d096d4e6f884d12d9543077f20bd304e` |
 | package-lock.json SHA256 | `7e6185641f03fab62ac7375a74469c3a47010651cc6876a93b9efeece94b7d5b` |
 
@@ -23,12 +23,12 @@
 
 | Gate | Status | Detail |
 |---|---|---|
-| pytest | ✅ PASS | 0 passed, 0 failed |
-| ruff (lint) | ✅ PASS | 1 violations |
+| pytest | ✅ PASS | 10 passed, 0 failed |
+| ruff (lint) | ✅ PASS | 0 violations |
 | mypy | ✅ PASS | 0 errors |
 | pip-audit | ✅ PASS | 0 vulnerabilities |
 | gitleaks | ⚠️ WARN/SKIP |  |
-| npm audit | ✅ PASS | 0 vulnerabilities |
+| npm audit | ⚠️ WARN/SKIP | 0 vulnerabilities |
 | frontend build | ✅ PASS | — |
 
 ---
@@ -36,7 +36,7 @@
 ## Artifact Directory
 
 ```
-D:\NewVolumeE\Unified agentic coding harness\artifacts\release\b45435d5ab2a8a691202f9efeb93d0e1efbb51cd
+D:\NewVolumeE\Unified agentic coding harness\artifacts\release\test-gate-regression-pass\abc123
 ├── environment.json
 ├── test-results.json
 ├── security-results.json
@@ -47,7 +47,7 @@ D:\NewVolumeE\Unified agentic coding harness\artifacts\release\b45435d5ab2a8a691
 
 ## Reproducibility
 
-This baseline can be reproduced by checking out commit `b45435d5ab2a8a691202f9efeb93d0e1efbb51cd` and running:
+This baseline can be reproduced by checking out commit `abc123` and running:
 
 ```bash
 python scripts/production/capture_baseline.py
