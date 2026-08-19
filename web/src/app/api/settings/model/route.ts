@@ -4,13 +4,13 @@ import { validateRequestAuth, validateSameOrigin } from '@/lib/auth';
 const DEFAULT_MODELS = {
   anthropic: [
     'claude-3-7-sonnet-20250219',
-    'claude-3-5-sonnet-20241022',
+    'claude-3-7-sonnet-20250219',
     'claude-3-5-haiku-20241022',
     'claude-3-opus-20240229',
   ],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'],
   deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v3'],
-  gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'],
+  gemini: ['gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'],
   openrouter: [
     'google/gemini-2.0-flash-exp:free',
     'google/gemini-2.5-pro',
@@ -21,7 +21,7 @@ const DEFAULT_MODELS = {
   ],
 };
 
-let currentActiveModel = process.env.MODEL_DEFAULT || 'claude-3-5-sonnet-20241022';
+let currentActiveModel = process.env.MODEL_DEFAULT || 'claude-3-7-sonnet-20250219';
 
 export async function GET(req: NextRequest) {
   if (!validateSameOrigin(req)) {

@@ -44,7 +44,7 @@ const PROVIDERS: Record<ProviderKey, ProviderMeta> = {
     docUrl: 'https://console.anthropic.com/settings/keys',
     description: 'Premier coding and reasoning models including Claude 3.5 Sonnet and Claude 3.7 Sonnet.',
     defaultModels: [
-      'claude-3-5-sonnet-20241022',
+      'claude-3-7-sonnet-20250219',
       'claude-3-7-sonnet-20250219',
       'claude-3-5-haiku-20241022',
       'claude-3-opus-20240229',
@@ -75,7 +75,7 @@ const PROVIDERS: Record<ProviderKey, ProviderMeta> = {
     placeholder: 'AIzaSy...',
     docUrl: 'https://aistudio.google.com/app/apikey',
     description: 'Ultra-long context window models with 1M+ token capacity and fast multimodal generation.',
-    defaultModels: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'],
+    defaultModels: ['gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'],
   },
   openrouter: {
     id: 'openrouter',
@@ -123,8 +123,8 @@ function ModelSettingsContent() {
     openrouter: false,
   });
 
-  const [activeModel, setActiveModel] = useState<string>('claude-3-5-sonnet-20241022');
-  const [selectedModel, setSelectedModel] = useState<string>('claude-3-5-sonnet-20241022');
+  const [activeModel, setActiveModel] = useState<string>('claude-3-7-sonnet-20250219');
+  const [selectedModel, setSelectedModel] = useState<string>('claude-3-7-sonnet-20250219');
   const [detectedModels, setDetectedModels] = useState<Record<ProviderKey, string[]>>({
     anthropic: PROVIDERS.anthropic.defaultModels,
     openai: PROVIDERS.openai.defaultModels,

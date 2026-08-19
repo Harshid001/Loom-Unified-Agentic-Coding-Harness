@@ -15,13 +15,13 @@ describe('ModelSettingsPage', () => {
         return Promise.resolve({
           ok: true,
           json: async () => ({
-            active_model: 'claude-3-5-sonnet-20241022',
-            available_models: ['claude-3-5-sonnet-20241022', 'gpt-4o'],
+            active_model: 'claude-3-7-sonnet-20250219',
+            available_models: ['claude-3-7-sonnet-20250219', 'gpt-4o'],
             providers: {
-              anthropic: { configured: true, models: ['claude-3-5-sonnet-20241022'] },
+              anthropic: { configured: true, models: ['claude-3-7-sonnet-20250219'] },
               openai: { configured: false, models: ['gpt-4o'] },
               deepseek: { configured: false, models: ['deepseek-v3'] },
-              gemini: { configured: false, models: ['gemini-1.5-pro'] },
+              gemini: { configured: false, models: ['gemini-2.5-pro'] },
               openrouter: { configured: false, models: ['google/gemini-2.0-flash-exp:free'] },
             },
           }),
@@ -135,7 +135,7 @@ describe('Next.js Model Settings API Routes', () => {
   it('proxies detect request correctly', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       status: 200,
-      json: async () => ({ valid: true, models: ['claude-3-5-sonnet-20241022'] }),
+      json: async () => ({ valid: true, models: ['claude-3-7-sonnet-20250219'] }),
     } as any);
 
     const req = new NextRequest('http://localhost:3000/api/models/detect', {

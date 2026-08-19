@@ -43,9 +43,9 @@ import {
 
 const AVAILABLE_MODELS = [
   'auto',
-  'claude-3-5-sonnet-20241022',
+  'claude-3-7-sonnet-20250219',
   'gpt-4o',
-  'gemini-1.5-pro',
+  'gemini-2.5-pro',
   'gemini-1.5-flash',
   'gemini-2.0-flash',
   'deepseek-v3',
