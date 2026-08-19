@@ -107,7 +107,9 @@ async def _production_create_run(
 
 def install_production_queue(app: FastAPI) -> None:
     """Replace only the run-creation route with durable queue submission."""
-    if not server_module.is_dev_mode() and not server_module.os.getenv("REDIS_URL"):
+    if server_module.is_dev_mode():
+        return
+    if not server_module.os.getenv("REDIS_URL"):
         raise RuntimeError("Production execution requires REDIS_URL")
 
     for route in iter_routes(app):
