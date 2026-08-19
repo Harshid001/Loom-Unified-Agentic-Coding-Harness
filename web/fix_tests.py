@@ -9,8 +9,8 @@ with open(path1, 'r', encoding='utf-8') as f:
 orkey = ''.join(chr(c) for c in [111, 112, 101, 110, 114, 111, 117, 116, 101, 114])
 
 # Fix broken key: '  : { configured: false, models: [...] }'
-broken_line = "              : { configured: false, models: ['google/gemini-2.0-flash-exp:free'] }"
-fixed_line = f"              {orkey}: " + "{ configured: false, models: ['google/gemini-2.0-flash-exp:free'] }"
+broken_line = "              : { configured: false, models: ['google/gemini-3.7-flash-exp:free'] }"
+fixed_line = f"              {orkey}: " + "{ configured: false, models: ['google/gemini-3.7-flash-exp:free'] }"
 content = content.replace(broken_line, fixed_line)
 
 with open(path1, 'w', encoding='utf-8') as f:

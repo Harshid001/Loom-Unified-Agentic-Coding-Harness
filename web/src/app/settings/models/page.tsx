@@ -75,7 +75,7 @@ const PROVIDERS: Record<ProviderKey, ProviderMeta> = {
     placeholder: 'AIzaSy...',
     docUrl: 'https://aistudio.google.com/app/apikey',
     description: 'Ultra-long context window models with 1M+ token capacity and fast multimodal generation.',
-    defaultModels: ['gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'],
+    defaultModels: ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-pro'],
   },
   openrouter: {
     id: 'openrouter',
@@ -85,8 +85,8 @@ const PROVIDERS: Record<ProviderKey, ProviderMeta> = {
     docUrl: 'https://openrouter.ai/keys',
     description: 'Unified endpoint with free tier access to Gemini 2.0 Flash, DeepSeek R1, Llama 3.3, and Claude models.',
     defaultModels: [
-      'google/gemini-2.0-flash-exp:free',
-      'google/gemini-2.5-pro',
+      'google/gemini-3.7-flash-exp:free',
+      'google/gemini-3.1-pro-preview',
       'deepseek/deepseek-r1:free',
       'meta-llama/llama-3.3-70b-instruct:free',
       'anthropic/claude-3.7-sonnet',

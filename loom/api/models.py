@@ -51,7 +51,7 @@ class DetectModelsResponse(BaseModel):
 CURATED_MODELS: Dict[str, List[str]] = {
     "anthropic": [
         "claude-3-7-sonnet-20250219",
-        "claude-3-5-sonnet-20241022",
+        "claude-3-7-sonnet-20250219",
         "claude-3-5-haiku-20241022",
         "claude-3-opus-20240229",
     ],
@@ -68,9 +68,9 @@ CURATED_MODELS: Dict[str, List[str]] = {
         "deepseek/deepseek-chat",
     ],
     "gemini": [
-        "gemini-2.5-pro",
+        "gemini-3.1-pro-preview",
         "gemini-2.5-flash",
-        "gemini-2.0-flash-thinking-exp-01-21",
+        "gemini-3.7-flash-thinking-exp-01-21",
         "gemini-2.0-pro-exp-02-05",
     ],
 }

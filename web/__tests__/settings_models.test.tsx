@@ -21,8 +21,8 @@ describe('ModelSettingsPage', () => {
               anthropic: { configured: true, models: ['claude-3-7-sonnet-20250219'] },
               openai: { configured: false, models: ['gpt-4o'] },
               deepseek: { configured: false, models: ['deepseek-v3'] },
-              gemini: { configured: false, models: ['gemini-2.5-pro'] },
-              openrouter: { configured: false, models: ['google/gemini-2.0-flash-exp:free'] },
+              gemini: { configured: false, models: ['gemini-3.1-pro-preview'] },
+              openrouter: { configured: false, models: ['google/gemini-3.7-flash-exp:free'] },
             },
           }),
         });
@@ -33,7 +33,7 @@ describe('ModelSettingsPage', () => {
           json: async () => ({
             valid: true,
             provider: 'anthropic',
-            models: ['claude-3-5-sonnet-20241022', 'claude-3-7-sonnet-20250219'],
+            models: ['claude-3-7-sonnet-20250219', 'claude-3-7-sonnet-20250219'],
           }),
         });
       }

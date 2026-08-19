@@ -10,10 +10,10 @@ const DEFAULT_MODELS = {
   ],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'],
   deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v3'],
-  gemini: ['gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'],
+  gemini: ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash'],
   openrouter: [
-    'google/gemini-2.0-flash-exp:free',
-    'google/gemini-2.5-pro',
+    'google/gemini-3.7-flash-exp:free',
+    'google/gemini-3.1-pro-preview',
     'deepseek/deepseek-r1:free',
     'meta-llama/llama-3.3-70b-instruct:free',
     'anthropic/claude-3.7-sonnet',

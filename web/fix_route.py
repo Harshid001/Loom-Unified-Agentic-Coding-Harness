@@ -7,16 +7,16 @@ with open(path, 'r', encoding='utf-8') as f:
 # Fix 1: broken  key in DEFAULT_MODELS
 content = content.replace(
     '  : [\n' +
-    "    'google/gemini-2.0-flash-exp:free',\n" +
-    "    'google/gemini-2.5-pro',\n" +
+    "    'google/gemini-3.7-flash-exp:free',\n" +
+    "    'google/gemini-3.1-pro-preview',\n" +
     "    'deepseek/deepseek-r1:free',\n" +
     "    'meta-llama/llama-3.3-70b-instruct:free',\n" +
     "    'anthropic/claude-3.7-sonnet',\n" +
     "    'openai/gpt-4o',\n" +
     '  ],\n',
     '  : [\n' +
-    "    'google/gemini-2.0-flash-exp:free',\n" +
-    "    'google/gemini-2.5-pro',\n" +
+    "    'google/gemini-3.7-flash-exp:free',\n" +
+    "    'google/gemini-3.1-pro-preview',\n" +
     "    'deepseek/deepseek-r1:free',\n" +
     "    'meta-llama/llama-3.3-70b-instruct:free',\n" +
     "    'anthropic/claude-3.7-sonnet',\n" +

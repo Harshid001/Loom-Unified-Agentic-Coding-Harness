@@ -33,7 +33,7 @@ class RecoveryManager:
     FALLBACK_MODEL_MAP = {
         "claude-3-7-sonnet-20250219": "gpt-4o",
         "gpt-4o": "claude-3-7-sonnet-20250219",
-        "gemini-2.5-pro": "gpt-4o",
+        "gemini-3.1-pro-preview": "gpt-4o",
         "deepseek/deepseek-chat": "gpt-4o",
     }
 

@@ -8,7 +8,7 @@ import { LiveBoxReal } from '../src/components/LiveBoxReal';
 
 describe('Active Model Propagation & Display across Components', () => {
   it('DagTab displays the configured activeModel on repro/patcher stages', () => {
-    render(<DagTab displayData={null} activeModel="gemini-2.5-pro" />);
+    render(<DagTab displayData={null} activeModel="gemini-3.1-pro-preview" />);
     expect(screen.getByText(/5-Stage Autonomous Execution Graph/i)).toBeInTheDocument();
     expect(screen.getByText('MAPPER')).toBeInTheDocument();
     expect(screen.getByText('REPRO')).toBeInTheDocument();
@@ -16,7 +16,7 @@ describe('Active Model Propagation & Display across Components', () => {
 
     // Click on REPRO stage to inspect detail card
     fireEvent.click(screen.getByText('REPRO'));
-    expect(screen.getByText('gemini-2.5-pro')).toBeInTheDocument();
+    expect(screen.getByText('gemini-3.1-pro-preview')).toBeInTheDocument();
   });
 
   it('OverviewTab displays the ACTIVE MODEL card in repository state strip', () => {
@@ -65,7 +65,7 @@ describe('Active Model Propagation & Display across Components', () => {
         repoPath="owner/repo"
         mockMode={true}
         onRunComplete={vi.fn()}
-        availableModels={['gpt-4o', 'gemini-2.5-pro', 'claude-3-7-sonnet-20250219']}
+        availableModels={['gpt-4o', 'gemini-3.1-pro-preview', 'claude-3-7-sonnet-20250219']}
         onModelChange={vi.fn()}
       />
     );

@@ -51,8 +51,8 @@ class CostOptimizedRouter:
             name="hybrid",
             description="Claude for patching+review, Gemini for onboarding+repro, GPT-4o for verification",
             rules=[
-                RoutingRule(agent_name="onboarding", model="gemini-2.5-pro", priority=1),
-                RoutingRule(agent_name="reproduction", model="gemini-2.5-pro", priority=1),
+                RoutingRule(agent_name="onboarding", model="gemini-3.1-pro-preview", priority=1),
+                RoutingRule(agent_name="reproduction", model="gemini-3.1-pro-preview", priority=1),
                 RoutingRule(agent_name="patcher", model="claude-3-7-sonnet-20250219", priority=2),
                 RoutingRule(agent_name="verifier", model="gpt-4o", priority=1),
                 RoutingRule(agent_name="reviewer", model="claude-3-7-sonnet-20250219", priority=2),
@@ -63,7 +63,7 @@ class CostOptimizedRouter:
     MODEL_COSTS = {
         "claude-3-7-sonnet-20250219": {"input": 0.000003, "output": 0.000015},
         "gpt-4o": {"input": 0.0000025, "output": 0.00001},
-        "gemini-2.5-pro": {"input": 0.00000125, "output": 0.000005},
+        "gemini-3.1-pro-preview": {"input": 0.00000125, "output": 0.000005},
         "deepseek/deepseek-chat": {"input": 0.00000014, "output": 0.00000028},
     }
 
@@ -129,7 +129,7 @@ class CostOptimizedRouter:
                 elif "OPENAI" in env_var:
                     env_models.append("gpt-4o")
                 elif "GEMINI" in env_var:
-                    env_models.append("gemini-2.5-pro")
+                    env_models.append("gemini-3.1-pro-preview")
                 elif "DEEPSEEK" in env_var:
                     env_models.append("deepseek/deepseek-chat")
         return list(dict.fromkeys(env_models or models))

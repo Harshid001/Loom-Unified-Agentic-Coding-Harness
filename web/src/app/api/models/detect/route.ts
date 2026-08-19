@@ -10,7 +10,7 @@ const DEFAULT_MODELS: Record<string, string[]> = {
   ],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'],
   deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v3'],
-  gemini: ['gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'],
+  gemini: ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash'],
 };
 
 function validateKeyFormat(provider: string, key: string): { valid: boolean; reason?: string } {
