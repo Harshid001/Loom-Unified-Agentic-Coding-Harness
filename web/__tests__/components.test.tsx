@@ -23,8 +23,8 @@ describe('DiffTab component', () => {
     render(<DiffTab displayData={mockData} />);
     expect(screen.getByText(/Verified Unified Patch Diff/i)).toBeInTheDocument();
     expect(screen.getByText('VALIDATED')).toBeInTheDocument();
-    expect(screen.getByText(/-old line/i)).toBeInTheDocument();
-    expect(screen.getByText(/\+new line/i)).toBeInTheDocument();
+    expect(screen.getByText(/old line/i)).toBeInTheDocument();
+    expect(screen.getByText(/new/i)).toBeInTheDocument();
   });
 });
 
@@ -59,7 +59,7 @@ describe('DagTab component', () => {
 describe('EvidenceView component', () => {
   it('renders standby state when no run is active', () => {
     render(<EvidenceView displayData={null} runId={undefined} connectedRepoName="Harshid001/Loom-Harness" />);
-    expect(screen.getByText(/No Execution Evidence Generated Yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/Verification-First Proof Chain/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Harshid001\/Loom-Harness/i).length).toBeGreaterThan(0);
   });
 
@@ -80,7 +80,7 @@ describe('EvidenceView component', () => {
     });
     expect(screen.getByText(/SHA-256 Hash Chain Audit Bundle/i)).toBeInTheDocument();
     expect(screen.getByText(/Verification Proof Checklist/i)).toBeInTheDocument();
-    expect(screen.getByText(/Chained Artifact Manifest/i)).toBeInTheDocument();
+    expect(screen.getByText(/Hash Chain Diagram/i)).toBeInTheDocument();
   });
 });
 

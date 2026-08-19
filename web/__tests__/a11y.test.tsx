@@ -130,7 +130,7 @@ describe('Frontend Accessibility (a11y) Verification', () => {
     });
 
     await waitFor(() => {
-      const exportBtn = screen.getByRole('button', { name: /export/i });
+      const exportBtn = screen.getByRole('button', { name: /Download evidence bundle/i });
       expect(exportBtn).toBeDefined();
     });
   });
